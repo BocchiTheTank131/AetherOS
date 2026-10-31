@@ -81,7 +81,9 @@ export const Desktop: React.FC = () => {
   } | null>(null);
 
   const draggingRef = useRef(draggingIcon);
-  draggingRef.current = draggingIcon;
+  useEffect(() => {
+    draggingRef.current = draggingIcon;
+  }, [draggingIcon]);
 
   // Load saved icon positions
   const loadPositions = useCallback(() => {

@@ -1,41 +1,55 @@
 # AetherOS | Advanced Browser-Based Operating System
 
-![AetherOS](https://img.shields.io/badge/AetherOS-1.0%20LTS-00f2fe?style=for-the-badge&logo=linux&logoColor=white)
-![React](https://img.shields.io/badge/React-19.3-61dafb?style=for-the-badge&logo=react&logoColor=black)
-![TypeScript](https://img.shields.io/badge/TypeScript-7.0-3178c6?style=for-the-badge&logo=typescript&logoColor=white)
-![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-4.3-38bdf8?style=for-the-badge&logo=tailwindcss&logoColor=white)
-![Vite](https://img.shields.io/badge/Vite-8.3-646cff?style=for-the-badge&logo=vite&logoColor=white)
-![Vitest](https://img.shields.io/badge/Vitest-5.0-fcc72b?style=for-the-badge&logo=vitest&logoColor=black)
-![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
+<div align="center">
 
-**AetherOS** is a high-fidelity, Linux-inspired virtual operating environment engineered natively for modern web browsers. Rather than emulating hardware CPU instructions through slow x86 or ARM virtualization, AetherOS implements genuine operating system abstractions directly on web standards: a preemptive process table (`AetherCore`), a POSIX-compliant virtual filesystem with IndexedDB persistence (`VFS`), an authentic command shell with AST parsing and pipelines (`aesh`), a composited multi-window desktop with 4 virtual workspaces (`AetherWM`), and an expandable ecosystem of 19 native applications and packages.
+```text
+       _         _   _                ___  ____  
+      / \   ___ | |_| |__   ___ _ __ / _ \/ ___| 
+     / _ \ / _ \| __| '_ \ / _ \ '__| | | \___ \ 
+    / ___ \  __/| |_| | | |  __/ |  | |_| |___) |
+   /_/   \_\___| \__|_| |_|\___|_|   \___/|____/ 
+```
+
+**A high-fidelity, Linux-inspired virtual operating environment engineered natively for modern web browsers.**
+
+[![AetherOS Version](https://img.shields.io/badge/AetherOS-v1.1%20LTS-00f2fe?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/your-username/AetherOS)
+[![React](https://img.shields.io/badge/React-19.3-61dafb?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-7.0-3178c6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-4.3-38bdf8?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+[![Vite](https://img.shields.io/badge/Vite-8.3-646cff?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
+[![Vitest](https://img.shields.io/badge/Tests-34%20Passed-34d399?style=for-the-badge&logo=vitest&logoColor=black)](https://vitest.dev/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-amber?style=for-the-badge)](LICENSE)
+
+[Architecture](#-architectural-overview) • [What's New in v1.1](#-whats-new-in-v11) • [Subsystems](#-subsystem-deep-dive) • [Applications](#-native-application-suite) • [Shell CLI](#-shell-command-reference-45-utilities) • [Quickstart](#-getting-started) • [Contributing](#-developer-guides)
+
+</div>
 
 ---
 
-## 📑 Table of Contents
+## 🌟 Executive Summary
 
-1. [Architectural Overview](#-architectural-overview)
-2. [Subsystem Deep Dive](#-subsystem-deep-dive)
-   - [AetherCore (Virtual Kernel & Process Management)](#1-aethercore-virtual-kernel--process-management)
-   - [Virtual Filesystem (VFS & IndexedDB Persistence)](#2-virtual-filesystem-vfs--indexeddb-persistence)
-   - [aesh (Aether Shell & Terminal Runtime)](#3-aesh-aether-shell--terminal-runtime)
-   - [AetherWM & Desktop Compositor](#4-aetherwm--desktop-compositor)
-   - [AudioService (Procedural Web Audio Synthesizer)](#5-audioservice-procedural-sound-synthesizer)
-   - [aetherpkg (Package Management Subsystem)](#6-aetherpkg-package-management-subsystem)
-3. [Native Application Suite](#-native-application-suite)
-   - [Core Preinstalled Applications](#core-preinstalled-applications-14)
-   - [Installable Packages](#installable-packages-5)
-4. [Shell Command Reference (45+ Utilities)](#-shell-command-reference-45-utilities)
-5. [Preloaded Filesystem Skeleton & Assets](#-preloaded-filesystem-skeleton--assets)
-6. [Global Keyboard Shortcuts](#-global-keyboard-shortcuts)
-7. [Getting Started & Development](#-getting-started--development)
-8. [Developer How-To Guides](#-developer-how-to-guides)
-   - [Creating a New Native Application](#how-to-create-a-new-native-application)
-   - [Adding an Installable Package to aetherpkg](#how-to-add-an-installable-package-to-aetherpkg)
-   - [Adding a New Built-in Shell Command](#how-to-add-a-new-shell-command-to-aesh)
-9. [Security Model & Honest Execution Boundaries](#-security-model--honest-execution-boundaries)
-10. [Audit & Architecture Documentation](#-audit--architecture-documentation)
-11. [License](#-license)
+Rather than emulating hardware CPU instructions through slow x86 or ARM virtualization, **AetherOS** implements genuine operating system paradigms directly on modern web standards:
+
+- **Preemptive Virtual Kernel (`AetherCore`)**: PID process allocation starting at PID 100, POSIX signal handlers (`SIGTERM`, `SIGKILL`, `SIGSTOP`, `SIGCONT`), and resource metrics jitter.
+- **POSIX-Compliant Filesystem (`VFS`)**: Complete Linux directory tree (`/bin`, `/etc`, `/home/aether`, `/proc`, `/dev`, `/var`) persisted in browser **IndexedDB** with write-behind queueing.
+- **Authentic Command Shell (`aesh`)**: Lexer tokenizer, recursive-descent AST parser, pipelines (`|`), input/output redirections (`>`, `>>`, `<`, `2>`), conditionals (`&&`, `||`, `;`), environment variables, path globs, and 45+ built-in utilities.
+- **Composited Desktop Environment (`AetherWM`)**: Draggable windows with 8-direction resizing, visual snap guides, memory of window coordinates, 4 virtual workspaces, customizable dock (bottom/top/left), app launcher, command palette, and notification drawer.
+- **19 Native Applications & Packages**: Full-featured IDE with live sandbox preview, file manager with host file export, terminal emulator, audio synthesizer, games, and package manager (`aetherpkg`).
+
+---
+
+## 🚀 What's New in v1.1
+
+AetherOS v1.1 introduces comprehensive system-wide polish, interaction refinements, and host integration:
+
+- 🪟 **Window Snapping with Visual Guide Overlay**: Dragging a window near the left, right, or top edge displays an animated snap preview box and snaps the window to 50% left, 50% right, or full screen.
+- 📐 **Maximized Drag-Restore & Window Memory**: Dragging the titlebar of a maximized window smoothly un-maximizes it and centers it under your cursor. Window sizes and positions are remembered across sessions.
+- 🖥️ **Desktop Grid Dragging & Persistent Layouts**: Desktop icons support free drag-and-drop with an 84px $\times$ 96px grid snap. Custom icon coordinates automatically persist in `/home/aether/.config/aetheros/desktop_positions.json`.
+- 📁 **File Manager Multi-Field Sorting & Host Export**: Sort directory entries by Name, Size, Type, or Date (ascending/descending). Download any virtual file directly to your physical computer using browser blob streams.
+- 🗑️ **Full Trash Lifecycle**: Move files safely to `/home/aether/.trash`, restore them back to `/home/aether/Documents`, or permanently purge them with *Empty Trash*.
+- ⌨️ **Shell Path Autocompletion & Persistent History**: Press `Tab` to autocomplete directories, subdirectories, root paths (`/`), and home shortcuts (`~`). Command history persists across reboots in `/home/aether/.aesh_history`. Added `Ctrl+L` for instant screen clearing.
+- 🎨 **Custom Wallpapers & Web Audio Settings**: Set custom desktop wallpapers via URL or direct host image upload into `/home/aether/Pictures`. Configure procedural synthesizer volume, sound effects toggle, and test chimes in Settings.
+- 🔍 **App Launcher Enhancements**: Quick-access *Recent Applications* bar and arrow-key navigation (`ArrowDown`, `ArrowUp`, `Enter`) within search results.
 
 ---
 
@@ -71,111 +85,94 @@
 ## 🔬 Subsystem Deep Dive
 
 ### 1. AetherCore (Virtual Kernel & Process Management)
-- **Virtual Process Table**: Full PID allocation starting at PID 100 for user processes, with preserved kernel space:
+- **Virtual Process Table**: Full PID allocation starting at PID 100 for user processes, preserving system kernel space:
   - `PID 1`: `/sbin/init` (`systemd`, state: `running`)
   - `PID 2`: `[kthreadd]` (kernel thread daemon, state: `running`)
   - `PID 3`: `/usr/bin/aether-desktop` (compositor process, state: `running`)
 - **Process Lifecycle States**: `created`, `running`, `waiting`, `suspended`, `stopped`, `terminated`, `crashed`.
-- **Signal Dispatching**: Authentic handling of standard POSIX signals:
+- **POSIX Signal Dispatching**:
   - `SIGINT` (Ctrl+C, exit code 130)
   - `SIGTERM` (15, graceful termination, exit code 143)
   - `SIGKILL` (9, uncatchable immediate termination, exit code 137)
   - `SIGSTOP` (19, transitions process state to `stopped`)
   - `SIGCONT` (18, resumes process state back to `running`)
-- **Process Resource Accounting**: Active background sampler (3-second cadence) generating realistic CPU utilization jitter and memory RSS footprint dynamically tracked per process.
-- **Typed System Event Bus (`systemEventBus`)**: Decoupled pub/sub communication across all subsystems (`process:started`, `process:terminated`, `filesystem:changed`, `package:installed`, `theme:changed`, `window:opened`, `window:focused`, etc.).
-- **Structured System Logger (`systemLogger`)**: 1,000-entry in-memory circular ring buffer capturing `debug`, `info`, `warn`, and `error` events with timestamps, subsystem tags, and structured metadata. Powers `dmesg`, `journalctl`, and the GUI Log Viewer.
+- **Resource Accounting**: Active 3-second sampler generating realistic virtual CPU utilization jitter and memory RSS footprint dynamically tracked per process.
+- **Typed System Event Bus (`systemEventBus`)**: Pub/Sub bus handling OS-wide events (`process:started`, `process:terminated`, `filesystem:changed`, `package:installed`, `theme:changed`, `window:opened`, etc.).
+- **Structured System Logger (`systemLogger`)**: 1,000-entry in-memory circular ring buffer capturing `debug`, `info`, `warn`, and `error` events with timestamps and subsystem tags. Powers `dmesg`, `journalctl`, and the GUI Log Viewer.
 
 ### 2. Virtual Filesystem (VFS & IndexedDB Persistence)
-- **Full POSIX Directory Tree**: Standard FHS compliance (`/bin`, `/boot`, `/dev`, `/etc`, `/home/aether`, `/lib`, `/media`, `/mnt`, `/opt`, `/proc`, `/root`, `/run`, `/sbin`, `/srv`, `/sys`, `/tmp`, `/usr`, `/var`).
-- **IndexedDB Batch Persistence (`idbStorage`)**: Filesystem nodes are kept in high-performance memory maps and persisted asynchronously via IndexedDB write-behind queues, eliminating UI stutter during heavy I/O.
+- **Full POSIX Directory Tree**: Standard Linux hierarchy (`/bin`, `/boot`, `/dev`, `/etc`, `/home/aether`, `/lib`, `/media`, `/mnt`, `/opt`, `/proc`, `/root`, `/run`, `/sbin`, `/srv`, `/sys`, `/tmp`, `/usr`, `/var`).
+- **IndexedDB Batch Storage (`idbStorage`)**: In-memory nodes with write-behind queues for asynchronous IndexedDB synchronization, ensuring smooth UI performance during heavy I/O operations.
 - **Dynamic Synthetic Nodes**:
-  - `/proc/version`: Kernel build string (`Linux version 6.8.0-aether ...`).
+  - `/proc/version`: Kernel build version (`Linux version 6.8.0-aether ...`).
   - `/proc/uptime`: Real-time system uptime and idle time in seconds.
-  - `/proc/meminfo`: Live memory usage (`MemTotal`, `MemFree`, `Buffers`, `Cached`).
+  - `/proc/meminfo`: Live virtual memory statistics (`MemTotal`, `MemFree`, `Buffers`, `Cached`).
   - `/proc/cpuinfo`: Hardware concurrency thread count and simulated CPU specifications.
   - `/dev/null`: Discards all written data; returns EOF immediately on read.
   - `/dev/zero`: Generates continuous zero streams on demand.
-  - `/dev/random` & `/dev/urandom`: Cryptographically secure pseudorandom byte streams using Web Crypto `crypto.getRandomValues()`.
+  - `/dev/random` & `/dev/urandom`: Cryptographically secure pseudorandom byte streams via Web Crypto `crypto.getRandomValues()`.
 - **Node Metadata & Permissions**: Octal permissions (`0755`, `0644`, `0777`), owner (`root`, `aether`), group, creation/modification timestamps, and file size tracking.
-- **Reactive Watchers (`vfs.watch`)**: Allows UI components and desktop surfaces to subscribe to directory modifications and auto-refresh when files change.
-- **Trash Bin Integration**: Dedicated trash directory at `/home/aether/.trash` with safe file deletion, restoration, and permanent purge capabilities.
-- **Snapshots & Backups**: Full system snapshot export to downloadable JSON files, and atomic restore with session reload.
+- **Reactive Watchers (`vfs.watch`)**: Subscribes UI components and desktop views to directory changes with automatic updates.
+- **Snapshots & Backups**: Complete filesystem export to downloadable JSON snapshots and one-click atomic restore.
 
 ### 3. aesh (Aether Shell & Terminal Runtime)
-- **Architecture**:
-  - **Lexer**: Tokenizes command lines, correctly preserving quoted strings with embedded whitespace (`"..."`, `'...'`) and backslash escapes (`\n`, `\t`, `\ `, `\"`).
-  - **Recursive Descent AST Parser**: Generates structured Abstract Syntax Trees distinguishing commands, arguments, pipeline chains, conditional operators, and I/O redirection targets.
-- **Execution Engine**:
-  - **Pipelines**: Arbitrary chained commands (`cat data.csv | grep Engineer | wc -l`).
-  - **Output Redirection**: Write to file (`cmd > out.txt`) and append (`cmd >> out.txt`).
-  - **Error Redirection**: Standard error redirection (`cmd 2> err.log`).
-  - **Input Redirection**: Stream file content into stdin (`cmd < input.txt`).
-  - **Logical Operators**: Short-circuit `&&` (AND), `||` (OR), and sequential `;` (SEMI).
-  - **Variable Expansion**: Expands `$HOME`, `$USER`, `$PWD`, `$SHELL`, `$?` (last exit code), `$PID`, and custom environment variables (`${VAR}`).
-  - **Path Globbing**: Wildcard expansion (`*.txt`, `file?.log`) evaluated against the VFS.
-  - **History & Aliases**: In-memory shell history (`history`, `history -c`) and runtime alias substitution (`alias ll="ls -lah"`).
+- **Lexer Tokenizer**: Tokenizes commands, preserving single (`'...'`) and double quotes (`"..."`) with whitespace and backslash escapes (`\n`, `\t`, `\ `, `\"`).
+- **Recursive Descent AST Parser**: Generates syntax trees distinguishing simple commands, arguments, pipeline chains, conditional operators, and redirection targets.
+- **Pipelining & Redirection**:
+  - Pipeline chains: `cat dataset.csv | grep Engineer | wc -l`
+  - Output redirection: `cmd > file.txt` (overwrite) and `cmd >> file.txt` (append)
+  - Error redirection: `cmd 2> error.log`
+  - Input redirection: `cmd < input.txt`
+  - Conditionals: Short-circuit `&&` (AND), `||` (OR), and sequential `;` (SEMI)
+- **Expansion & Path Globbing**: Expands `$HOME`, `$USER`, `$PWD`, `$SHELL`, `$?` (last exit status), `$PID`, environment variables (`${VAR}`), and wildcards (`*.txt`, `file?.log`).
+- **History & Aliases**: Persistent history (`~/.aesh_history`), `history` builtin, and runtime alias substitution (`alias ll="ls -lah"`).
 
 ### 4. AetherWM & Desktop Compositor
 - **Window Management Engine**:
-  - Full 8-direction resizing handles (`n`, `s`, `e`, `w`, `ne`, `nw`, `se`, `sw`).
-  - Dragging with viewport edge clamping.
-  - Window edge snapping (Left 50%, Right 50%, Maximize fullscreen).
-  - Minimize, restore, and dynamic Z-index stacking with active window elevation.
-  - Window constraints enforcement (`minWidth`, `minHeight`, `defaultWidth`, `defaultHeight`).
-- **4 Virtual Workspaces**: Fully isolated virtual desktop workspaces (1 to 4) with independent window assignment and swift switching.
+  - 8-direction resizing (`n`, `s`, `e`, `w`, `ne`, `nw`, `se`, `sw`) with minWidth/minHeight constraints.
+  - Titlebar dragging with edge snap detection and translucent preview box.
+  - Dragging a maximized titlebar smoothly restores and centers the window under the cursor.
+  - Viewport boundary clamping on window resize prevents windows from escaping screen bounds.
+  - Dynamic Z-index elevation and automatic refocusing to topmost window on close.
+- **4 Virtual Workspaces**: Fully isolated virtual desktops (1 to 4) with independent window assignment and instant switching.
 - **Dock / Taskbar**:
   - Configurable dock positions (`bottom`, `top`, `left`).
-  - Running application indicator dots and active window task buttons.
-  - Workspace switcher buttons.
-  - System tray featuring real-time digital clock, quick settings toggles, and notification badge.
-- **Desktop Canvas**:
-  - Live folder binding: automatically mirrors `/home/aether/Desktop` files as desktop icons via reactive VFS watchers.
-  - Drag selection marquee.
-  - Right-click desktop context menu (create folder, create file, open terminal, change wallpaper, system settings).
-  - Wallpaper engine supporting custom wallpaper URLs and gallery presets.
-- **App Launcher (Start Menu)**:
-  - Categorized catalog (Accessories, Development, Games, Internet, Media, System, Utilities).
-  - Instant live filter search.
-  - User identity badge and session power controls.
-- **Command Palette / Quick Runner (`Alt + Space`)**:
-  - System-wide fuzzy search across applications, filesystem files, and shell commands.
-  - Direct execution with keyboard navigation (`Up`, `Down`, `Enter`, `Escape`).
-- **Notification Center & Quick Settings**:
-  - Toast alerts with severity color coding (`info`, `success`, `warning`, `error`).
-  - Slide-out notification history panel.
-  - Quick settings popover with interactive master volume slider, Dark/Light mode toggle, and power actions.
+  - Running application indicators, workspace switcher, and tray clock with quick settings popover.
+- **Desktop Grid**:
+  - Free dragging with 84px $\times$ 96px grid snapping.
+  - Persistent icon positioning saved to `/home/aether/.config/aetheros/desktop_positions.json`.
+  - Right-click contextual actions: Open, Rename, Move to Trash, and Properties modal.
 
 ### 5. AudioService (Procedural Sound Synthesizer)
-AetherOS does not rely on external MP3/WAV assets for desktop sound effects. Instead, it utilizes the native **Web Audio API** to procedurally synthesize rich acoustic tones:
-- **Boot Chime**: Harmonious 4-note chord progression (`F4`, `A4`, `C5`, `F5`) generated with sine oscillators and exponential gain envelopes.
-- **Notification Tone**: Dual-pitch triangle chime (`D5`, `A5`).
-- **Window Snap**: Sine sweep with exponential frequency ramp (`320Hz` to `540Hz`).
-- **Button Click**: Short high-frequency sine tick (`800Hz`).
-- **System Error Tone**: Sawtooth dissonance drop (`180Hz` to `140Hz`).
+AetherOS synthesizes acoustic desktop sounds natively via the **Web Audio API** without external audio file dependencies:
+- **Boot Chime**: Harmonious 4-note chord progression (`F4`, `A4`, `C5`, `F5`) with sine oscillators and exponential gain ramps.
+- **Notification Tone**: Dual-pitch chime (`D5`, `A5`).
+- **Window Snap**: Frequency sweep (`320Hz` to `540Hz`).
+- **Button Click**: Short high-frequency tick (`800Hz`).
+- **Error Tone**: Sawtooth dissonance drop (`180Hz` to `140Hz`).
 
 ### 6. aetherpkg (Package Management Subsystem)
-- **Manifest Architecture (`AetherPackage`)**: Standardized schema defining package ID, name, version, category, size in KB, required permissions, and executable metadata.
-- **Permission Boundary**: Sandboxed permission declarations (`storage:read`, `storage:write`, `network:fetch`, `media:microphone`).
-- **Registry Persistence**: Installed packages and lock states persist in `/var/lib/aetherpkg/installed.json` inside the VFS.
-- **Dual Interfaces**: Operable both through the graphical **Software Center** and the terminal CLI command (`aetherpkg`).
+- **Manifest Architecture**: Schema specifying package ID, name, version, category, size in KB, permissions, and executable metadata.
+- **Permission Sandbox**: Explicit permissions (`storage:read`, `storage:write`, `network:fetch`, `media:microphone`).
+- **Registry Persistence**: Installed packages and lock states persist in `/var/lib/aetherpkg/installed.json`.
+- **Dual Interfaces**: Operable via graphical **Software Center** or command-line `aetherpkg` tool.
 
 ---
 
 ## 💻 Native Application Suite
 
-AetherOS includes 19 desktop applications spanning 7 categories:
+AetherOS includes **19 desktop applications** spanning 7 categories:
 
 ### Core Preinstalled Applications (14)
 
 | Icon | Application | App ID | Executable | Description |
 |:---:|:---|:---|:---|:---|
-| 💻 | **Terminal** | `terminal` | `/bin/aesh` | Multi-tab aesh command shell with ANSI colors, history navigation, and tab completion. |
-| 📁 | **Files** | `file-manager` | `/usr/bin/aether-fm` | Graphical file explorer with breadcrumbs, bookmarks, search, list/grid views, and host file upload. |
+| 💻 | **Terminal** | `terminal` | `/bin/aesh` | Multi-tab aesh command shell with ANSI colors, path autocompletion, and persistent history. |
+| 📁 | **Files** | `file-manager` | `/usr/bin/aether-fm` | Graphical file explorer with breadcrumbs, bookmarks, multi-field sorting, search, and host file export. |
 | 📝 | **Text Editor** | `text-editor` | `/usr/bin/gedit` | Multi-tab editor with line numbers, syntax wrap, find/replace, and direct VFS saving. |
 | 🛠 | **Code Studio** | `code-studio` | `/usr/bin/code` | Multi-file IDE with project tree, code editor, live `<iframe>` sandbox preview, and build console. |
 | 🌐 | **Web Browser** | `web-browser` | `/usr/bin/browser` | Sandboxed browser with tabs, bookmarks, navigation controls, and URL search bar. |
-| ⚙️ | **Settings** | `settings` | `/usr/bin/settings` | Appearance (dark/light, accents, wallpapers), dock position, user accounts, and JSON backups. |
+| ⚙️ | **Settings** | `settings` | `/usr/bin/settings` | Appearance (dark/light, accents, wallpapers), dock position, sound effects, user accounts, and JSON backups. |
 | 📊 | **System Monitor** | `system-monitor` | `/usr/bin/top` | Live process manager with kill actions, real-time Canvas CPU and Memory charts, and service status. |
 | 📦 | **Software Center** | `software-center` | `/usr/bin/software-center` | Graphical frontend for `aetherpkg` with 1-click install, uninstall, and search. |
 | 🧮 | **Calculator** | `calculator` | `/usr/bin/calc` | Standard arithmetic and scientific calculation engine with calculation history log. |
@@ -245,7 +242,7 @@ AetherOS includes 19 desktop applications spanning 7 categories:
 ### Text & Environment Builtins
 - `echo [-n] [-e] [text...]` — Display a line of text with optional escape interpretation.
 - `printf <format> [args...]` — Format and print text according to format specifiers.
-- `clear` — Clear the terminal viewport.
+- `clear` — Clear the terminal viewport (or `Ctrl+L`).
 - `history [-c]` — Display or clear the command execution history.
 - `alias [name=val]` — Define or display command aliases.
 - `unalias <name>` — Remove an existing alias definition.
@@ -258,7 +255,7 @@ AetherOS includes 19 desktop applications spanning 7 categories:
 - `man <command>` — Display manual page for a command.
 - `date [+format]` — Display or format current system date and time.
 - `sleep <seconds>` — Pause shell execution for a specified duration.
-- `seq [first] [step] <last>` — Print a sequence of numbers.
+- `seq [first [step]] <last>` — Print a numeric sequence.
 - `yes [string]` — Output a string repeatedly until terminated.
 - `true` / `false` — Return 0 (success) or 1 (failure) exit status.
 
@@ -282,9 +279,9 @@ AetherOS includes 19 desktop applications spanning 7 categories:
 
 ---
 
-## 🗄 Preloaded Filesystem Skeleton & Assets
+## 🗄 Preloaded Filesystem Skeleton
 
-When booting AetherOS for the first time, a rich virtual filesystem structure is synthesized and persisted:
+When booting AetherOS, a full virtual filesystem structure is synthesized and persisted:
 
 ```text
 /
@@ -298,9 +295,12 @@ When booting AetherOS for the first time, a rich virtual filesystem structure is
 │   └── profile                # Global environment variable initialization
 ├── home/
 │   └── aether/                # Default user home directory
+│       ├── .aesh_history      # Shell history persistence across reloads
 │       ├── .aeshrc            # Shell configuration, aliases (ll, la, update), prompt PS1
 │       ├── .config/           # Application user configurations (aetheros, aesh)
-│       ├── .trash/            # System recycle bin
+│       │   └── aetheros/
+│       │       └── desktop_positions.json # Persisted desktop icon coordinates
+│       ├── .trash/            # System recycle bin (with restore support)
 │       ├── Desktop/           # Desktop folder (mirrored live onto desktop surface)
 │       │   └── Welcome.txt    # Getting started overview
 │       ├── Documents/
@@ -336,26 +336,28 @@ When booting AetherOS for the first time, a rich virtual filesystem structure is
 |---|---|---|
 | `Alt + Space` or `Super + R` | **Command Palette** | Open global quick runner to search apps, files, or execute commands. |
 | `Alt + Tab` | **Cycle Windows** | Switch focus sequentially between open application windows. |
-| `Alt + F4` | **Close Window** | Close the currently focused window. |
+| `Alt + F4` | **Close Window** | Close the currently focused window (refocuses topmost window). |
 | `Super + T` or `Ctrl + Alt + T` | **Launch Terminal** | Open a new instance of the `aesh` Terminal. |
 | `Super + E` | **Launch Files** | Open the Graphical File Manager. |
-| `Super + Left Arrow` | **Snap Window Left** | Snap active window to left 50% half of screen. |
-| `Super + Right Arrow` | **Snap Window Right** | Snap active window to right 50% half of screen. |
+| `Super + Left Arrow` | **Snap Window Left** | Snap active window to left 50% of the screen. |
+| `Super + Right Arrow` | **Snap Window Right** | Snap active window to right 50% of the screen. |
 | `Super + Up Arrow` | **Maximize Window** | Expand active window to occupy the entire workspace. |
 | `Super + Down Arrow` | **Restore / Minimize** | Restore maximized window or minimize to dock. |
+| `Ctrl + L` *(in Terminal)* | **Clear Screen** | Instantly clear active terminal tab history. |
+| `Ctrl + C` *(in Terminal)* | **Interrupt (SIGINT)** | Cancel active command input line. |
 | `Escape` | **Dismiss Overlays** | Close Start Menu, Command Palette, or active modal dialogs. |
 
 ---
 
-## 🚀 Getting Started & Development
+## 🚀 Getting Started
 
 ### Prerequisites
 - **Node.js**: v18.0.0 or later (tested on Node v20 and v24)
-- **npm** or **pnpm** / **yarn**
+- **npm**, **pnpm**, or **yarn**
 
 ### 1. Installation
 ```bash
-# Clone the repository
+# Clone repository
 git clone https://github.com/your-username/AetherOS.git
 cd AetherOS
 
@@ -367,11 +369,11 @@ npm install
 ```bash
 npm run dev
 ```
-Navigate to `http://localhost:5173/` in your browser. The system will run the Linux boot animation sequence and drop you onto the AetherOS desktop.
+Navigate to `http://localhost:5173/`. AetherOS will execute its Linux systemd boot splash sequence and load the desktop environment.
 
 ### 3. Run Automated Tests
 ```bash
-# Execute Vitest test suite
+# Run Vitest test suite (34 unit & integration tests)
 npm test
 ```
 
@@ -383,16 +385,16 @@ npm run lint
 
 ### 5. Production Build & Preview
 ```bash
-# Typecheck and compile production bundle
+# Compile optimized production bundle
 npm run build
 
-# Preview production build locally
+# Preview build locally
 npm run preview
 ```
 
 ---
 
-## 🛠 Developer How-To Guides
+## 🛠 Developer Guides
 
 ### How to Create a New Native Application
 
@@ -405,7 +407,7 @@ npm run preview
      return (
        <div className="flex flex-col h-full bg-[#111827] text-white p-4">
          <h1 className="text-xl font-bold">My New Application</h1>
-         <p className="text-gray-400 mt-2">Running inside AetherOS!</p>
+         <p className="text-gray-400 mt-2">Running natively inside AetherOS!</p>
        </div>
      );
    };
@@ -432,7 +434,7 @@ npm run preview
    ```
 
 3. **Verify Icon Mapping**:
-   If using a newly imported Lucide icon, ensure it is handled in `src/desktop/components/WindowFrame.tsx` and `src/desktop/components/AppLauncher.tsx`.
+   Add the icon to `getAppIcon` inside `src/desktop/components/WindowFrame.tsx` and `src/desktop/components/AppLauncher.tsx`.
 
 ---
 
@@ -454,24 +456,22 @@ npm run preview
      appId: 'my-app', // Must match an existing entry in AppRegistry
    }
    ```
-
-2. Ensure `appId` references a valid registered application in `appRegistry.ts`.
-3. Test installing via CLI: `aetherpkg install my-package` or via the **Software Center**.
+2. Test installation via Terminal: `aetherpkg install my-package` or through the **Software Center**.
 
 ---
 
 ### How to Add a New Shell Command to `aesh`
 
-1. **Define Command in `src/shell/commands/`** (e.g., `fsCommands.ts`, `sysCommands.ts`, or `textCommands.ts`):
+1. **Define Command in `src/shell/commands/`** (e.g. `textCommands.ts`):
    ```ts
-   import type { ShellCommand, ExecutionResult } from '../types';
+   import type { RegisteredCommand, ExecutionResult } from '../types';
 
-   export const myCommand: ShellCommand = {
+   export const myCommand: RegisteredCommand = {
      name: 'greet',
      description: 'Print a personalized welcome greeting',
      usage: 'greet <name>',
      manual: 'greet - Prints a welcome message to standard output.',
-     execute: (args, context, stdin): ExecutionResult => {
+     execute: (args, context): ExecutionResult => {
        if (args.length === 0) {
          return { stdout: '', stderr: 'greet: missing operand\n', exitCode: 1 };
        }
@@ -479,29 +479,27 @@ npm run preview
      },
    };
    ```
-2. The command will be automatically registered when the shell command registry initializes.
-3. Test in Terminal: `greet Aether`.
+2. The command is automatically discovered upon shell initialization. Test in Terminal: `greet Aether`.
 
 ---
 
 ## 🔒 Security Model & Honest Execution Boundaries
 
-AetherOS adheres to an **honest execution model** respecting web standards and browser sandbox boundaries:
-- **Client-Side Sandbox**: AetherOS operates entirely within the browser. It does not claim or simulate arbitrary native host hardware compromise.
-- **Iframe Isolation**: When code is executed in **Code Studio** or rendered in **Web Browser**, previews are isolated inside `<iframe>` sandboxes (`sandbox="allow-scripts"`) ensuring framed code cannot mutate parent OS state.
-- **Network Boundaries**: Commands like `curl`, `wget`, and `ping` perform real HTTP requests using the `fetch` API. Network queries are constrained by browser CORS (Cross-Origin Resource Sharing) policies; `ping` measures actual round-trip latency to reach endpoint domains.
-- **Persistent Storage Isolation**: User documents, configuration keys, and packages are confined to origin-isolated browser IndexedDB stores (`aetheros-vfs-db`), keeping user data private to the origin domain.
+AetherOS adheres strictly to an **honest execution model** respecting browser sandbox boundaries:
+- **Client-Side Sandbox**: Operates entirely within the browser. It never falsely claims or simulates host operating system compromise.
+- **Iframe Isolation**: When code executes in **Code Studio** or renders in **Web Browser**, previews run inside isolated `<iframe>` sandboxes (`sandbox="allow-scripts"`) preventing guest code from mutating host or parent OS state.
+- **Network Boundaries**: `curl`, `wget`, and `ping` perform real HTTP requests via browser `fetch`. Network queries respect browser CORS boundaries; `ping` measures real round-trip latency to remote servers.
+- **Persistent Storage Isolation**: Files, configurations, and packages are confined to origin-isolated browser IndexedDB stores (`aetheros-vfs-db`), ensuring data privacy and persistence.
 
 ---
 
 ## 📚 Audit & Architecture Documentation
 
-- [AGENTS.md](file:///c:/Users/Win/Documents/AetherOS/AGENTS.md) — Comprehensive developer & AI agent handbook detailing coding invariants, subsystem contracts, and contribution workflows.
-- [CODE_REVIEW_REPORT.md](file:///c:/Users/Win/Documents/AetherOS/CODE_REVIEW_REPORT.md) — Thorough audit analyzing 44 identified items across 5 priority tiers with root cause analyses.
+- [AGENTS.md](AGENTS.md) — Developer & AI agent handbook detailing coding invariants, subsystem contracts, and contribution workflows.
+- [CODE_REVIEW_REPORT.md](CODE_REVIEW_REPORT.md) — Thorough audit analyzing 44 identified items across 5 priority tiers with root cause analyses.
 
 ---
 
 ## 📄 License
 
-This project is licensed under the **MIT License**.  
-See the `LICENSE` file for full terms and conditions.
+This project is open-source software licensed under the **[MIT License](LICENSE)**.

@@ -1,9 +1,10 @@
-// AetherOS - System Settings Application
+// AetherOS - System Settings Application with Custom Wallpapers & Audio Controls
 import React, { useState } from 'react';
 import type { AppProps } from '../types';
 import { useSystem } from '../../core/context';
 import { vfs } from '../../vfs/vfs';
 import { virtualKernel } from '../../core/kernel';
+import { audioService } from '../../core/audio';
 import {
   Palette,
   Monitor,
@@ -14,6 +15,10 @@ import {
   RotateCcw,
   Download,
   Upload,
+  Volume2,
+  VolumeX,
+  Play,
+  Image as ImageIcon,
 } from 'lucide-react';
 
 const WALLPAPERS = [
@@ -51,9 +56,12 @@ const ACCENT_COLORS = [
 export const SettingsApp: React.FC<AppProps> = () => {
   const { theme, setTheme, user, setUser, rebootSystem } = useSystem();
   const [activeCategory, setActiveCategory] = useState<
-    'appearance' | 'dock' | 'storage' | 'users' | 'about'
+    'appearance' | 'dock' | 'sound' | 'storage' | 'users' | 'about'
   >('appearance');
   const [displayNameInput, setDisplayNameInput] = useState(user.displayName);
+  const [customWpUrl, setCustomWpUrl] = useState('');
+  const [isMuted, setIsMuted] = useState(audioService.isSoundMuted());
+  const [volume, setVolumeState] = useState(Math.round(audioService.getVolume() * 100));
 
   const handleExportBackup = () => {
     const data = vfs.exportSnapshot();
@@ -96,6 +104,45 @@ export const SettingsApp: React.FC<AppProps> = () => {
     }
   };
 
+  const handleApplyCustomWpUrl = () => {
+    if (!customWpUrl.trim()) return;
+    setTheme({ wallpaper: customWpUrl.trim() });
+  };
+
+  const handleUploadWallpaperFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      try {
+        if (!vfs.exists('/home/aether/Pictures')) {
+          vfs.mkdir('/home/aether/Pictures');
+        }
+        vfs.writeFile(`/home/aether/Pictures/${file.name}`, dataUrl, { isBinary: true });
+      } catch {
+        // Ignore
+      }
+      setTheme({ wallpaper: dataUrl });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleToggleMute = () => {
+    const muted = audioService.toggleMute();
+    setIsMuted(muted);
+  };
+
+  const handleVolumeChange = (newVal: number) => {
+    setVolumeState(newVal);
+    audioService.setVolume(newVal / 100);
+  };
+
+  const handleTestSound = () => {
+    audioService.playNotification();
+  };
+
   return (
     <div className="flex h-full bg-[#111827] text-gray-200 select-none overflow-hidden">
       {/* Category Sidebar */}
@@ -129,6 +176,18 @@ export const SettingsApp: React.FC<AppProps> = () => {
         </button>
 
         <button
+          onClick={() => setActiveCategory('sound')}
+          className={`flex items-center gap-2.5 px-3 py-2 text-xs rounded-lg transition-colors ${
+            activeCategory === 'sound'
+              ? 'bg-cyan-500/20 text-cyan-300 font-semibold'
+              : 'text-gray-300 hover:bg-gray-800'
+          }`}
+        >
+          <Volume2 className="w-4 h-4 text-emerald-400" />
+          <span>Sound & Audio</span>
+        </button>
+
+        <button
           onClick={() => setActiveCategory('storage')}
           className={`flex items-center gap-2.5 px-3 py-2 text-xs rounded-lg transition-colors ${
             activeCategory === 'storage'
@@ -136,7 +195,7 @@ export const SettingsApp: React.FC<AppProps> = () => {
               : 'text-gray-300 hover:bg-gray-800'
           }`}
         >
-          <HardDrive className="w-4 h-4 text-emerald-400" />
+          <HardDrive className="w-4 h-4 text-amber-400" />
           <span>Storage & Backup</span>
         </button>
 
@@ -160,7 +219,7 @@ export const SettingsApp: React.FC<AppProps> = () => {
               : 'text-gray-300 hover:bg-gray-800'
           }`}
         >
-          <Info className="w-4 h-4 text-amber-400" />
+          <Info className="w-4 h-4 text-pink-400" />
           <span>About AetherOS</span>
         </button>
       </div>
@@ -245,6 +304,36 @@ export const SettingsApp: React.FC<AppProps> = () => {
                   </div>
                 ))}
               </div>
+
+              {/* Custom Wallpaper Section */}
+              <div className="pt-2 border-t border-gray-700/60 space-y-2">
+                <span className="text-xs text-gray-300 font-medium">Custom Wallpaper</span>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="https://example.com/wallpaper.jpg"
+                    value={customWpUrl}
+                    onChange={(e) => setCustomWpUrl(e.target.value)}
+                    className="flex-1 bg-[#111827] border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white placeholder-gray-500 outline-none focus:border-cyan-500"
+                  />
+                  <button
+                    onClick={handleApplyCustomWpUrl}
+                    className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-medium"
+                  >
+                    Apply URL
+                  </button>
+                  <label className="px-3 py-1.5 rounded-lg bg-gray-700 hover:bg-gray-600 text-white text-xs font-medium cursor-pointer flex items-center gap-1.5">
+                    <ImageIcon className="w-3.5 h-3.5" />
+                    <span>Upload</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleUploadWallpaperFile}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+              </div>
             </div>
 
             {/* Transparency & Blur */}
@@ -256,7 +345,7 @@ export const SettingsApp: React.FC<AppProps> = () => {
                   type="checkbox"
                   checked={theme.blur}
                   onChange={(e) => setTheme({ blur: e.target.checked, transparency: e.target.checked })}
-                  className="rounded text-cyan-500 w-4 h-4"
+                  className="rounded text-cyan-500 w-4 h-4 cursor-pointer"
                 />
               </div>
             </div>
@@ -287,6 +376,61 @@ export const SettingsApp: React.FC<AppProps> = () => {
                     {pos}
                   </button>
                 ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* SOUND & AUDIO */}
+        {activeCategory === 'sound' && (
+          <div className="space-y-6 max-w-xl">
+            <div>
+              <h2 className="text-lg font-bold text-white mb-1">Sound & Audio</h2>
+              <p className="text-xs text-gray-400">Synthesizer volume and system sound effects.</p>
+            </div>
+
+            <div className="bg-[#1e293b] p-4 rounded-xl border border-gray-700/60 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-sm font-semibold text-white block">System Sound Effects</span>
+                  <span className="text-xs text-gray-400">Boot chime, window snapping, alerts</span>
+                </div>
+                <button
+                  onClick={handleToggleMute}
+                  className={`p-2 rounded-lg border flex items-center gap-1.5 text-xs font-semibold ${
+                    !isMuted
+                      ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400'
+                      : 'border-gray-700 bg-gray-800 text-gray-400'
+                  }`}
+                >
+                  {!isMuted ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+                  <span>{!isMuted ? 'Enabled' : 'Muted'}</span>
+                </button>
+              </div>
+
+              <div className="space-y-2 pt-2 border-t border-gray-700/60">
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-300">Master Volume</span>
+                  <span className="font-mono text-cyan-400">{volume}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={volume}
+                  onChange={(e) => handleVolumeChange(parseInt(e.target.value, 10))}
+                  className="w-full accent-cyan-400 cursor-pointer"
+                />
+              </div>
+
+              <div className="pt-2">
+                <button
+                  onClick={handleTestSound}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-700 hover:bg-gray-600 text-white text-xs font-medium"
+                >
+                  <Play className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Test Notification Tone</span>
+                </button>
               </div>
             </div>
           </div>
@@ -349,47 +493,49 @@ export const SettingsApp: React.FC<AppProps> = () => {
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded text-xs font-semibold mt-2"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                <span>Reset AetherOS</span>
+                <span>Erase All Data & Reset</span>
               </button>
             </div>
           </div>
         )}
 
-        {/* USER ACCOUNTS */}
+        {/* USERS */}
         {activeCategory === 'users' && (
           <div className="space-y-6 max-w-xl">
             <div>
-              <h2 className="text-lg font-bold text-white mb-1">User Profile</h2>
-              <p className="text-xs text-gray-400">Manage virtual local user account details.</p>
+              <h2 className="text-lg font-bold text-white mb-1">User Accounts</h2>
+              <p className="text-xs text-gray-400">Manage user profile information and permissions.</p>
             </div>
 
             <div className="bg-[#1e293b] p-4 rounded-xl border border-gray-700/60 space-y-4">
               <div className="flex items-center gap-4">
-                <div className="w-16 h-16 rounded-full bg-cyan-500/20 border-2 border-cyan-400 flex items-center justify-center text-cyan-300">
-                  <User className="w-8 h-8" />
+                <div className="w-14 h-14 rounded-full bg-cyan-500/20 border-2 border-cyan-400 flex items-center justify-center text-cyan-300 font-bold text-xl">
+                  {user.displayName.charAt(0)}
                 </div>
                 <div>
-                  <h3 className="font-bold text-white">{user.displayName}</h3>
-                  <span className="text-xs text-gray-400 font-mono">@{user.username} ({user.role})</span>
+                  <h3 className="font-semibold text-white">{user.displayName}</h3>
+                  <p className="text-xs text-gray-400">
+                    @{user.username} &bull; <span className="text-cyan-400 uppercase">{user.role}</span>
+                  </p>
                 </div>
               </div>
 
-              <div className="space-y-2 text-xs">
-                <label className="block text-gray-300">Display Name</label>
-                <div className="flex gap-2">
+              <div className="space-y-3 pt-2 border-t border-gray-700/60">
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Display Name</label>
                   <input
                     type="text"
                     value={displayNameInput}
                     onChange={(e) => setDisplayNameInput(e.target.value)}
-                    className="flex-1 bg-[#111827] border border-gray-700 rounded px-3 py-1.5 text-white outline-none"
+                    className="w-full bg-[#111827] border border-gray-700 rounded-lg p-2 text-xs text-white outline-none focus:border-cyan-500"
                   />
-                  <button
-                    onClick={() => setUser({ displayName: displayNameInput })}
-                    className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded font-medium"
-                  >
-                    Save
-                  </button>
                 </div>
+                <button
+                  onClick={() => setUser({ displayName: displayNameInput })}
+                  className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-medium"
+                >
+                  Save Changes
+                </button>
               </div>
             </div>
           </div>
@@ -400,33 +546,37 @@ export const SettingsApp: React.FC<AppProps> = () => {
           <div className="space-y-6 max-w-xl">
             <div>
               <h2 className="text-lg font-bold text-white mb-1">About AetherOS</h2>
-              <p className="text-xs text-gray-400">System architecture & release specifications.</p>
+              <p className="text-xs text-gray-400">High-fidelity web-standard virtual operating system.</p>
             </div>
 
-            <div className="bg-[#1e293b] p-4 rounded-xl border border-gray-700/60 space-y-3 font-mono text-xs">
+            <div className="bg-[#1e293b] p-4 rounded-xl border border-gray-700/60 space-y-3 text-xs text-gray-300">
               <div className="flex justify-between py-1 border-b border-gray-700/60">
-                <span className="text-gray-400">OS Name:</span>
-                <span className="text-white font-semibold">AetherOS 1.0 LTS (Quantum Breeze)</span>
+                <span>OS Name:</span>
+                <span className="font-semibold text-white">AetherOS Linux</span>
               </div>
               <div className="flex justify-between py-1 border-b border-gray-700/60">
-                <span className="text-gray-400">Virtual Kernel:</span>
-                <span className="text-cyan-400">AetherCore 6.8.0-aether</span>
+                <span>Version:</span>
+                <span className="font-mono text-cyan-400">1.1.0 (Rolling Release)</span>
               </div>
               <div className="flex justify-between py-1 border-b border-gray-700/60">
-                <span className="text-gray-400">Desktop Environment:</span>
-                <span className="text-white">Aether Desktop</span>
+                <span>Kernel:</span>
+                <span className="font-mono text-cyan-400">{virtualKernel.getKernelVersion()}</span>
               </div>
               <div className="flex justify-between py-1 border-b border-gray-700/60">
-                <span className="text-gray-400">Default Shell:</span>
-                <span className="text-white">aesh 1.0</span>
+                <span>Architecture:</span>
+                <span className="font-mono text-white">x86_64-browser-wasm</span>
               </div>
               <div className="flex justify-between py-1 border-b border-gray-700/60">
-                <span className="text-gray-400">Package Manager:</span>
-                <span className="text-white">aetherpkg</span>
+                <span>Window Manager:</span>
+                <span className="font-mono text-white">AetherWM v1.1 Compositor</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-gray-700/60">
+                <span>Default Shell:</span>
+                <span className="font-mono text-white">aesh (Aether Shell)</span>
               </div>
               <div className="flex justify-between py-1">
-                <span className="text-gray-400">System Uptime:</span>
-                <span className="text-emerald-400">{virtualKernel.getFormattedUptime()}</span>
+                <span>Storage Engine:</span>
+                <span className="font-mono text-emerald-400">Browser IndexedDB Engine</span>
               </div>
             </div>
           </div>

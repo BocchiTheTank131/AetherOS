@@ -249,6 +249,10 @@ export class VirtualKernel {
     return +(total).toFixed(1);
   }
 
+  public getKernelVersion(): string {
+    return '6.8.0-aether';
+  }
+
   public shutdown(): void {
     if (this.statsTimer) {
       clearInterval(this.statsTimer);

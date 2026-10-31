@@ -28,6 +28,7 @@ import {
   Palette,
   CloudRain,
   Mic,
+  Clock,
 } from 'lucide-react';
 
 export const AppLauncher: React.FC = () => {
@@ -40,10 +41,12 @@ export const AppLauncher: React.FC = () => {
     rebootSystem,
     shutdownSystem,
     theme,
+    recentApps,
   } = useSystem();
 
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  const [selectedIndex, setSelectedIndex] = useState<number>(-1);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -71,6 +74,11 @@ export const AppLauncher: React.FC = () => {
     }
     return () => window.removeEventListener('mousedown', handleClickOutside);
   }, [appLauncherOpen, setAppLauncherOpen]);
+
+  // Reset selection index when search or category changes
+  useEffect(() => {
+    setSelectedIndex(search ? 0 : -1);
+  }, [search, selectedCategory]);
 
   if (!appLauncherOpen) return null;
 
@@ -123,6 +131,11 @@ export const AppLauncher: React.FC = () => {
   const allApps = appRegistry.getAll();
   const categories = ['All', 'System', 'Accessories', 'Development', 'Media', 'Internet', 'Games'];
 
+  const recentAppDefs = recentApps
+    .map((id) => appRegistry.get(id))
+    .filter((app): app is AppDefinition => !!app)
+    .slice(0, 4);
+
   const filteredApps = allApps.filter((app) => {
     if (selectedCategory !== 'All' && app.category !== selectedCategory) return false;
     if (search) {
@@ -163,6 +176,24 @@ export const AppLauncher: React.FC = () => {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setSelectedIndex((prev) => Math.min(filteredApps.length - 1, prev + 1));
+              } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setSelectedIndex((prev) => Math.max(0, prev - 1));
+              } else if (e.key === 'Enter') {
+                e.preventDefault();
+                const target =
+                  selectedIndex >= 0 && selectedIndex < filteredApps.length
+                    ? filteredApps[selectedIndex]
+                    : filteredApps[0];
+                if (target) {
+                  handleLaunch(target);
+                }
+              }
+            }}
             placeholder="Type to search apps, files, commands..."
             className="w-full bg-transparent text-white text-xs outline-none placeholder-gray-400 font-sans"
           />
@@ -190,29 +221,58 @@ export const AppLauncher: React.FC = () => {
 
         {/* App Grid */}
         <div className="flex-1 p-3 overflow-y-auto">
+          {/* Recent Applications Row */}
+          {!search && selectedCategory === 'All' && recentAppDefs.length > 0 && (
+            <div className="mb-3 pb-2 border-b border-gray-800">
+              <div className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                <Clock className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Recent Applications</span>
+              </div>
+              <div className="flex gap-2">
+                {recentAppDefs.map((app) => (
+                  <button
+                    key={app.id}
+                    onClick={() => handleLaunch(app)}
+                    className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-gray-800/80 hover:bg-cyan-500/20 border border-gray-700/60 transition-colors text-xs text-gray-200"
+                  >
+                    <div className="w-4 h-4">{getAppIcon(app.icon)}</div>
+                    <span className="truncate max-w-[85px]">{app.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {filteredApps.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-gray-500 text-xs">
               No matching applications found
             </div>
           ) : (
             <div className="grid grid-cols-3 gap-2">
-              {filteredApps.map((app) => (
-                <button
-                  key={app.id}
-                  onClick={() => handleLaunch(app)}
-                  className="flex flex-col items-center text-center p-3 rounded-xl hover:bg-gray-800/60 transition-colors group border border-transparent hover:border-gray-700/60"
-                >
-                  <div className="p-2.5 bg-gray-800/80 rounded-xl mb-2 group-hover:bg-cyan-500/20 transition-colors shadow">
-                    {getAppIcon(app.icon)}
-                  </div>
-                  <span className="text-xs font-semibold text-gray-200 group-hover:text-cyan-300 truncate max-w-[120px]">
-                    {app.name}
-                  </span>
-                  <span className="text-[10px] text-gray-400 truncate max-w-[120px] mt-0.5">
-                    {app.description}
-                  </span>
-                </button>
-              ))}
+              {filteredApps.map((app, idx) => {
+                const isSelected = selectedIndex === idx;
+                return (
+                  <button
+                    key={app.id}
+                    onClick={() => handleLaunch(app)}
+                    className={`flex flex-col items-center text-center p-3 rounded-xl transition-all group border ${
+                      isSelected
+                        ? 'border-cyan-400 bg-cyan-500/20 shadow-md ring-1 ring-cyan-400/50'
+                        : 'border-transparent hover:bg-gray-800/60 hover:border-gray-700/60'
+                    }`}
+                  >
+                    <div className="p-2.5 bg-gray-800/80 rounded-xl mb-2 group-hover:bg-cyan-500/20 transition-colors shadow">
+                      {getAppIcon(app.icon)}
+                    </div>
+                    <span className="text-xs font-semibold text-gray-200 group-hover:text-cyan-300 truncate max-w-[120px]">
+                      {app.name}
+                    </span>
+                    <span className="text-[10px] text-gray-400 truncate max-w-[120px] mt-0.5">
+                      {app.description}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
