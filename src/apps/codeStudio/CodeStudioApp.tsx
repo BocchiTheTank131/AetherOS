@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import type { AppProps } from '../types';
 import { vfs } from '../../vfs/vfs';
+import { aetherRuntime } from '../../runtime/AetherRuntime';
 import {
   Play,
   RefreshCw,
@@ -109,6 +110,21 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
     generatePreview();
   };
 
+  const handleRunJs = async () => {
+    handleSaveAll();
+    setLogs((prev) => [...prev, `[Run ${new Date().toLocaleTimeString()}] Executing ${activeFileName} in Aether Secure Runtime...`]);
+    try {
+      const res = await aetherRuntime.execute(currentContent, {
+        commandName: `js ${activeFileName}`,
+        onStdout: (chunk) => setLogs((prev) => [...prev, chunk.trimEnd()]),
+        onStderr: (chunk) => setLogs((prev) => [...prev, `[Error] ${chunk.trimEnd()}`]),
+      });
+      setLogs((prev) => [...prev, `[Finished] Process exited with code ${res.exitCode} (${res.durationMs}ms)`]);
+    } catch (err) {
+      setLogs((prev) => [...prev, `[Fatal] Execution failed: ${(err as Error).message}`]);
+    }
+  };
+
   const currentContent = fileContents[activeFile] || '';
   const isDirty = currentContent !== savedContents[activeFile];
   const activeFileName = activeFile.split('/').pop() || '';
@@ -124,6 +140,16 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
         </div>
 
         <div className="flex items-center gap-1.5">
+          {activeFile.endsWith('.js') && (
+            <button
+              onClick={handleRunJs}
+              className="flex items-center gap-1 px-2.5 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded text-xs font-medium"
+              title="Run in Aether Secure Runtime"
+            >
+              <Play className="w-3.5 h-3.5" />
+              <span>Run in Runtime</span>
+            </button>
+          )}
           <button
             onClick={handleSaveAll}
             className="flex items-center gap-1 px-2.5 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-xs font-medium"

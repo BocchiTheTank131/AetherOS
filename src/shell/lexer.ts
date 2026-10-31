@@ -22,6 +22,12 @@ export function tokenize(input: string): Token[] {
     }
 
     // Two-character operators
+    if (ch === ';' && input[i + 1] === ';') {
+      tokens.push({ type: 'SEMICOLON', value: ';;' });
+      i += 2;
+      continue;
+    }
+
     if (ch === '&' && input[i + 1] === '&') {
       tokens.push({ type: 'AND', value: '&&' });
       i += 2;
@@ -47,6 +53,12 @@ export function tokenize(input: string): Token[] {
     }
 
     // Single-character operators
+    if (ch === '&') {
+      tokens.push({ type: 'AMPERSAND', value: '&' });
+      i++;
+      continue;
+    }
+
     if (ch === '|') {
       tokens.push({ type: 'PIPE', value: '|' });
       i++;
@@ -125,7 +137,7 @@ export function tokenize(input: string): Token[] {
           c === '>' ||
           c === '<' ||
           c === ';' ||
-          (c === '&' && input[i + 1] === '&')
+          c === '&'
         ) {
           break;
         } else {

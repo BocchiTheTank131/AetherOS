@@ -26,6 +26,8 @@ export function createDefaultShellContext(user = 'aether'): ShellContext {
       '..': 'cd ..',
       '...': 'cd ../..',
     },
+    functions: {},
+    jobs: new Map(),
     history: [],
     exitCode: 0,
     user,
@@ -34,17 +36,57 @@ export function createDefaultShellContext(user = 'aether'): ShellContext {
 }
 
 /**
- * Expand variables like $VAR, ${VAR}, $?
+ * Expand variables like $VAR, ${VAR}, $?, $#, $@, $*, $$, $0..$9, ${VAR:-default}
  */
 export function expandVariables(text: string, context: ShellContext): string {
-  // Regex to match $VAR, ${VAR}, or $?
-  return text.replace(/\$(?:\{([a-zA-Z0-9_?]+)\}|([a-zA-Z0-9_?]+))/g, (_, br, bare) => {
-    const varName = br || bare;
-    if (varName === '?') {
-      return String(context.exitCode);
+  return text.replace(
+    /\$(?:\{([^}]+)\}|([a-zA-Z0-9_?#@*$]+))/g,
+    (_, braced, bare) => {
+      const expr = braced || bare;
+      if (!expr) return '$';
+
+      // Default value expansion ${VAR:-default}
+      if (expr.includes(':-')) {
+        const idx = expr.indexOf(':-');
+        const varName = expr.slice(0, idx);
+        const defVal = expr.slice(idx + 2);
+        const val = context.env[varName];
+        return val !== undefined && val !== '' ? val : defVal;
+      }
+
+      // Alternate value expansion ${VAR:+alternate}
+      if (expr.includes(':+')) {
+        const idx = expr.indexOf(':+');
+        const varName = expr.slice(0, idx);
+        const altVal = expr.slice(idx + 2);
+        const val = context.env[varName];
+        return val !== undefined && val !== '' ? altVal : '';
+      }
+
+      if (expr === '?') {
+        return String(context.exitCode);
+      }
+      if (expr === '#') {
+        return String(context.positionalArgs ? context.positionalArgs.length : 0);
+      }
+      if (expr === '@' || expr === '*') {
+        return (context.positionalArgs || []).join(' ');
+      }
+      if (expr === '$') {
+        return '100'; // Default virtual PID
+      }
+      if (expr === '0') {
+        return context.scriptName || 'aesh';
+      }
+      if (/^\d+$/.test(expr)) {
+        const num = parseInt(expr, 10);
+        const args = context.positionalArgs || [];
+        return num > 0 && num <= args.length ? args[num - 1] : '';
+      }
+
+      return context.env[expr] !== undefined ? context.env[expr] : '';
     }
-    return context.env[varName] !== undefined ? context.env[varName] : '';
-  });
+  );
 }
 
 /**

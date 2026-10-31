@@ -219,9 +219,13 @@ export const sysCommands: RegisteredCommand[] = [
       const mem = virtualKernel.getTotalMemoryUsage();
       const totalMb = Math.round(mem.totalKb / 1024);
       const usedMb = Math.round(mem.usedKb / 1024);
-      const freeMb = totalMb - usedMb;
+      const freeMb = Math.max(0, totalMb - usedMb);
+      const sourceNote =
+        mem.source === 'performance.memory'
+          ? 'Host browser JS heap limits'
+          : 'Virtual process & VFS memory allocation';
 
-      const out = `               total        used        free      shared  buff/cache   available\nMem:           ${totalMb}Mi       ${usedMb}Mi       ${freeMb}Mi        16Mi        64Mi       ${freeMb}Mi\nSwap:              0B          0B          0B\n`;
+      const out = `               total        used        free      shared  buff/cache   available\nMem:           ${totalMb}Mi       ${usedMb}Mi       ${freeMb}Mi        16Mi        64Mi       ${freeMb}Mi\nSwap:              0B          0B          0B\n# Memory telemetry source: ${sourceNote}\n`;
       return { stdout: out, stderr: '', exitCode: 0 };
     },
   },

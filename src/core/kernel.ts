@@ -64,21 +64,39 @@ export class VirtualKernel {
   }
 
   private startResourceSampler() {
-    // Periodically update process CPU and memory metrics
+    // Periodically update process CPU and memory metrics based on actual execution state
     this.statsTimer = setInterval(() => {
       for (const proc of this.processes.values()) {
         if (proc.state === 'running') {
-          // Dynamic realistic variation
-          const baseCpu = proc.pid < 10 ? 0.2 : 0.8;
-          const jitter = (Math.random() - 0.5) * 0.4;
-          proc.cpuPercent = Math.max(0.0, +(baseCpu + jitter).toFixed(1));
-          
-          // Realistic memory based on process type
-          const memJitter = Math.floor((Math.random() - 0.5) * 64);
-          proc.memoryKb = Math.max(1024, proc.memoryKb + memJitter);
+          // Honest CPU attribution: active workers/runtimes get work ticks, compositor gets idle render ticks, others 0.0%
+          if (proc.worker) {
+            proc.cpuPercent = 1.5;
+          } else if (proc.pid === 3) {
+            // Desktop compositor baseline
+            proc.cpuPercent = 0.2;
+          } else if (proc.pid <= 2) {
+            proc.cpuPercent = 0.0;
+          } else {
+            proc.cpuPercent = 0.1;
+          }
+
+          // Memory attribution according to process role and active worker state
+          if (proc.worker) {
+            proc.memoryKb = 14336;
+          } else if (proc.appId) {
+            proc.memoryKb = 8192;
+          } else if (proc.pid === 3) {
+            proc.memoryKb = 16384;
+          } else if (proc.pid <= 2) {
+            proc.memoryKb = proc.pid === 1 ? 4096 : 2048;
+          } else {
+            proc.memoryKb = 2048;
+          }
+        } else {
+          proc.cpuPercent = 0.0;
         }
       }
-    }, 3000);
+    }, 2000);
   }
 
   /**
@@ -95,6 +113,7 @@ export class VirtualKernel {
     cleanup?: () => void;
   }): Process {
     const pid = this.nextPid++;
+    const isApp = Boolean(options.appId || options.windowId);
     const proc: Process = {
       pid,
       ppid: options.ppid ?? 1,
@@ -104,8 +123,8 @@ export class VirtualKernel {
       user: options.user ?? 'aether',
       state: 'running',
       startTime: Date.now(),
-      cpuPercent: +(Math.random() * 1.5 + 0.5).toFixed(1),
-      memoryKb: Math.floor(Math.random() * 8192 + 8192),
+      cpuPercent: 0.1,
+      memoryKb: isApp ? 8192 : 2048,
       windowId: options.windowId,
       appId: options.appId,
       cleanup: options.cleanup,
@@ -227,14 +246,33 @@ export class VirtualKernel {
     return `${mins}m ${secs}s`;
   }
 
-  public getTotalMemoryUsage(): { usedKb: number; totalKb: number; percent: number } {
+  public getTotalMemoryUsage(): {
+    usedKb: number;
+    totalKb: number;
+    percent: number;
+    source: 'performance.memory' | 'virtual_heap';
+  } {
+    if (typeof performance !== 'undefined' && (performance as any)?.memory) {
+      const perfMem = (performance as any).memory;
+      const usedKb = Math.round(perfMem.usedJSHeapSize / 1024);
+      const totalKb = Math.round(perfMem.jsHeapSizeLimit / 1024);
+      const percent = Math.min(100, Math.max(1, Math.round((usedKb / totalKb) * 100)));
+      return { usedKb, totalKb, percent, source: 'performance.memory' };
+    }
+
     let usedKb = 0;
     for (const proc of this.processes.values()) {
       usedKb += proc.memoryKb;
     }
-    const totalKb = 1024 * 1024; // 1GB simulated virtual total
-    const percent = Math.min(100, Math.round((usedKb / totalKb) * 100));
-    return { usedKb, totalKb, percent };
+    const totalKb = 512 * 1024; // 512MB virtual heap baseline
+    const percent = Math.min(100, Math.max(1, Math.round((usedKb / totalKb) * 100)));
+    return { usedKb, totalKb, percent, source: 'virtual_heap' };
+  }
+
+  public getMemorySource(): 'performance.memory' | 'virtual_heap' {
+    return typeof performance !== 'undefined' && Boolean((performance as any)?.memory)
+      ? 'performance.memory'
+      : 'virtual_heap';
   }
 
   public getAverageCpuUsage(): number {

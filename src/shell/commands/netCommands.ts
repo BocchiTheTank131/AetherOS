@@ -5,7 +5,7 @@ import { vfs } from '../../vfs/vfs';
 export const netCommands: RegisteredCommand[] = [
   {
     name: 'ping',
-    description: 'Send ICMP ECHO_REQUEST to network hosts (HTTP reachability approximation in browser)',
+    description: 'Test network host reachability using HTTP probe (browser sandbox mode)',
     usage: 'ping [-c count] <host>',
     execute: async (args): Promise<ExecutionResult> => {
       let count = 4;
@@ -26,35 +26,36 @@ export const netCommands: RegisteredCommand[] = [
 
       const isLocal = host === 'localhost' || host === '127.0.0.1' || host === 'aetheros';
       const lines = [
-        `PING ${host} (${isLocal ? '127.0.0.1' : host}): 56 data bytes [HTTP-Reachability Mode]`,
+        `PING ${host} [Browser HTTP Reachability Mode - Raw ICMP not available in web sandboxes]`,
       ];
-      let receivedCount = 0;
+      let reachableCount = 0;
 
       for (let seq = 1; seq <= count; seq++) {
         const start = performance.now();
         if (isLocal) {
-          await new Promise((r) => setTimeout(r, 8 + Math.random() * 5));
+          await new Promise((r) => setTimeout(r, 5 + Math.random() * 5));
           const time = (performance.now() - start).toFixed(2);
-          lines.push(`64 bytes from 127.0.0.1: icmp_seq=${seq} ttl=64 time=${time} ms`);
-          receivedCount++;
+          lines.push(`seq=${seq} target=127.0.0.1 probe=loopback status=reachable time=${time} ms`);
+          reachableCount++;
         } else {
           try {
             const url = host.startsWith('http') ? host : `https://${host}`;
             await fetch(url, { method: 'HEAD', mode: 'no-cors', signal: AbortSignal.timeout(2000) });
             const time = (performance.now() - start).toFixed(2);
-            lines.push(`64 bytes from ${host}: icmp_seq=${seq} ttl=56 time=${time} ms`);
-            receivedCount++;
+            lines.push(`seq=${seq} target=${host} probe=HTTP-HEAD status=reachable (opaque/no-cors) time=${time} ms`);
+            reachableCount++;
           } catch {
-            lines.push(`Request timeout for icmp_seq ${seq}`);
+            lines.push(`seq=${seq} target=${host} probe=HTTP-HEAD status=unreachable (timeout/network error)`);
           }
           await new Promise((r) => setTimeout(r, 200));
         }
       }
 
-      const lossPct = count > 0 ? Math.round(((count - receivedCount) / count) * 100) : 0;
-      lines.push(`--- ${host} ping statistics ---`);
-      lines.push(`${count} packets transmitted, ${receivedCount} received, ${lossPct}% packet loss`);
-      return { stdout: lines.join('\n') + '\n', stderr: '', exitCode: receivedCount > 0 ? 0 : 1 };
+      const lossPct = count > 0 ? Math.round(((count - reachableCount) / count) * 100) : 0;
+      lines.push(`--- ${host} HTTP reachability statistics ---`);
+      lines.push(`${count} probes transmitted, ${reachableCount} reachable, ${lossPct}% probe loss`);
+      lines.push(`Note: Telemetry reflects HTTP reachability via browser fetch. CORS limits raw IP layer headers.`);
+      return { stdout: lines.join('\n') + '\n', stderr: '', exitCode: reachableCount > 0 ? 0 : 1 };
     },
   },
   {

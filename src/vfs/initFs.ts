@@ -70,7 +70,56 @@ export function createDefaultFileSystem(): Map<string, VFSNode> {
   addDir('/home/aether/Pictures', 'aether', 0o755);
   addDir('/home/aether/Videos', 'aether', 0o755);
   addDir('/home/aether/Projects', 'aether', 0o755);
-  addDir('/home/aether/Projects/web-demo', 'aether', 0o755);
+  addDir('/home/aether/Projects/demo', 'aether', 0o755);
+  addDir('/home/aether/bin', 'aether', 0o755);
+
+  addFile(
+    '/bin/aesh',
+    '#!/bin/aesh\n# AetherOS Default Shell Binary Placeholder\n',
+    'root',
+    0o755
+  );
+
+  addFile(
+    '/home/aether/Projects/demo/main.js',
+    `// AetherOS Runtime Demo
+console.log("Hello from AetherOS Secure Runtime!");
+try {
+  const text = await aether.fs.readText("/home/aether/Documents/GettingStarted.md");
+  console.log(\`Successfully read GettingStarted.md (\${text.length} characters)\`);
+  await aether.fs.writeText(
+    "/home/aether/Documents/runtime_output.txt",
+    \`[AetherOS Runtime Output]\\nProcessed at \${new Date().toISOString()}\\nDocument snippet:\\n\${text.slice(0, 80)}...\\n\`
+  );
+  console.log("Output successfully saved to /home/aether/Documents/runtime_output.txt");
+} catch (err) {
+  console.error("Runtime filesystem error:", err.message);
+}
+`,
+    'aether',
+    0o755
+  );
+
+  addFile(
+    '/home/aether/Projects/demo/script.sh',
+    `#!/bin/aesh
+echo "Starting AetherOS script demonstration..."
+
+for i in 1 2 3 4 5; do
+    echo "Processing batch item $i"
+done
+
+if test -f /home/aether/Desktop/Welcome.txt; then
+    echo "System verification: Welcome.txt detected."
+else
+    echo "Warning: Welcome.txt missing."
+fi
+
+echo "Script complete."
+`,
+    'aether',
+    0o755
+  );
   addDir('/home/aether/.config', 'aether', 0o700);
   addDir('/home/aether/.config/aetheros', 'aether', 0o700);
   addDir('/home/aether/.config/aesh', 'aether', 0o700);

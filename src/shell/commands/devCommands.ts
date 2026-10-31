@@ -1,6 +1,7 @@
 // AetherOS - Data & Developer Utilities Shell Commands
 import type { RegisteredCommand, ExecutionResult } from '../types';
 import { vfs } from '../../vfs/vfs';
+import { aetherRuntime } from '../../runtime/AetherRuntime';
 
 // Real RFC 1321 MD5 calculation
 export function computeMd5(str: string): string {
@@ -277,13 +278,15 @@ export const devCommands: RegisteredCommand[] = [
   },
   {
     name: 'js',
-    description: 'Execute JavaScript code in sandboxed runtime',
+    description: 'Execute JavaScript code in secure isolated runtime',
     usage: 'js [file | -e code]',
-    execute: (args, context, stdin): ExecutionResult => {
+    execute: async (args, context, stdin): Promise<ExecutionResult> => {
       let code = stdin;
+      let scriptName = 'eval';
       if (args[0] === '-e' && args[1]) {
         code = args.slice(1).join(' ');
       } else if (args[0]) {
+        scriptName = args[0];
         try {
           code = vfs.readFile(vfs.resolve(context.cwd, args[0]));
         } catch {
@@ -295,62 +298,32 @@ export const devCommands: RegisteredCommand[] = [
         return { stdout: '', stderr: '', exitCode: 0 };
       }
 
-      const logs: string[] = [];
-      const sandbox: Record<string, unknown> = {
-        console: {
-          log: (...a: unknown[]) => logs.push(a.map(String).join(' ')),
-          warn: (...a: unknown[]) => logs.push('[WARN] ' + a.map(String).join(' ')),
-          error: (...a: unknown[]) => logs.push('[ERROR] ' + a.map(String).join(' ')),
-        },
-        Math,
-        JSON,
-        Date,
-        Array,
-        Object,
-        String,
-        Number,
-        Boolean,
-        RegExp,
-        Map,
-        Set,
-        parseInt,
-        parseFloat,
-        isNaN,
-        isFinite,
+      const res = await aetherRuntime.execute(code, {
+        commandName: `js ${scriptName}`,
+        args: args.slice(1),
+      });
+
+      return {
+        stdout: res.stdout,
+        stderr: res.stderr,
+        exitCode: res.exitCode,
       };
-
-      const blockedGlobals = [
-        'window', 'document', 'globalThis', 'top', 'parent', 'self',
-        'frames', 'indexedDB', 'localStorage', 'sessionStorage',
-        'fetch', 'XMLHttpRequest', 'WebSocket', 'Worker', 'SharedWorker',
-        'ServiceWorker', 'location', 'navigator', 'history', 'caches'
-      ];
-
-      for (const blocked of blockedGlobals) {
-        sandbox[blocked] = undefined;
-      }
-
-      try {
-        // Safe evaluation with shadowed globals and strict mode
-        const paramNames = Object.keys(sandbox);
-        const paramValues = Object.values(sandbox);
-        const fn = new Function(...paramNames, `"use strict";\n${code}`);
-        const result = fn(...paramValues);
-        if (result !== undefined && logs.length === 0) {
-          logs.push(String(result));
-        }
-        return { stdout: logs.join('\n') + (logs.length ? '\n' : ''), stderr: '', exitCode: 0 };
-      } catch (err) {
-        const errPrefix = (err as Error).name || 'Error';
-        return { stdout: logs.join('\n') + (logs.length ? '\n' : ''), stderr: `${errPrefix}: ${(err as Error).message}\n`, exitCode: 1 };
-      }
     },
   },
   {
     name: 'node',
-    description: 'Node.js compatible runtime wrapper',
-    usage: 'node [file | -e code]',
-    execute: (args, context, stdin) => {
+    description: 'AetherOS JavaScript Runtime (Node.js compatibility notice)',
+    usage: 'node [-v] [file | -e code]',
+    execute: async (args, context, stdin): Promise<ExecutionResult> => {
+      if (args[0] === '-v' || args[0] === '--version') {
+        return {
+          stdout:
+            'v20.12.0 (aether-runtime shim)\nNote: Native Node.js C++ bindings and built-ins (\'fs\', \'child_process\', \'net\') are unavailable in browser. Use \'aether.fs\' API.\n',
+          stderr: '',
+          exitCode: 0,
+        };
+      }
+
       const jsCmd = devCommands.find((c) => c.name === 'js')!;
       return jsCmd.execute(args, context, stdin);
     },

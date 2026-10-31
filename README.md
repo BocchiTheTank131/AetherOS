@@ -10,17 +10,17 @@
    /_/   \_\___| \__|_| |_|\___|_|   \___/|____/ 
 ```
 
-**A high-fidelity, Linux-inspired virtual operating environment engineered natively for modern web browsers.**
+**A high-fidelity, Linux-inspired virtual operating environment engineered natively for modern web standards.**
 
-[![AetherOS Version](https://img.shields.io/badge/AetherOS-v1.1%20LTS-00f2fe?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/your-username/AetherOS)
+[![AetherOS Version](https://img.shields.io/badge/AetherOS-v1.2.0%20Real%20Computing-00f2fe?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/BocchiTheTank131/AetherOS)
 [![React](https://img.shields.io/badge/React-19.3-61dafb?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-7.0-3178c6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-4.3-38bdf8?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![Vite](https://img.shields.io/badge/Vite-8.3-646cff?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
-[![Vitest](https://img.shields.io/badge/Tests-34%20Passed-34d399?style=for-the-badge&logo=vitest&logoColor=black)](https://vitest.dev/)
+[![Vitest](https://img.shields.io/badge/Tests-65%20Passed-34d399?style=for-the-badge&logo=vitest&logoColor=black)](https://vitest.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-amber?style=for-the-badge)](LICENSE)
 
-[Architecture](#-architectural-overview) • [What's New in v1.1](#-whats-new-in-v11) • [Subsystems](#-subsystem-deep-dive) • [Applications](#-native-application-suite) • [Shell CLI](#-shell-command-reference-45-utilities) • [Quickstart](#-getting-started) • [Contributing](#-developer-guides)
+[Architecture](#-architectural-overview) • [What's New in v1.2.0](#-whats-new-in-v120-real-computing) • [Subsystems](#-subsystem-deep-dive) • [Applications](#-native-application-suite) • [Shell CLI](#-shell-command-reference-50-utilities) • [Quickstart](#-getting-started) • [Contributing](#-developer-guides)
 
 </div>
 
@@ -30,26 +30,44 @@
 
 Rather than emulating hardware CPU instructions through slow x86 or ARM virtualization, **AetherOS** implements genuine operating system paradigms directly on modern web standards:
 
-- **Preemptive Virtual Kernel (`AetherCore`)**: PID process allocation starting at PID 100, POSIX signal handlers (`SIGTERM`, `SIGKILL`, `SIGSTOP`, `SIGCONT`), and resource metrics jitter.
-- **POSIX-Compliant Filesystem (`VFS`)**: Complete Linux directory tree (`/bin`, `/etc`, `/home/aether`, `/proc`, `/dev`, `/var`) persisted in browser **IndexedDB** with write-behind queueing.
-- **Authentic Command Shell (`aesh`)**: Lexer tokenizer, recursive-descent AST parser, pipelines (`|`), input/output redirections (`>`, `>>`, `<`, `2>`), conditionals (`&&`, `||`, `;`), environment variables, path globs, and 45+ built-in utilities.
+- **Preemptive Virtual Kernel (`AetherCore`)**: PID process allocation starting at PID 100, POSIX signal handlers (`SIGTERM`, `SIGKILL`, `SIGSTOP`, `SIGCONT`), and measured resource telemetry based on active execution and browser JS heap limits.
+- **POSIX-Compliant Filesystem (`AetherFS 2.0`)**: Complete Linux directory tree (`/bin`, `/etc`, `/home/aether`, `/proc`, `/dev`, `/var`) persisted in browser **IndexedDB v2** with binary-safe byte arrays (`Uint8Array`), POSIX virtual access control (`r/w/x`), relative symlinks, and SHA-256 verified backup and restore.
+- **Secure Aether Runtime**: Isolated Web Worker execution sandbox for running untrusted user JavaScript, featuring process tracking, console streaming, timeout enforcement (exit code 124), cancellation, and a guest `aether.fs` VFS bridge.
+- **Authentic Command Shell (`aesh`)**: Lexer tokenizer, full POSIX scripting AST (`if/then/elif/else/fi`, `for/do/done`, `while`, `case/esac`, functions, positional parameters `$0..$9`, `$#`, `$@`), pipelines (`|`), input/output redirections (`>`, `>>`, `<`, `2>`), conditionals (`&&`, `||`, `;`), job control (`&`, `jobs`, `fg`, `bg`, `wait`), and 50+ built-in utilities.
 - **Composited Desktop Environment (`AetherWM`)**: Draggable windows with 8-direction resizing, visual snap guides, memory of window coordinates, 4 virtual workspaces, customizable dock (bottom/top/left), app launcher, command palette, and notification drawer.
-- **19 Native Applications & Packages**: Full-featured IDE with live sandbox preview, file manager with host file export, terminal emulator, audio synthesizer, games, and package manager (`aetherpkg`).
+- **Native Applications & Packages**: Full-featured IDE with live sandbox preview and runtime execution, file manager with host file export, terminal emulator, audio synthesizer, games, and package manager (`aetherpkg`).
 
 ---
 
-## 🚀 What's New in v1.1
+## 🚀 What's New in v1.2.0: Real Computing
 
-AetherOS v1.1 introduces comprehensive system-wide polish, interaction refinements, and host integration:
+AetherOS v1.2.0 transforms AetherOS from a simulation into a capable, reliable, and authentic web-native computing environment:
 
-- 🪟 **Window Snapping with Visual Guide Overlay**: Dragging a window near the left, right, or top edge displays an animated snap preview box and snaps the window to 50% left, 50% right, or full screen.
-- 📐 **Maximized Drag-Restore & Window Memory**: Dragging the titlebar of a maximized window smoothly un-maximizes it and centers it under your cursor. Window sizes and positions are remembered across sessions.
-- 🖥️ **Desktop Grid Dragging & Persistent Layouts**: Desktop icons support free drag-and-drop with an 84px $\times$ 96px grid snap. Custom icon coordinates automatically persist in `/home/aether/.config/aetheros/desktop_positions.json`.
-- 📁 **File Manager Multi-Field Sorting & Host Export**: Sort directory entries by Name, Size, Type, or Date (ascending/descending). Download any virtual file directly to your physical computer using browser blob streams.
-- 🗑️ **Full Trash Lifecycle**: Move files safely to `/home/aether/.trash`, restore them back to `/home/aether/Documents`, or permanently purge them with *Empty Trash*.
-- ⌨️ **Shell Path Autocompletion & Persistent History**: Press `Tab` to autocomplete directories, subdirectories, root paths (`/`), and home shortcuts (`~`). Command history persists across reboots in `/home/aether/.aesh_history`. Added `Ctrl+L` for instant screen clearing.
-- 🎨 **Custom Wallpapers & Web Audio Settings**: Set custom desktop wallpapers via URL or direct host image upload into `/home/aether/Pictures`. Configure procedural synthesizer volume, sound effects toggle, and test chimes in Settings.
-- 🔍 **App Launcher Enhancements**: Quick-access *Recent Applications* bar and arrow-key navigation (`ArrowDown`, `ArrowUp`, `Enter`) within search results.
+- 🛡️ **Secure Aether Runtime**:
+  - Sandboxed execution via dedicated Web Workers with locked-down ambient capabilities (`fetch`, `importScripts`, `indexedDB` restricted).
+  - Virtual Kernel PID allocation and process table tracking for every runtime task.
+  - Streaming stdout and stderr output capturing console logs and error stacks.
+  - Hard execution timeouts (exit code 124) and interactive cancellation (Ctrl+C).
+  - Guest `globalThis.aether.fs` bridge enabling user scripts to read, write, and inspect virtual files.
+- 💾 **AetherFS 2.0**:
+  - Native binary safety: storage of binary files using `Uint8Array` byte buffers with exact byte sizing.
+  - POSIX Virtual Access Control: permission bitmask checks (`checkAccess`, `chmod`, `chown`, directory traversal execute bit validation).
+  - Symbolic Link enhancements: distinction between link nodes and targets via `lstat`, with support for relative symlinks.
+  - Versioned Backups & Restores: full filesystem backup export and restoration with SHA-256 integrity checksum verification.
+  - Transactional durability: IndexedDB schema v2 with batch persistence and safe queueing.
+- 📜 **Advanced aesh POSIX Scripting & Job Control**:
+  - Scripting AST parser & executor supporting `if/then/elif/else/fi`, `for ... in ...; do ... done`, `while`, and `case ... in ... esac`.
+  - User-defined shell functions with positional parameter binding (`$0`, `$1..$9`, `$#`, `$@`, `$*`, `$$`, `$?`).
+  - Conditional evaluation builtins: `test` and `[` with support for `-f`, `-d`, `-e`, `-s`, `-z`, `-n`, `=`, `!=`, `-eq`, `-lt`, etc.
+  - Job control: run background tasks with `&`, list background jobs with `jobs`, resume or bring to foreground with `fg` and `bg`, and synchronize with `wait`.
+  - Executable shell scripts (`.sh`) and shebang handling (`#!/bin/aesh`, `#!/bin/node`, `#!/bin/js`).
+- 📊 **Honest System Telemetry**:
+  - Transparent network probing: replaced fabricated ICMP packets with honest HTTP reachability diagnostics in `ping`.
+  - Transparent memory reporting: `free`, `SystemMonitorApp`, and `virtualKernel` clearly identify whether metrics originate from host browser JS heap limits or virtual allocations.
+  - Measured virtual CPU activity: eliminated arbitrary randomizers in favor of state-driven execution accounting.
+- 💻 **Code Studio & Terminal Integration**:
+  - "Run in Runtime" button in Code Studio executes scripts directly in the isolated sandbox with live streaming log panels.
+  - `js` and `node` shell built-ins execute JavaScript files or one-liners via the secure runtime.
 
 ---
 

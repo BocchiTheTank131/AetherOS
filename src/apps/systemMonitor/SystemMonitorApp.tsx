@@ -272,7 +272,10 @@ export const SystemMonitorApp: React.FC<AppProps> = () => {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Cpu className="w-4 h-4 text-cyan-400" />
-                  <span className="font-semibold text-white">CPU Utilization</span>
+                  <div>
+                    <span className="font-semibold text-white">CPU Utilization</span>
+                    <span className="text-[10px] text-gray-400 ml-2">(Active Virtual Workloads)</span>
+                  </div>
                 </div>
                 <span className="font-mono text-lg font-bold text-cyan-400">{currentCpu}%</span>
               </div>
@@ -293,7 +296,12 @@ export const SystemMonitorApp: React.FC<AppProps> = () => {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <HardDrive className="w-4 h-4 text-purple-400" />
-                  <span className="font-semibold text-white">Memory Consumption</span>
+                  <div>
+                    <span className="font-semibold text-white">Memory Consumption</span>
+                    <span className="text-[10px] text-gray-400 ml-2">
+                      ({mem.source === 'performance.memory' ? 'Host Browser JS Heap' : 'Virtual Allocations'})
+                    </span>
+                  </div>
                 </div>
                 <span className="font-mono text-lg font-bold text-purple-400">
                   {Math.round(mem.usedKb / 1024)} MB / {Math.round(mem.totalKb / 1024)} MB ({mem.percent}%)

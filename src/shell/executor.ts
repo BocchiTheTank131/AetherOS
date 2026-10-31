@@ -1,7 +1,13 @@
-// AetherOS - aesh Shell Command Executor
-import type { ShellContext, ExecutionResult, SimpleCommand } from './types';
+// AetherOS - aesh Shell Command & Script Executor (POSIX-like Scripting & Job Control)
+import type {
+  ShellContext,
+  ExecutionResult,
+  SimpleCommand,
+  Statement,
+  CommandChainStatement,
+} from './types';
 import { tokenize } from './lexer';
-import { parse } from './parser';
+import { parseScript } from './parser';
 import { expandVariables, expandGlobs } from './environment';
 import { commandRegistry } from './registry';
 import { vfs } from '../vfs/vfs';
@@ -21,46 +27,8 @@ export class ShellExecutor {
 
     try {
       const tokens = tokenize(input);
-      const chains = parse(tokens);
-
-      let finalStdout = '';
-      let finalStderr = '';
-      let lastExitCode = 0;
-
-      for (let i = 0; i < chains.length; i++) {
-        if (context.aborted) {
-          finalStderr += '^C\n';
-          lastExitCode = 130;
-          break;
-        }
-
-        const chain = chains[i];
-
-        // Conditional operators
-        if (i > 0) {
-          const prevOperator = chains[i - 1].operator;
-          if (prevOperator === 'AND' && lastExitCode !== 0) {
-            continue;
-          }
-          if (prevOperator === 'OR' && lastExitCode === 0) {
-            continue;
-          }
-        }
-
-        const pipelineRes = await this.executePipeline(chain.pipeline.commands, context);
-        lastExitCode = pipelineRes.exitCode;
-        context.exitCode = lastExitCode;
-        context.env['?'] = String(lastExitCode);
-
-        finalStdout += pipelineRes.stdout;
-        finalStderr += pipelineRes.stderr;
-      }
-
-      return {
-        stdout: finalStdout,
-        stderr: finalStderr,
-        exitCode: lastExitCode,
-      };
+      const statements = parseScript(tokens);
+      return await this.executeStatements(statements, context);
     } catch (err) {
       return {
         stdout: '',
@@ -68,6 +36,225 @@ export class ShellExecutor {
         exitCode: 1,
       };
     }
+  }
+
+  /**
+   * Execute AST Statements sequentially, handling control flow, background jobs, and functions
+   */
+  public async executeStatements(
+    stmts: Statement[],
+    context: ShellContext
+  ): Promise<ExecutionResult> {
+    let finalStdout = '';
+    let finalStderr = '';
+    let lastExitCode = 0;
+
+    for (let i = 0; i < stmts.length; i++) {
+      if (context.aborted) {
+        finalStderr += '^C\n';
+        lastExitCode = 130;
+        break;
+      }
+
+      const stmt = stmts[i];
+
+      switch (stmt.type) {
+        case 'chain': {
+          const chain = stmt.chain;
+
+          // Conditional operators from previous statement in this sequence
+          if (i > 0 && stmts[i - 1].type === 'chain') {
+            const prevOp = (stmts[i - 1] as CommandChainStatement).chain.operator;
+            if (prevOp === 'AND' && lastExitCode !== 0) {
+              continue;
+            }
+            if (prevOp === 'OR' && lastExitCode === 0) {
+              continue;
+            }
+          }
+
+          // Background execution (&)
+          if (chain.background) {
+            if (!context.jobs) {
+              context.jobs = new Map();
+            }
+            const jobId = (context.jobs.size > 0 ? Math.max(...context.jobs.keys()) : 0) + 1;
+            const cmdName = chain.pipeline.commands
+              .map((c) => c.name + (c.args.length ? ' ' + c.args.join(' ') : ''))
+              .join(' | ');
+
+            const proc = virtualKernel.spawn({
+              name: chain.pipeline.commands[0]?.name || 'job',
+              command: cmdName,
+              user: context.user,
+            });
+
+            const jobPromise = this.executePipeline(chain.pipeline.commands, context).then(
+              (res) => {
+                const job = context.jobs?.get(jobId);
+                if (job) {
+                  job.status = 'done';
+                }
+                virtualKernel.exit(proc.pid, res.exitCode);
+                return res;
+              }
+            );
+
+            context.jobs.set(jobId, {
+              id: jobId,
+              pid: proc.pid,
+              command: cmdName,
+              status: 'running',
+              startTime: Date.now(),
+              resultPromise: jobPromise,
+            });
+
+            finalStdout += `[${jobId}] ${proc.pid}\n`;
+            lastExitCode = 0;
+            context.exitCode = 0;
+            context.env['?'] = '0';
+            break;
+          }
+
+          const pipelineRes = await this.executePipeline(chain.pipeline.commands, context);
+          lastExitCode = pipelineRes.exitCode;
+          context.exitCode = lastExitCode;
+          context.env['?'] = String(lastExitCode);
+
+          finalStdout += pipelineRes.stdout;
+          finalStderr += pipelineRes.stderr;
+          break;
+        }
+
+        case 'if': {
+          const testRes = await this.executeStatements(stmt.test, context);
+          let handled = false;
+
+          if (testRes.exitCode === 0) {
+            const thenRes = await this.executeStatements(stmt.then, context);
+            finalStdout += thenRes.stdout;
+            finalStderr += thenRes.stderr;
+            lastExitCode = thenRes.exitCode;
+            handled = true;
+          } else if (stmt.elifs && stmt.elifs.length > 0) {
+            for (const elif of stmt.elifs) {
+              const elifTestRes = await this.executeStatements(elif.test, context);
+              if (elifTestRes.exitCode === 0) {
+                const elifThenRes = await this.executeStatements(elif.then, context);
+                finalStdout += elifThenRes.stdout;
+                finalStderr += elifThenRes.stderr;
+                lastExitCode = elifThenRes.exitCode;
+                handled = true;
+                break;
+              }
+            }
+          }
+
+          if (!handled && stmt.else) {
+            const elseRes = await this.executeStatements(stmt.else, context);
+            finalStdout += elseRes.stdout;
+            finalStderr += elseRes.stderr;
+            lastExitCode = elseRes.exitCode;
+          }
+
+          context.exitCode = lastExitCode;
+          context.env['?'] = String(lastExitCode);
+          break;
+        }
+
+        case 'for': {
+          const expandedItems: string[] = [];
+          for (const rawItem of stmt.items) {
+            const expanded = expandVariables(rawItem, context);
+            const globs = expandGlobs(expanded, context.cwd);
+            for (const g of globs) {
+              if (g.includes(' ') && !rawItem.startsWith('"') && !rawItem.startsWith("'")) {
+                expandedItems.push(...g.split(/\s+/).filter(Boolean));
+              } else {
+                expandedItems.push(g);
+              }
+            }
+          }
+
+          for (const itemVal of expandedItems) {
+            if (context.aborted) break;
+            context.env[stmt.variable] = itemVal;
+            const bodyRes = await this.executeStatements(stmt.body, context);
+            finalStdout += bodyRes.stdout;
+            finalStderr += bodyRes.stderr;
+            lastExitCode = bodyRes.exitCode;
+          }
+
+          context.exitCode = lastExitCode;
+          context.env['?'] = String(lastExitCode);
+          break;
+        }
+
+        case 'while': {
+          while (true) {
+            if (context.aborted) break;
+            const testRes = await this.executeStatements(stmt.test, context);
+            if (testRes.exitCode !== 0) break;
+
+            const bodyRes = await this.executeStatements(stmt.body, context);
+            finalStdout += bodyRes.stdout;
+            finalStderr += bodyRes.stderr;
+            lastExitCode = bodyRes.exitCode;
+          }
+
+          context.exitCode = lastExitCode;
+          context.env['?'] = String(lastExitCode);
+          break;
+        }
+
+        case 'case': {
+          const targetWord = expandVariables(stmt.word, context);
+          for (const arm of stmt.arms) {
+            const matches = arm.patterns.some((pat) => {
+              const expPat = expandVariables(pat, context);
+              if (expPat === '*' || expPat === targetWord) return true;
+              const regex = new RegExp(
+                `^${expPat.replace(/[-[\]{}()+?.,\\^$|#\s]/g, '\\$&').replace(/\*/g, '.*')}$`
+              );
+              return regex.test(targetWord);
+            });
+
+            if (matches) {
+              const armRes = await this.executeStatements(arm.body, context);
+              finalStdout += armRes.stdout;
+              finalStderr += armRes.stderr;
+              lastExitCode = armRes.exitCode;
+              break;
+            }
+          }
+
+          context.exitCode = lastExitCode;
+          context.env['?'] = String(lastExitCode);
+          break;
+        }
+
+        case 'function': {
+          if (!context.functions) {
+            context.functions = {};
+          }
+          context.functions[stmt.name] = stmt.body;
+          lastExitCode = 0;
+          context.exitCode = 0;
+          context.env['?'] = '0';
+          break;
+        }
+      }
+
+      if (context.env['ERREXIT'] === '1' && lastExitCode !== 0) {
+        break;
+      }
+    }
+
+    return {
+      stdout: finalStdout,
+      stderr: finalStderr,
+      exitCode: lastExitCode,
+    };
   }
 
   private async executePipeline(
@@ -83,7 +270,7 @@ export class ShellExecutor {
       const cmd = commands[i];
       const isLast = i === commands.length - 1;
 
-      // Handle variable expansion on command name
+      // Variable expansion on command name
       let cmdName = expandVariables(cmd.name, context);
       let initialArgs = [...cmd.args];
 
@@ -96,11 +283,10 @@ export class ShellExecutor {
         }
       }
 
-      // Variable expansion
+      // Variable and glob expansion on arguments
       const expandedArgs: string[] = [];
       for (const arg of initialArgs) {
         const expanded = expandVariables(arg, context);
-        // Glob expansion
         const globs = expandGlobs(expanded, context.cwd);
         expandedArgs.push(...globs);
       }
@@ -113,12 +299,16 @@ export class ShellExecutor {
           try {
             stdinData = vfs.readFile(inPath);
           } catch {
-            return { stdout: '', stderr: `aesh: ${r.target}: No such file or directory\n`, exitCode: 1 };
+            return {
+              stdout: '',
+              stderr: `aesh: ${r.target}: No such file or directory\n`,
+              exitCode: 1,
+            };
           }
         }
       }
 
-      // Execute simple command
+      // Execute single command
       const res = await this.executeSingleCommand(cmdName, expandedArgs, context, stdinData);
       lastExit = res.exitCode;
 
@@ -174,10 +364,56 @@ export class ShellExecutor {
       return { stdout: '', stderr: '', exitCode: 0 };
     }
 
+    // Built-in 'set' command for errexit
+    if (name === 'set') {
+      if (args.includes('-e')) context.env['ERREXIT'] = '1';
+      if (args.includes('+e')) delete context.env['ERREXIT'];
+      return { stdout: '', stderr: '', exitCode: 0 };
+    }
+
+    // Check user-defined function in context.functions
+    if (context.functions && context.functions[name]) {
+      const fnBody = context.functions[name];
+      const savedPositional = context.positionalArgs ? [...context.positionalArgs] : undefined;
+      const savedNumbered: Record<string, string> = {};
+      for (let k = 1; k <= 9; k++) {
+        savedNumbered[String(k)] = context.env[String(k)] || '';
+      }
+      const savedHash = context.env['#'];
+      const savedAt = context.env['@'];
+      const savedStar = context.env['*'];
+
+      context.positionalArgs = args;
+      context.env['#'] = String(args.length);
+      context.env['@'] = args.join(' ');
+      context.env['*'] = args.join(' ');
+      for (let k = 1; k <= 9; k++) {
+        context.env[String(k)] = args[k - 1] ?? '';
+      }
+
+      try {
+        return await this.executeStatements(fnBody, context);
+      } finally {
+        context.positionalArgs = savedPositional;
+        for (let k = 1; k <= 9; k++) {
+          if (savedNumbered[String(k)]) {
+            context.env[String(k)] = savedNumbered[String(k)];
+          } else {
+            delete context.env[String(k)];
+          }
+        }
+        if (savedHash !== undefined) context.env['#'] = savedHash;
+        else delete context.env['#'];
+        if (savedAt !== undefined) context.env['@'] = savedAt;
+        else delete context.env['@'];
+        if (savedStar !== undefined) context.env['*'] = savedStar;
+        else delete context.env['*'];
+      }
+    }
+
     // Check built-in command registry
     const registered = commandRegistry.get(name);
     if (registered) {
-      // Spawn temporary process for command tracking in kernel
       const proc = virtualKernel.spawn({
         name,
         command: name,
@@ -206,7 +442,30 @@ export class ShellExecutor {
         const scriptStat = vfs.stat(scriptPath);
         if (scriptStat.isFile()) {
           const content = vfs.readFile(scriptPath);
-          return await this.executeScript(content, context);
+
+          // Check shebang for node/js runtime
+          if (
+            content.startsWith('#!/bin/node') ||
+            content.startsWith('#!/usr/bin/env node') ||
+            content.startsWith('#!/bin/js') ||
+            scriptPath.endsWith('.js')
+          ) {
+            const { aetherRuntime } = await import('../runtime/AetherRuntime');
+            const runRes = await aetherRuntime.execute(
+              content.replace(/^#!.*\n/, ''),
+              {
+                commandName: name,
+                args,
+              }
+            );
+            return {
+              stdout: runRes.stdout,
+              stderr: runRes.stderr,
+              exitCode: runRes.exitCode,
+            };
+          }
+
+          return await this.executeScript(content, context, args, scriptPath);
         }
       } catch {
         // Fall through
@@ -221,28 +480,59 @@ export class ShellExecutor {
   }
 
   /**
-   * Execute a multi-line shell script
+   * Execute a shell script with positional arguments ($0..$9, $#, $@, $*)
    */
-  public async executeScript(script: string, context: ShellContext): Promise<ExecutionResult> {
-    const lines = script.split('\n');
-    let out = '';
-    let err = '';
-    let code = 0;
+  public async executeScript(
+    script: string,
+    context: ShellContext,
+    args: string[] = [],
+    scriptPath?: string
+  ): Promise<ExecutionResult> {
+    const savedScript = context.scriptName;
+    const savedPositional = context.positionalArgs ? [...context.positionalArgs] : undefined;
+    const saved0 = context.env['0'];
+    const savedNumbered: Record<string, string> = {};
+    for (let k = 1; k <= 9; k++) {
+      savedNumbered[String(k)] = context.env[String(k)] || '';
+    }
+    const savedHash = context.env['#'];
+    const savedAt = context.env['@'];
+    const savedStar = context.env['*'];
 
-    for (const rawLine of lines) {
-      const line = rawLine.trim();
-      if (!line || line.startsWith('#')) continue;
-
-      const res = await this.execute(line, context);
-      out += res.stdout;
-      err += res.stderr;
-      code = res.exitCode;
-      if (code !== 0 && script.includes('set -e')) {
-        break;
-      }
+    context.scriptName = scriptPath || 'aesh';
+    context.positionalArgs = args;
+    context.env['0'] = context.scriptName;
+    context.env['#'] = String(args.length);
+    context.env['@'] = args.join(' ');
+    context.env['*'] = args.join(' ');
+    for (let k = 1; k <= 9; k++) {
+      context.env[String(k)] = args[k - 1] ?? '';
     }
 
-    return { stdout: out, stderr: err, exitCode: code };
+    try {
+      const cleanScript = script.replace(/^#!.*\n/, '');
+      const tokens = tokenize(cleanScript);
+      const stmts = parseScript(tokens);
+      return await this.executeStatements(stmts, context);
+    } finally {
+      context.scriptName = savedScript;
+      context.positionalArgs = savedPositional;
+      if (saved0 !== undefined) context.env['0'] = saved0;
+      else delete context.env['0'];
+      for (let k = 1; k <= 9; k++) {
+        if (savedNumbered[String(k)]) {
+          context.env[String(k)] = savedNumbered[String(k)];
+        } else {
+          delete context.env[String(k)];
+        }
+      }
+      if (savedHash !== undefined) context.env['#'] = savedHash;
+      else delete context.env['#'];
+      if (savedAt !== undefined) context.env['@'] = savedAt;
+      else delete context.env['@'];
+      if (savedStar !== undefined) context.env['*'] = savedStar;
+      else delete context.env['*'];
+    }
   }
 }
 

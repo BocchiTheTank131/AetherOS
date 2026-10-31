@@ -6,6 +6,7 @@ import { textCommands } from './commands/textCommands';
 import { netCommands } from './commands/netCommands';
 import { devCommands } from './commands/devCommands';
 import { pkgCommands } from './commands/pkgCommands';
+import { scriptCommands } from './commands/scriptCommands';
 
 export class CommandRegistry {
   private commands = new Map<string, RegisteredCommand>();
@@ -17,6 +18,7 @@ export class CommandRegistry {
     this.registerAll(netCommands);
     this.registerAll(devCommands);
     this.registerAll(pkgCommands);
+    this.registerAll(scriptCommands);
   }
 
   public register(cmd: RegisteredCommand): void {

@@ -1,5 +1,13 @@
-// AetherOS - Core Virtual Filesystem (VFS)
-import type { VFSNode, VFSEntry, VFSStats, VFSWatchCallback } from './types';
+// AetherOS - Core Virtual Filesystem (VFS) - AetherFS 2.0
+import type {
+  VFSNode,
+  VFSEntry,
+  VFSStats,
+  VFSWatchCallback,
+  VFSUserContext,
+  VFSWriteOptions,
+  VFSBackupData,
+} from './types';
 import { getMimeType } from './mime';
 import { idbStorage } from './idbStorage';
 import { createDefaultFileSystem } from './initFs';
@@ -11,6 +19,12 @@ export class VirtualFileSystem {
   private nodes = new Map<string, VFSNode>();
   private watchers = new Map<string, Set<VFSWatchCallback>>();
   private initialized = false;
+  private currentContext: VFSUserContext = {
+    username: 'aether',
+    uid: 1000,
+    gid: 1000,
+    groups: ['aether', 'users'],
+  };
 
   public async init(): Promise<void> {
     if (this.initialized) return;
@@ -37,6 +51,86 @@ export class VirtualFileSystem {
       this.nodes = createDefaultFileSystem();
       this.initialized = true;
     }
+  }
+
+  public setContext(context: VFSUserContext): void {
+    this.currentContext = context;
+  }
+
+  public getContext(): VFSUserContext {
+    return { ...this.currentContext };
+  }
+
+  /**
+   * Check POSIX-like virtual access control permissions for a given path and mode
+   */
+  public checkAccess(
+    path: string,
+    mode: 'r' | 'w' | 'x' | number,
+    context?: Partial<VFSUserContext> & { user?: string }
+  ): boolean {
+    const rawUser = context?.username || context?.user || (context?.uid === 0 ? 'root' : this.currentContext.username);
+    const ctx: VFSUserContext = {
+      uid: context?.uid ?? (rawUser === 'root' ? 0 : 1000),
+      gid: context?.gid ?? (rawUser === 'root' ? 0 : 1000),
+      username: rawUser,
+      groups: context?.groups ?? (rawUser === 'root' ? ['root'] : [rawUser]),
+    };
+
+    const modeChar: 'r' | 'w' | 'x' =
+      typeof mode === 'number' ? (mode === 1 ? 'x' : mode === 2 ? 'w' : 'r') : mode;
+
+    if (ctx.uid === 0 || ctx.username === 'root') {
+      if (modeChar === 'x') {
+        const node = this.getNodeRaw(path);
+        if (node && node.type === 'file') {
+          return (node.permissions & 0o111) !== 0;
+        }
+      }
+      return true;
+    }
+
+    const norm = this.normalizePath(path);
+    if (norm.startsWith('/proc') || norm.startsWith('/dev')) {
+      if (modeChar === 'w') {
+        return norm === '/dev/null';
+      }
+      return true;
+    }
+
+    const node = this.getNodeRaw(norm);
+    if (!node) return true; // File not found will be handled by operation
+
+    // Verify parent directory traversal (execute permission)
+    const parts = norm.split('/').filter(Boolean);
+    let currPath = '';
+    const parentDepth = node.type === 'dir' ? parts.length : parts.length - 1;
+    for (let i = 0; i < parentDepth; i++) {
+      currPath += '/' + parts[i];
+      const dirNode = this.nodes.get(currPath);
+      if (dirNode && dirNode.type === 'dir') {
+        if (!this.checkNodePermission(dirNode, 'x', ctx)) {
+          return false;
+        }
+      }
+    }
+
+    return this.checkNodePermission(node, modeChar, ctx);
+  }
+
+  private checkNodePermission(node: VFSNode, mode: 'r' | 'w' | 'x', ctx: VFSUserContext): boolean {
+    if (ctx.uid === 0 || ctx.username === 'root') return true;
+
+    const isOwner = node.owner === ctx.username || node.owner === String(ctx.uid);
+    const isGroup = node.group === ctx.username || (ctx.groups && ctx.groups.includes(node.group));
+
+    const shift = isOwner ? 6 : isGroup ? 3 : 0;
+    const bits = (node.permissions >> shift) & 7;
+
+    if (mode === 'r') return (bits & 4) !== 0;
+    if (mode === 'w') return (bits & 2) !== 0;
+    if (mode === 'x') return (bits & 1) !== 0;
+    return false;
   }
 
   /**
@@ -99,27 +193,11 @@ export class VirtualFileSystem {
       };
     }
 
-    if (norm === '/proc/version') {
-      return {
-        name: 'version',
-        path: norm,
-        parentPath: '/proc',
-        type: 'file',
-        size: 96,
-        createdAt: Date.now(),
-        modifiedAt: Date.now(),
-        permissions: 0o444,
-        owner: 'root',
-        group: 'root',
-        content: 'Linux version 6.8.0-aether (gcc 13.2.0) #1 SMP PREEMPT_DYNAMIC AetherCore 1.0\n',
-      };
-    }
-
     if (norm === '/proc/uptime') {
       const up = virtualKernel.getUptimeSeconds();
       return {
         name: 'uptime',
-        path: norm,
+        path: '/proc/uptime',
         parentPath: '/proc',
         type: 'file',
         size: 32,
@@ -128,47 +206,93 @@ export class VirtualFileSystem {
         permissions: 0o444,
         owner: 'root',
         group: 'root',
-        content: `${up}.00 ${Math.floor(up * 0.9)}.00\n`,
+        content: `${up.toFixed(2)} ${Math.floor(up * 0.8)}.00\n`,
+      };
+    }
+
+    if (norm === '/proc/version') {
+      return {
+        name: 'version',
+        path: '/proc/version',
+        parentPath: '/proc',
+        type: 'file',
+        size: 64,
+        createdAt: Date.now(),
+        modifiedAt: Date.now(),
+        permissions: 0o444,
+        owner: 'root',
+        group: 'root',
+        content: 'Linux version 6.8.0-aetheros (browser-wasm) (gcc 13.2.0) #1 SMP PREEMPT\n',
       };
     }
 
     if (norm === '/proc/meminfo') {
       const mem = virtualKernel.getTotalMemoryUsage();
-      const content = `MemTotal:       ${mem.totalKb} kB\nMemFree:        ${mem.totalKb - mem.usedKb} kB\nMemAvailable:   ${mem.totalKb - mem.usedKb} kB\nBuffers:           16384 kB\nCached:            65536 kB\nSwapTotal:             0 kB\nSwapFree:              0 kB\n`;
+      const totalMem = mem.totalKb;
+      const usedMem = mem.usedKb;
+      const freeMem = Math.max(0, totalMem - usedMem);
+      const meminfo = [
+        `MemTotal:        ${totalMem} kB`,
+        `MemFree:         ${freeMem} kB`,
+        `MemAvailable:    ${freeMem} kB`,
+        `Buffers:           32768 kB`,
+        `Cached:           131072 kB`,
+        `SwapTotal:             0 kB`,
+        `SwapFree:              0 kB`,
+        '',
+      ].join('\n');
+
       return {
         name: 'meminfo',
-        path: norm,
+        path: '/proc/meminfo',
         parentPath: '/proc',
         type: 'file',
-        size: content.length,
+        size: meminfo.length,
         createdAt: Date.now(),
         modifiedAt: Date.now(),
         permissions: 0o444,
         owner: 'root',
         group: 'root',
-        content,
+        content: meminfo,
       };
     }
 
     if (norm === '/proc/cpuinfo') {
-      const cores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 4 : 4;
-      const content = `processor       : 0\nmodel name      : Aether Virtual Core 3.40GHz\ncpu cores       : ${cores}\nflags           : fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov\n`;
+      const cpus = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 4 : 4;
+      let cpuinfo = '';
+      for (let i = 0; i < cpus; i++) {
+        cpuinfo += [
+          `processor\t: ${i}`,
+          'vendor_id\t: GenuineIntel',
+          'cpu family\t: 6',
+          'model\t\t: 158',
+          'model name\t: Aether Virtual Core Processor @ 3.00GHz',
+          'stepping\t: 9',
+          'cpu MHz\t\t: 3000.000',
+          'cache size\t: 8192 KB',
+          'flags\t\t: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov',
+          'bogomips\t: 6000.00',
+          '',
+          '',
+        ].join('\n');
+      }
+
       return {
         name: 'cpuinfo',
-        path: norm,
+        path: '/proc/cpuinfo',
         parentPath: '/proc',
         type: 'file',
-        size: content.length,
+        size: cpuinfo.length,
         createdAt: Date.now(),
         modifiedAt: Date.now(),
         permissions: 0o444,
         owner: 'root',
         group: 'root',
-        content,
+        content: cpuinfo,
       };
     }
 
-    // /dev root directory
+    // /dev
     if (norm === '/dev') {
       return {
         name: 'dev',
@@ -184,11 +308,10 @@ export class VirtualFileSystem {
       };
     }
 
-    // /dev/null
     if (norm === '/dev/null') {
       return {
         name: 'null',
-        path: norm,
+        path: '/dev/null',
         parentPath: '/dev',
         type: 'file',
         size: 0,
@@ -201,11 +324,10 @@ export class VirtualFileSystem {
       };
     }
 
-    // /dev/zero
     if (norm === '/dev/zero') {
       return {
         name: 'zero',
-        path: norm,
+        path: '/dev/zero',
         parentPath: '/dev',
         type: 'file',
         size: 0,
@@ -214,17 +336,24 @@ export class VirtualFileSystem {
         permissions: 0o666,
         owner: 'root',
         group: 'root',
-        content: '\0',
+        content: '\0'.repeat(128),
       };
     }
 
-    // /dev/urandom
-    if (norm === '/dev/urandom' || norm === '/dev/random') {
-      const randStr = Array.from({ length: 64 }, () =>
-        String.fromCharCode(Math.floor(Math.random() * 256))
-      ).join('');
+    if (norm === '/dev/random' || norm === '/dev/urandom') {
+      const arr = new Uint8Array(64);
+      if (typeof crypto !== 'undefined') {
+        crypto.getRandomValues(arr);
+      } else {
+        for (let i = 0; i < 64; i++) arr[i] = Math.floor(Math.random() * 256);
+      }
+      let randStr = '';
+      for (let i = 0; i < arr.length; i++) {
+        randStr += String.fromCharCode(arr[i]);
+      }
+
       return {
-        name: norm.slice(5),
+        name: norm === '/dev/random' ? 'random' : 'urandom',
         path: norm,
         parentPath: '/dev',
         type: 'file',
@@ -247,6 +376,13 @@ export class VirtualFileSystem {
     return this.nodes.has(norm);
   }
 
+  public getNodeRaw(path: string): VFSNode | null {
+    const norm = this.normalizePath(path);
+    const dynamic = this.getDynamicNode(norm);
+    if (dynamic) return dynamic;
+    return this.nodes.get(norm) || null;
+  }
+
   public getNode(path: string, depth = 0): VFSNode | null {
     if (depth > 20) {
       throw new Error(`ELOOP: too many levels of symbolic links, '${path}'`);
@@ -258,9 +394,12 @@ export class VirtualFileSystem {
     const node = this.nodes.get(norm);
     if (!node) return null;
 
-    // Follow symlinks for read/stat operations if not circular
+    // Follow symlinks for read/stat operations
     if (node.type === 'symlink' && node.targetPath) {
-      return this.getNode(node.targetPath, depth + 1);
+      const targetAbs = node.targetPath.startsWith('/')
+        ? this.normalizePath(node.targetPath)
+        : this.resolve(node.parentPath, node.targetPath);
+      return this.getNode(targetAbs, depth + 1);
     }
     return node;
   }
@@ -279,11 +418,166 @@ export class VirtualFileSystem {
     };
   }
 
+  public lstat(path: string): VFSStats {
+    const norm = this.normalizePath(path);
+    const dynamic = this.getDynamicNode(norm);
+    const node = dynamic || this.nodes.get(norm);
+    if (!node) {
+      throw new Error(`ENOENT: no such file or directory, lstat '${path}'`);
+    }
+
+    return {
+      ...node,
+      isDirectory: () => node.type === 'dir',
+      isFile: () => node.type === 'file',
+      isSymbolicLink: () => node.type === 'symlink',
+    };
+  }
+
+  public readBytes(path: string): Uint8Array {
+    return this.readBytesSync(path);
+  }
+
+  public readBytesSync(path: string, depth = 0): Uint8Array {
+    if (depth > 20) {
+      throw new Error(`ELOOP: too many levels of symbolic links, '${path}'`);
+    }
+    const norm = this.normalizePath(path);
+    if (!this.checkAccess(norm, 'r')) {
+      throw new Error(`EACCES: permission denied, read '${path}'`);
+    }
+
+    const dynamic = this.getDynamicNode(norm);
+    if (dynamic) {
+      return new TextEncoder().encode(dynamic.content ?? '');
+    }
+
+    const node = this.nodes.get(norm);
+    if (!node) {
+      throw new Error(`ENOENT: no such file or directory, open '${path}'`);
+    }
+    if (node.type === 'dir') {
+      throw new Error(`EISDIR: illegal operation on a directory, read '${path}'`);
+    }
+    if (node.type === 'symlink' && node.targetPath) {
+      const targetAbs = node.targetPath.startsWith('/')
+        ? this.normalizePath(node.targetPath)
+        : this.resolve(node.parentPath, node.targetPath);
+      return this.readBytesSync(targetAbs, depth + 1);
+    }
+
+    if (node.binaryContent) {
+      return node.binaryContent;
+    }
+
+    if (node.content) {
+      if (node.isBinary && node.content.startsWith('data:')) {
+        const base64Data = node.content.split(',')[1] || '';
+        const binStr = atob(base64Data);
+        const bytes = new Uint8Array(binStr.length);
+        for (let i = 0; i < binStr.length; i++) {
+          bytes[i] = binStr.charCodeAt(i);
+        }
+        node.binaryContent = bytes;
+        return bytes;
+      }
+      return new TextEncoder().encode(node.content);
+    }
+
+    return new Uint8Array(0);
+  }
+
+  public async writeBytes(path: string, data: Uint8Array, options?: VFSWriteOptions): Promise<void> {
+    this.writeBytesSync(path, data, options);
+  }
+
+  public writeBytesSync(path: string, data: Uint8Array, options?: VFSWriteOptions): void {
+    const norm = this.normalizePath(path);
+    if (norm === '/dev/null') return;
+
+    if (!this.checkAccess(norm, 'w', options?.context)) {
+      const parts = norm.split('/').filter(Boolean);
+      const parentPath = parts.length <= 1 ? '/' : '/' + parts.slice(0, -1).join('/');
+      if (!this.checkAccess(parentPath, 'w', options?.context)) {
+        throw new Error(`EACCES: permission denied, write '${path}'`);
+      }
+    }
+
+    const parts = norm.split('/').filter(Boolean);
+    if (parts.length === 0) {
+      throw new Error(`EISDIR: cannot write directly to root directory`);
+    }
+
+    const name = parts[parts.length - 1];
+    const parentPath = parts.length === 1 ? '/' : '/' + parts.slice(0, -1).join('/');
+
+    const parent = this.getNode(parentPath);
+    if (!parent) {
+      throw new Error(`ENOENT: no such file or directory, open '${path}'`);
+    }
+    if (parent.type !== 'dir') {
+      throw new Error(`ENOTDIR: not a directory, '${parentPath}'`);
+    }
+
+    const existing = this.nodes.get(norm);
+    const now = Date.now();
+    const mime = getMimeType(name);
+    const isText =
+      mime.startsWith('text/') ||
+      mime.includes('json') ||
+      mime.includes('javascript') ||
+      mime.includes('typescript') ||
+      mime.includes('xml') ||
+      mime.includes('sh');
+
+    let textContent: string | undefined;
+    if (isText) {
+      try {
+        textContent = new TextDecoder().decode(data);
+      } catch {
+        // Fallback
+      }
+    }
+
+    const node: VFSNode = {
+      name,
+      path: norm,
+      parentPath,
+      type: 'file',
+      binaryContent: data,
+      content: textContent,
+      size: data.byteLength,
+      createdAt: existing ? existing.createdAt : now,
+      modifiedAt: now,
+      permissions: options?.permissions ?? existing?.permissions ?? 0o644,
+      owner: options?.owner ?? existing?.owner ?? this.currentContext.username,
+      group: options?.group ?? existing?.group ?? 'aether',
+      mimeType: mime,
+      isBinary: options?.isBinary ?? !isText,
+    };
+
+    this.nodes.set(norm, node);
+    idbStorage.queueSave(node);
+    this.notifyWatchers(norm, existing ? 'modify' : 'create');
+  }
+
+  public readText(path: string): string {
+    return this.readFile(path);
+  }
+
+  public writeText(path: string, content: string, options?: VFSWriteOptions): void {
+    this.writeFile(path, content, options);
+  }
+
   public readFile(path: string, depth = 0): string {
     if (depth > 20) {
       throw new Error(`ELOOP: too many levels of symbolic links, '${path}'`);
     }
     const norm = this.normalizePath(path);
+    if (!this.checkAccess(norm, 'r')) {
+      throw new Error(`EACCES: permission denied, read '${path}'`);
+    }
+
     const dynamic = this.getDynamicNode(norm);
     if (dynamic) return dynamic.content ?? '';
 
@@ -295,18 +589,52 @@ export class VirtualFileSystem {
       throw new Error(`EISDIR: illegal operation on a directory, read '${path}'`);
     }
     if (node.type === 'symlink' && node.targetPath) {
-      return this.readFile(node.targetPath, depth + 1);
+      const targetAbs = node.targetPath.startsWith('/')
+        ? this.normalizePath(node.targetPath)
+        : this.resolve(node.parentPath, node.targetPath);
+      return this.readFile(targetAbs, depth + 1);
     }
-    return node.content ?? '';
+
+    if (node.content !== undefined) {
+      return node.content;
+    }
+
+    if (node.binaryContent) {
+      if (node.isBinary) {
+        // Construct base64 representation for binary consumers
+        let binaryStr = '';
+        const len = node.binaryContent.byteLength;
+        for (let i = 0; i < len; i++) {
+          binaryStr += String.fromCharCode(node.binaryContent[i]);
+        }
+        return `data:${node.mimeType || 'application/octet-stream'};base64,${btoa(binaryStr)}`;
+      }
+      return new TextDecoder().decode(node.binaryContent);
+    }
+
+    return '';
   }
 
   public writeFile(
     path: string,
-    content: string,
-    options?: { owner?: string; permissions?: number; isBinary?: boolean }
+    content: string | Uint8Array,
+    options?: VFSWriteOptions
   ): void {
+    if (content instanceof Uint8Array) {
+      this.writeBytesSync(path, content, options);
+      return;
+    }
+
     const norm = this.normalizePath(path);
-    if (norm === '/dev/null') return; // discard
+    if (norm === '/dev/null') return;
+
+    if (!this.checkAccess(norm, 'w', options?.context)) {
+      const parts = norm.split('/').filter(Boolean);
+      const parentPath = parts.length <= 1 ? '/' : '/' + parts.slice(0, -1).join('/');
+      if (!this.checkAccess(parentPath, 'w', options?.context)) {
+        throw new Error(`EACCES: permission denied, write '${path}'`);
+      }
+    }
 
     const parts = norm.split('/').filter(Boolean);
     if (parts.length === 0) {
@@ -327,9 +655,28 @@ export class VirtualFileSystem {
 
     const existing = this.nodes.get(norm);
     const now = Date.now();
-    const size = options?.isBinary
-      ? Math.floor(content.length * 0.75)
-      : new TextEncoder().encode(content).length;
+
+    let binaryContent: Uint8Array;
+    let size: number;
+    const isBinary = options?.isBinary ?? existing?.isBinary ?? false;
+
+    if (isBinary && content.startsWith('data:')) {
+      try {
+        const base64Data = content.split(',')[1] || '';
+        const binStr = atob(base64Data);
+        binaryContent = new Uint8Array(binStr.length);
+        for (let i = 0; i < binStr.length; i++) {
+          binaryContent[i] = binStr.charCodeAt(i);
+        }
+        size = binaryContent.byteLength;
+      } catch {
+        binaryContent = new TextEncoder().encode(content);
+        size = binaryContent.byteLength;
+      }
+    } else {
+      binaryContent = new TextEncoder().encode(content);
+      size = binaryContent.byteLength;
+    }
 
     const node: VFSNode = {
       name,
@@ -337,14 +684,15 @@ export class VirtualFileSystem {
       parentPath,
       type: 'file',
       content,
+      binaryContent,
       size,
       createdAt: existing ? existing.createdAt : now,
       modifiedAt: now,
       permissions: options?.permissions ?? existing?.permissions ?? 0o644,
-      owner: options?.owner ?? existing?.owner ?? 'aether',
-      group: 'aether',
+      owner: options?.owner ?? existing?.owner ?? this.currentContext.username,
+      group: options?.group ?? existing?.group ?? 'aether',
       mimeType: getMimeType(name),
-      isBinary: options?.isBinary ?? existing?.isBinary ?? false,
+      isBinary,
     };
 
     this.nodes.set(norm, node);
@@ -365,7 +713,7 @@ export class VirtualFileSystem {
 
   public mkdir(
     path: string,
-    options?: { recursive?: boolean; owner?: string; permissions?: number }
+    options?: { recursive?: boolean; owner?: string; group?: string; permissions?: number }
   ): void {
     const norm = this.normalizePath(path);
     if (norm === '/') return;
@@ -377,6 +725,10 @@ export class VirtualFileSystem {
 
     const parts = norm.split('/').filter(Boolean);
     const parentPath = parts.length === 1 ? '/' : '/' + parts.slice(0, -1).join('/');
+
+    if (!this.checkAccess(parentPath, 'w')) {
+      throw new Error(`EACCES: permission denied, mkdir '${path}'`);
+    }
 
     const parent = this.nodes.get(parentPath);
     if (!parent) {
@@ -400,70 +752,58 @@ export class VirtualFileSystem {
       createdAt: now,
       modifiedAt: now,
       permissions: options?.permissions ?? 0o755,
-      owner: options?.owner ?? 'aether',
-      group: 'aether',
+      owner: options?.owner ?? this.currentContext.username,
+      group: options?.group ?? 'aether',
     };
 
     this.nodes.set(norm, node);
     idbStorage.queueSave(node);
-
     this.notifyWatchers(norm, 'create');
   }
 
   public readdir(path: string): VFSEntry[] {
     const norm = this.normalizePath(path);
-    const dirNode = this.getNode(norm);
-    if (!dirNode) {
+    if (!this.checkAccess(norm, 'r')) {
+      throw new Error(`EACCES: permission denied, readdir '${path}'`);
+    }
+
+    if (!this.exists(norm)) {
       throw new Error(`ENOENT: no such file or directory, scandir '${path}'`);
     }
-    if (dirNode.type !== 'dir') {
+
+    const dirNode = this.getNode(norm);
+    if (!dirNode || dirNode.type !== 'dir') {
       throw new Error(`ENOTDIR: not a directory, scandir '${path}'`);
     }
 
-    // Collect dynamic nodes if in /proc or /dev
     const results: VFSEntry[] = [];
 
+    // Synthesize /proc entries
     if (norm === '/proc') {
-      const dynamicProcFiles = ['version', 'uptime', 'meminfo', 'cpuinfo'];
-      for (const f of dynamicProcFiles) {
-        const d = this.getDynamicNode(`/proc/${f}`);
-        if (d) {
-          results.push({
-            name: d.name,
-            path: d.path,
-            type: d.type,
-            size: d.size,
-            modifiedAt: d.modifiedAt,
-            permissions: d.permissions,
-            owner: d.owner,
-          });
-        }
-      }
-      return results;
+      return [
+        { name: 'uptime', path: '/proc/uptime', type: 'file', size: 32, modifiedAt: Date.now(), permissions: 0o444, owner: 'root' },
+        { name: 'version', path: '/proc/version', type: 'file', size: 64, modifiedAt: Date.now(), permissions: 0o444, owner: 'root' },
+        { name: 'meminfo', path: '/proc/meminfo', type: 'file', size: 256, modifiedAt: Date.now(), permissions: 0o444, owner: 'root' },
+        { name: 'cpuinfo', path: '/proc/cpuinfo', type: 'file', size: 512, modifiedAt: Date.now(), permissions: 0o444, owner: 'root' },
+      ];
     }
 
+    // Synthesize /dev entries
     if (norm === '/dev') {
-      const dynamicDevFiles = ['null', 'zero', 'urandom', 'random'];
-      for (const f of dynamicDevFiles) {
-        const d = this.getDynamicNode(`/dev/${f}`);
-        if (d) {
-          results.push({
-            name: d.name,
-            path: d.path,
-            type: d.type,
-            size: d.size,
-            modifiedAt: d.modifiedAt,
-            permissions: d.permissions,
-            owner: d.owner,
-          });
-        }
-      }
+      return [
+        { name: 'null', path: '/dev/null', type: 'file', size: 0, modifiedAt: Date.now(), permissions: 0o666, owner: 'root' },
+        { name: 'zero', path: '/dev/zero', type: 'file', size: 0, modifiedAt: Date.now(), permissions: 0o666, owner: 'root' },
+        { name: 'random', path: '/dev/random', type: 'file', size: 64, modifiedAt: Date.now(), permissions: 0o666, owner: 'root' },
+        { name: 'urandom', path: '/dev/urandom', type: 'file', size: 64, modifiedAt: Date.now(), permissions: 0o666, owner: 'root' },
+      ];
     }
 
-    // Collect children from regular map
     for (const node of this.nodes.values()) {
-      if (node.parentPath === norm && node.path !== norm) {
-        if (norm === '/home/aether/.trash' && node.name === '.info') continue;
+      if (node.parentPath === norm) {
+        // Hide internal metadata folder inside trash
+        if (norm === '/home/aether/.trash' && node.name === '.info') {
+          continue;
+        }
         results.push({
           name: node.name,
           path: node.path,
@@ -487,6 +827,10 @@ export class VirtualFileSystem {
 
   public unlink(path: string): void {
     const norm = this.normalizePath(path);
+    if (!this.checkAccess(norm, 'w')) {
+      throw new Error(`EACCES: permission denied, unlink '${path}'`);
+    }
+
     const node = this.nodes.get(norm);
     if (!node) {
       throw new Error(`ENOENT: no such file or directory, unlink '${path}'`);
@@ -504,6 +848,10 @@ export class VirtualFileSystem {
     const norm = this.normalizePath(path);
     if (norm === '/') {
       throw new Error(`EBUSY: resource busy or locked, rmdir '/'`);
+    }
+
+    if (!this.checkAccess(norm, 'w')) {
+      throw new Error(`EACCES: permission denied, rmdir '${path}'`);
     }
 
     const node = this.nodes.get(norm);
@@ -542,6 +890,10 @@ export class VirtualFileSystem {
     const normNew = this.normalizePath(newPath);
 
     if (normOld === normNew) return;
+    if (!this.checkAccess(normOld, 'w')) {
+      throw new Error(`EACCES: permission denied, rename '${oldPath}'`);
+    }
+
     const oldNode = this.nodes.get(normOld);
     if (!oldNode) {
       throw new Error(`ENOENT: no such file or directory, rename '${oldPath}' -> '${newPath}'`);
@@ -554,6 +906,10 @@ export class VirtualFileSystem {
     const newParts = normNew.split('/').filter(Boolean);
     const newName = newParts[newParts.length - 1];
     const newParent = newParts.length === 1 ? '/' : '/' + newParts.slice(0, -1).join('/');
+
+    if (!this.checkAccess(newParent, 'w')) {
+      throw new Error(`EACCES: permission denied, rename destination parent '${newParent}'`);
+    }
 
     if (!this.exists(newParent)) {
       throw new Error(`ENOENT: destination parent does not exist '${newParent}'`);
@@ -583,9 +939,8 @@ export class VirtualFileSystem {
     }
 
     if (oldNode.type === 'dir') {
-      // Rename directory and all descendants
       const oldPrefix = normOld + '/';
-      const updates: Array<{ old: string; node: VFSNode }> = [];
+      const updates: { old: string; node: VFSNode }[] = [];
 
       for (const [p, n] of this.nodes.entries()) {
         if (p === normOld) {
@@ -648,6 +1003,10 @@ export class VirtualFileSystem {
     const normSrc = this.normalizePath(srcPath);
     let normDest = this.normalizePath(destPath);
 
+    if (!this.checkAccess(normSrc, 'r')) {
+      throw new Error(`EACCES: permission denied, read '${srcPath}'`);
+    }
+
     const srcNode = this.nodes.get(normSrc);
     if (!srcNode) {
       throw new Error(`ENOENT: no such file or directory, copy '${srcPath}'`);
@@ -671,11 +1030,19 @@ export class VirtualFileSystem {
         this.copy(entry.path, normDest + '/' + entry.name, { recursive: true });
       }
     } else {
-      this.writeFile(normDest, srcNode.content ?? '', {
-        owner: srcNode.owner,
-        permissions: srcNode.permissions,
-        isBinary: srcNode.isBinary,
-      });
+      if (srcNode.binaryContent) {
+        this.writeBytesSync(normDest, srcNode.binaryContent, {
+          owner: srcNode.owner,
+          permissions: srcNode.permissions,
+          isBinary: srcNode.isBinary,
+        });
+      } else {
+        this.writeFile(normDest, srcNode.content ?? '', {
+          owner: srcNode.owner,
+          permissions: srcNode.permissions,
+          isBinary: srcNode.isBinary,
+        });
+      }
     }
   }
 
@@ -685,17 +1052,21 @@ export class VirtualFileSystem {
     const name = parts[parts.length - 1];
     const parentPath = parts.length === 1 ? '/' : '/' + parts.slice(0, -1).join('/');
 
+    if (!this.checkAccess(parentPath, 'w')) {
+      throw new Error(`EACCES: permission denied, symlink '${linkPath}'`);
+    }
+
     const node: VFSNode = {
       name,
       path: normLink,
       parentPath,
       type: 'symlink',
-      targetPath: this.normalizePath(targetPath),
+      targetPath,
       size: targetPath.length,
       createdAt: Date.now(),
       modifiedAt: Date.now(),
       permissions: 0o777,
-      owner: 'aether',
+      owner: this.currentContext.username,
       group: 'aether',
     };
 
@@ -709,6 +1080,10 @@ export class VirtualFileSystem {
     if (!node) {
       throw new Error(`ENOENT: no such file or directory, chmod '${path}'`);
     }
+    // Only owner or root can change permissions
+    if (this.currentContext.uid !== 0 && this.currentContext.username !== node.owner) {
+      throw new Error(`EACCES: permission denied, chmod '${path}'`);
+    }
     node.permissions = mode;
     node.modifiedAt = Date.now();
     idbStorage.queueSave(node);
@@ -719,6 +1094,9 @@ export class VirtualFileSystem {
     const node = this.nodes.get(this.normalizePath(path));
     if (!node) {
       throw new Error(`ENOENT: no such file or directory, chown '${path}'`);
+    }
+    if (this.currentContext.uid !== 0 && this.currentContext.username !== 'root') {
+      throw new Error(`EACCES: operation not permitted, chown requires root privileges`);
     }
     node.owner = owner;
     if (group) node.group = group;
@@ -877,7 +1255,106 @@ export class VirtualFileSystem {
     }
   }
 
-  // System snapshot export & import
+  // AetherFS 2.0 Backups & Integrity Recovery
+  public async createBackup(): Promise<VFSBackupData> {
+    const exportNodes: Array<Omit<VFSNode, 'binaryContent'> & { binaryBase64?: string }> = [];
+    for (const node of this.nodes.values()) {
+      if (node.path.startsWith('/proc') || node.path.startsWith('/dev')) continue;
+      const { binaryContent, ...rest } = node;
+      let binaryBase64: string | undefined;
+      if (binaryContent) {
+        let binaryStr = '';
+        const len = binaryContent.byteLength;
+        for (let i = 0; i < len; i++) {
+          binaryStr += String.fromCharCode(binaryContent[i]);
+        }
+        binaryBase64 = btoa(binaryStr);
+      }
+      exportNodes.push({ ...rest, binaryBase64 });
+    }
+
+    const payload = JSON.stringify(exportNodes);
+    let hash = 0;
+    for (let i = 0; i < payload.length; i++) {
+      hash = (hash << 5) - hash + payload.charCodeAt(i);
+      hash |= 0;
+    }
+    const checksum = Math.abs(hash).toString(16).padStart(8, '0');
+
+    const backup: VFSBackupData = {
+      version: 2,
+      createdAt: Date.now(),
+      filesCount: exportNodes.length,
+      nodeCount: exportNodes.length,
+      checksum,
+      nodes: exportNodes,
+    };
+
+    return backup;
+  }
+
+  public async restoreBackup(
+    backupInput: string | VFSBackupData
+  ): Promise<boolean> {
+    try {
+      const parsed: VFSBackupData =
+        typeof backupInput === 'string' ? JSON.parse(backupInput) : backupInput;
+
+      if (!parsed || (parsed.version !== 2 && parsed.version !== '2.0') || !Array.isArray(parsed.nodes)) {
+        return false;
+      }
+
+      // Checksum verification
+      const payload = JSON.stringify(parsed.nodes);
+      let hash = 0;
+      for (let i = 0; i < payload.length; i++) {
+        hash = (hash << 5) - hash + payload.charCodeAt(i);
+        hash |= 0;
+      }
+      const calculatedChecksum = Math.abs(hash).toString(16).padStart(8, '0');
+      if (parsed.checksum && parsed.checksum !== calculatedChecksum) {
+        return false;
+      }
+
+      const previousNodes = new Map(this.nodes);
+
+      try {
+        await idbStorage.clearAll();
+        this.nodes.clear();
+
+        for (const item of parsed.nodes) {
+          let binaryContent: Uint8Array | undefined;
+          if (item.binaryBase64) {
+            const binStr = atob(item.binaryBase64);
+            binaryContent = new Uint8Array(binStr.length);
+            for (let i = 0; i < binStr.length; i++) {
+              binaryContent[i] = binStr.charCodeAt(i);
+            }
+          }
+          const { binaryBase64: _bin, ...nodeData } = item;
+          const node: VFSNode = {
+            ...nodeData,
+            binaryContent,
+          };
+          this.nodes.set(node.path, node);
+          idbStorage.queueSave(node);
+        }
+
+        await idbStorage.flush();
+        this.notifyWatchers('/', 'modify');
+        systemLogger.info('vfs', `Restored ${this.nodes.size} nodes from AetherFS 2.0 backup`);
+        return true;
+      } catch (_applyErr) {
+        // Rollback on persistence error
+        this.nodes = previousNodes;
+        return false;
+      }
+    } catch {
+      return false;
+    }
+  }
+
+  // System snapshot export & import (legacy support)
   public exportSnapshot(): string {
     const list = Array.from(this.nodes.values()).filter(
       (n) => !n.path.startsWith('/proc') && !n.path.startsWith('/dev')
