@@ -1,5 +1,5 @@
 // AetherOS - Notes & To-Do Application
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { AppProps } from '../types';
 import { vfs } from '../../vfs/vfs';
 import { Plus, Trash2, CheckCircle2, Circle, Search } from 'lucide-react';
@@ -46,6 +46,23 @@ export const NotesApp: React.FC<AppProps> = () => {
   const [notes, setNotes] = useState<NoteItem[]>([]);
   const [selectedNoteId, setSelectedNoteId] = useState<string>('');
   const [search, setSearch] = useState('');
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingNotesRef = useRef<NoteItem[]>(notes);
+
+  useEffect(() => {
+    pendingNotesRef.current = notes;
+  }, [notes]);
+
+  const flushSave = useCallback((dataToSave?: NoteItem[]) => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
+    const data = dataToSave || pendingNotesRef.current;
+    try {
+      vfs.writeFile(STORAGE_PATH, JSON.stringify(data, null, 2));
+    } catch {}
+  }, []);
 
   // Load notes from VFS
   useEffect(() => {
@@ -62,12 +79,26 @@ export const NotesApp: React.FC<AppProps> = () => {
     }
   }, []);
 
+  useEffect(() => {
+    return () => {
+      flushSave();
+    };
+  }, [flushSave]);
+
   // Save changes to VFS
-  const saveNotes = (updated: NoteItem[]) => {
+  const saveNotes = (updated: NoteItem[], immediate = false) => {
     setNotes(updated);
-    try {
-      vfs.writeFile(STORAGE_PATH, JSON.stringify(updated, null, 2));
-    } catch {}
+    pendingNotesRef.current = updated;
+    if (immediate) {
+      flushSave(updated);
+    } else {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+      saveTimeoutRef.current = setTimeout(() => {
+        flushSave(updated);
+      }, 400);
+    }
   };
 
   const handleAddNote = () => {
@@ -80,13 +111,13 @@ export const NotesApp: React.FC<AppProps> = () => {
       updatedAt: Date.now(),
     };
     const next = [newNote, ...notes];
-    saveNotes(next);
+    saveNotes(next, true);
     setSelectedNoteId(newNote.id);
   };
 
   const handleDelete = (id: string) => {
     const next = notes.filter((n) => n.id !== id);
-    saveNotes(next);
+    saveNotes(next, true);
     if (selectedNoteId === id) {
       setSelectedNoteId(next[0]?.id || '');
     }
@@ -94,7 +125,7 @@ export const NotesApp: React.FC<AppProps> = () => {
 
   const handleToggleComplete = (id: string) => {
     const next = notes.map((n) => (n.id === id ? { ...n, completed: !n.completed } : n));
-    saveNotes(next);
+    saveNotes(next, true);
   };
 
   const selectedNote = notes.find((n) => n.id === selectedNoteId) || notes[0];

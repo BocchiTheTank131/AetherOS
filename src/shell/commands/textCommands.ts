@@ -249,10 +249,15 @@ export const textCommands: RegisteredCommand[] = [
         return { stdout: '', stderr: 'seq: invalid argument\n', exitCode: 1 };
       }
 
+      const count = Math.floor(Math.abs(end - start) / Math.abs(step)) + 1;
+      const MAX_SEQ = 50000;
+      if (count > MAX_SEQ) {
+        return { stdout: '', stderr: `seq: sequence limit exceeded (max ${MAX_SEQ})\n`, exitCode: 1 };
+      }
+
       const res: number[] = [];
-      const limit = Math.min(Math.abs(end - start) + 1, 1000);
       let curr = start;
-      for (let i = 0; i < limit && (step > 0 ? curr <= end : curr >= end); i++) {
+      for (let i = 0; i < count && (step > 0 ? curr <= end : curr >= end); i++) {
         res.push(curr);
         curr += step;
       }

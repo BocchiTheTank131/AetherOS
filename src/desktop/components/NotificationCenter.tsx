@@ -62,7 +62,14 @@ export const NotificationCenter: React.FC = () => {
     theme,
   } = useSystem();
 
+  const [dismissedToastIds, setDismissedToastIds] = React.useState<Set<string>>(new Set());
+
+  const handleDismissToast = (id: string) => {
+    setDismissedToastIds((prev) => new Set(prev).add(id));
+  };
+
   const isTopDock = theme.dockPosition === 'top';
+  const activeToasts = notifications.filter((n) => !dismissedToastIds.has(n.id)).slice(0, 3);
 
   return (
     <>
@@ -72,11 +79,11 @@ export const NotificationCenter: React.FC = () => {
           isTopDock ? 'top-14' : 'bottom-14'
         } right-4 z-[9998] flex flex-col gap-2 pointer-events-none select-none max-w-sm`}
       >
-        {notifications.slice(0, 3).map((notif) => (
+        {activeToasts.map((notif) => (
           <NotificationToast
             key={notif.id}
             notif={notif}
-            onDismiss={dismissNotification}
+            onDismiss={handleDismissToast}
             blur={theme.blur}
           />
         ))}

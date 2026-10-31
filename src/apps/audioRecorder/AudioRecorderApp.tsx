@@ -15,6 +15,11 @@ export const AudioRecorderApp: React.FC<AppProps> = () => {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const recordedBlobUrlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    recordedBlobUrlRef.current = recordedBlobUrl;
+  }, [recordedBlobUrl]);
 
   useEffect(() => {
     let timer: ReturnType<typeof setInterval>;
@@ -26,10 +31,21 @@ export const AudioRecorderApp: React.FC<AppProps> = () => {
     return () => clearInterval(timer);
   }, [isRecording]);
 
+  useEffect(() => {
+    return () => {
+      if (recordedBlobUrlRef.current) {
+        URL.revokeObjectURL(recordedBlobUrlRef.current);
+      }
+    };
+  }, []);
+
   const startRecording = async () => {
+    if (recordedBlobUrl) {
+      URL.revokeObjectURL(recordedBlobUrl);
+      setRecordedBlobUrl(null);
+    }
     audioChunksRef.current = [];
     setRecordingSeconds(0);
-    setRecordedBlobUrl(null);
 
     try {
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
@@ -76,14 +92,32 @@ export const AudioRecorderApp: React.FC<AppProps> = () => {
     const targetPath = `/home/aether/Music/${filename}`;
 
     try {
-      vfs.writeFile(targetPath, `[AetherOS Audio Recording: ${recordingSeconds}s]\n`, {
-        owner: 'aether',
-      });
-      addNotification({
-        title: 'Sound Studio',
-        message: `Saved voice memo to ${targetPath}`,
-        level: 'success',
-      });
+      if (audioChunksRef.current.length > 0) {
+        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const base64Data = (reader.result as string) || '';
+          vfs.writeFile(targetPath, base64Data, {
+            owner: 'aether',
+            isBinary: true,
+          });
+          addNotification({
+            title: 'Sound Studio',
+            message: `Saved voice memo to ${targetPath}`,
+            level: 'success',
+          });
+        };
+        reader.readAsDataURL(blob);
+      } else {
+        vfs.writeFile(targetPath, `[AetherOS Audio Recording: ${recordingSeconds}s]\n`, {
+          owner: 'aether',
+        });
+        addNotification({
+          title: 'Sound Studio',
+          message: `Saved voice memo to ${targetPath}`,
+          level: 'success',
+        });
+      }
     } catch (err) {
       alert(`Save error: ${(err as Error).message}`);
     }

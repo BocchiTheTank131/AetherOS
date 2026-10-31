@@ -168,6 +168,22 @@ export class VirtualFileSystem {
       };
     }
 
+    // /dev root directory
+    if (norm === '/dev') {
+      return {
+        name: 'dev',
+        path: '/dev',
+        parentPath: '/',
+        type: 'dir',
+        size: 0,
+        createdAt: Date.now(),
+        modifiedAt: Date.now(),
+        permissions: 0o755,
+        owner: 'root',
+        group: 'root',
+      };
+    }
+
     // /dev/null
     if (norm === '/dev/null') {
       return {
@@ -231,7 +247,10 @@ export class VirtualFileSystem {
     return this.nodes.has(norm);
   }
 
-  public getNode(path: string): VFSNode | null {
+  public getNode(path: string, depth = 0): VFSNode | null {
+    if (depth > 20) {
+      throw new Error(`ELOOP: too many levels of symbolic links, '${path}'`);
+    }
     const norm = this.normalizePath(path);
     const dynamic = this.getDynamicNode(norm);
     if (dynamic) return dynamic;
@@ -241,7 +260,7 @@ export class VirtualFileSystem {
 
     // Follow symlinks for read/stat operations if not circular
     if (node.type === 'symlink' && node.targetPath) {
-      return this.getNode(node.targetPath);
+      return this.getNode(node.targetPath, depth + 1);
     }
     return node;
   }
@@ -260,7 +279,10 @@ export class VirtualFileSystem {
     };
   }
 
-  public readFile(path: string): string {
+  public readFile(path: string, depth = 0): string {
+    if (depth > 20) {
+      throw new Error(`ELOOP: too many levels of symbolic links, '${path}'`);
+    }
     const norm = this.normalizePath(path);
     const dynamic = this.getDynamicNode(norm);
     if (dynamic) return dynamic.content ?? '';
@@ -273,7 +295,7 @@ export class VirtualFileSystem {
       throw new Error(`EISDIR: illegal operation on a directory, read '${path}'`);
     }
     if (node.type === 'symlink' && node.targetPath) {
-      return this.readFile(node.targetPath);
+      return this.readFile(node.targetPath, depth + 1);
     }
     return node.content ?? '';
   }
@@ -441,6 +463,7 @@ export class VirtualFileSystem {
     // Collect children from regular map
     for (const node of this.nodes.values()) {
       if (node.parentPath === norm && node.path !== norm) {
+        if (norm === '/home/aether/.trash' && node.name === '.info') continue;
         results.push({
           name: node.name,
           path: node.path,
@@ -522,6 +545,10 @@ export class VirtualFileSystem {
     const oldNode = this.nodes.get(normOld);
     if (!oldNode) {
       throw new Error(`ENOENT: no such file or directory, rename '${oldPath}' -> '${newPath}'`);
+    }
+
+    if (oldNode.type === 'dir' && (normNew === normOld || normNew.startsWith(normOld + '/'))) {
+      throw new Error(`EINVAL: cannot move directory '${oldPath}' into its own subdirectory '${newPath}'`);
     }
 
     const newParts = normNew.split('/').filter(Boolean);
@@ -632,6 +659,9 @@ export class VirtualFileSystem {
     }
 
     if (srcNode.type === 'dir') {
+      if (normDest === normSrc || normDest.startsWith(normSrc + '/')) {
+        throw new Error(`EINVAL: cannot copy directory '${srcPath}' into itself '${destPath}'`);
+      }
       if (!options?.recursive) {
         throw new Error(`EISDIR: -r not specified; omitting directory '${srcPath}'`);
       }
@@ -697,12 +727,26 @@ export class VirtualFileSystem {
     this.notifyWatchers(node.path, 'modify');
   }
 
+  public utimes(path: string, mtime = Date.now()): void {
+    const node = this.nodes.get(this.normalizePath(path));
+    if (!node) {
+      throw new Error(`ENOENT: no such file or directory, utimes '${path}'`);
+    }
+    node.modifiedAt = mtime;
+    idbStorage.queueSave(node);
+    this.notifyWatchers(node.path, 'modify');
+  }
+
   // Trash support
   public moveToTrash(path: string): string {
     const norm = this.normalizePath(path);
     const trashBase = '/home/aether/.trash';
+    const infoBase = '/home/aether/.trash/.info';
     if (!this.exists(trashBase)) {
       this.mkdir(trashBase, { recursive: true });
+    }
+    if (!this.exists(infoBase)) {
+      this.mkdir(infoBase, { recursive: true });
     }
 
     const node = this.getNode(norm);
@@ -710,9 +754,67 @@ export class VirtualFileSystem {
       throw new Error(`ENOENT: no such file or directory '${path}'`);
     }
 
-    const trashDest = this.normalizePath(`${trashBase}/${Date.now()}_${node.name}`);
+    const id = Date.now();
+    const trashDest = this.normalizePath(`${trashBase}/${id}_${node.name}`);
     this.rename(norm, trashDest);
+
+    try {
+      this.writeFile(
+        `${infoBase}/${id}_${node.name}.json`,
+        JSON.stringify({
+          originalPath: norm,
+          deletedAt: id,
+        })
+      );
+    } catch {
+      // Ignore info metadata save error
+    }
+
     return trashDest;
+  }
+
+  public restoreFromTrash(trashPath: string): string {
+    const norm = this.normalizePath(trashPath);
+    if (!this.exists(norm)) {
+      throw new Error(`ENOENT: no such file or directory in trash '${trashPath}'`);
+    }
+
+    const fileName = norm.split('/').pop()!;
+    const infoPath = `/home/aether/.trash/.info/${fileName}.json`;
+
+    let targetPath = '';
+    if (this.exists(infoPath)) {
+      try {
+        const meta = JSON.parse(this.readFile(infoPath));
+        if (meta && typeof meta.originalPath === 'string') {
+          targetPath = meta.originalPath;
+        }
+      } catch {
+        // Fallback below
+      }
+    }
+
+    if (!targetPath) {
+      const cleanName = fileName.replace(/^\d+_/, '');
+      targetPath = this.resolve('/home/aether/Documents', cleanName);
+    }
+
+    const targetParent = targetPath.split('/').slice(0, -1).join('/') || '/';
+    if (!this.exists(targetParent)) {
+      this.mkdir(targetParent, { recursive: true });
+    }
+
+    this.rename(norm, targetPath);
+
+    if (this.exists(infoPath)) {
+      try {
+        this.unlink(infoPath);
+      } catch {
+        // Ignore
+      }
+    }
+
+    return targetPath;
   }
 
   public emptyTrash(): number {
@@ -720,14 +822,26 @@ export class VirtualFileSystem {
     if (!this.exists(trashBase)) return 0;
 
     const items = this.readdir(trashBase);
+    let count = 0;
     for (const item of items) {
+      if (item.name === '.info') continue;
       if (item.type === 'dir') {
         this.rmdir(item.path, { recursive: true });
       } else {
         this.unlink(item.path);
       }
+      count++;
     }
-    return items.length;
+
+    if (this.exists('/home/aether/.trash/.info')) {
+      try {
+        this.rmdir('/home/aether/.trash/.info', { recursive: true });
+      } catch {
+        // Ignore
+      }
+    }
+
+    return count;
   }
 
   // Watchers & System Events

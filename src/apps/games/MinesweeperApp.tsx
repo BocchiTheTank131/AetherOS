@@ -19,6 +19,7 @@ export const MinesweeperApp: React.FC<AppProps> = () => {
   const [gameOver, setGameOver] = useState(false);
   const [gameWon, setGameWon] = useState(false);
   const [flagsRemaining, setFlagsRemaining] = useState(MINES);
+  const [firstClickDone, setFirstClickDone] = useState(false);
 
   const initGame = () => {
     // Generate empty grid
@@ -35,39 +36,10 @@ export const MinesweeperApp: React.FC<AppProps> = () => {
           }))
       );
 
-    // Place mines randomly
-    let placed = 0;
-    while (placed < MINES) {
-      const r = Math.floor(Math.random() * ROWS);
-      const c = Math.floor(Math.random() * COLS);
-      if (!newGrid[r][c].isMine) {
-        newGrid[r][c].isMine = true;
-        placed++;
-      }
-    }
-
-    // Calculate neighbors
-    for (let r = 0; r < ROWS; r++) {
-      for (let c = 0; c < COLS; c++) {
-        if (!newGrid[r][c].isMine) {
-          let count = 0;
-          for (let dr = -1; dr <= 1; dr++) {
-            for (let dc = -1; dc <= 1; dc++) {
-              const nr = r + dr;
-              const nc = c + dc;
-              if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && newGrid[nr][nc].isMine) {
-                count++;
-              }
-            }
-          }
-          newGrid[r][c].neighborMines = count;
-        }
-      }
-    }
-
     setGrid(newGrid);
     setGameOver(false);
     setGameWon(false);
+    setFirstClickDone(false);
     setFlagsRemaining(MINES);
   };
 
@@ -78,7 +50,43 @@ export const MinesweeperApp: React.FC<AppProps> = () => {
   const revealCell = (r: number, c: number) => {
     if (gameOver || gameWon || grid[r][c].isRevealed || grid[r][c].isFlagged) return;
 
-    const next = grid.map((row) => row.map((cell) => ({ ...cell })));
+    let baseGrid = grid;
+    if (!firstClickDone) {
+      // Place mines on first click, avoiding the clicked cell
+      const minedGrid: CellState[][] = grid.map((row) => row.map((cell) => ({ ...cell })));
+      let placed = 0;
+      while (placed < MINES) {
+        const mr = Math.floor(Math.random() * ROWS);
+        const mc = Math.floor(Math.random() * COLS);
+        if ((mr !== r || mc !== c) && !minedGrid[mr][mc].isMine) {
+          minedGrid[mr][mc].isMine = true;
+          placed++;
+        }
+      }
+
+      // Calculate neighbors
+      for (let i = 0; i < ROWS; i++) {
+        for (let j = 0; j < COLS; j++) {
+          if (!minedGrid[i][j].isMine) {
+            let count = 0;
+            for (let dr = -1; dr <= 1; dr++) {
+              for (let dc = -1; dc <= 1; dc++) {
+                const nr = i + dr;
+                const nc = j + dc;
+                if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && minedGrid[nr][nc].isMine) {
+                  count++;
+                }
+              }
+            }
+            minedGrid[i][j].neighborMines = count;
+          }
+        }
+      }
+      baseGrid = minedGrid;
+      setFirstClickDone(true);
+    }
+
+    const next = baseGrid.map((row) => row.map((cell) => ({ ...cell })));
 
     if (next[r][c].isMine) {
       // Hit mine - Game Over

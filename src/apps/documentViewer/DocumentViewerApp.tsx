@@ -11,14 +11,70 @@ export const DocumentViewerApp: React.FC<AppProps> = ({ initialProps, setTitle }
   const [mode, setMode] = useState<'preview' | 'source'>('preview');
 
   useEffect(() => {
-    if (vfs.exists(filePath)) {
-      try {
-        const text = vfs.readFile(filePath);
-        setContent(text);
-        if (setTitle) setTitle(`${filePath.split('/').pop()} - Document Viewer`);
-      } catch {}
-    }
+    const loadContent = () => {
+      if (vfs.exists(filePath)) {
+        try {
+          const text = vfs.readFile(filePath);
+          setContent(text);
+          if (setTitle) setTitle(`${filePath.split('/').pop()} - Document Viewer`);
+        } catch {}
+      }
+    };
+
+    loadContent();
+    const unsubscribe = vfs.watch(filePath, () => {
+      loadContent();
+    });
+    return () => unsubscribe();
   }, [filePath, setTitle]);
+
+  // Inline markdown formatter for bold, italic, code, links
+  const renderInline = (text: string): React.ReactNode => {
+    const regex = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\([^)]+\))/g;
+    const parts = text.split(regex);
+
+    return parts.map((part, i) => {
+      if (part.startsWith('`') && part.endsWith('`') && part.length >= 2) {
+        return (
+          <code
+            key={i}
+            className="px-1.5 py-0.5 rounded bg-gray-800 text-cyan-300 font-mono text-[11px] border border-gray-700/60"
+          >
+            {part.slice(1, -1)}
+          </code>
+        );
+      }
+      if (part.startsWith('**') && part.endsWith('**') && part.length >= 4) {
+        return (
+          <strong key={i} className="font-semibold text-white">
+            {part.slice(2, -2)}
+          </strong>
+        );
+      }
+      if (part.startsWith('*') && part.endsWith('*') && part.length >= 2) {
+        return (
+          <em key={i} className="italic text-gray-200">
+            {part.slice(1, -1)}
+          </em>
+        );
+      }
+      const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+      if (linkMatch) {
+        return (
+          <a
+            key={i}
+            href={linkMatch[2]}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-cyan-400 underline hover:text-cyan-300"
+          >
+            {linkMatch[1]}
+          </a>
+        );
+      }
+      return part;
+    });
+  };
 
   // Lightweight custom markdown parser
   const renderMarkdown = (text: string) => {
@@ -34,7 +90,7 @@ export const DocumentViewerApp: React.FC<AppProps> = ({ initialProps, setTitle }
           <ul key={`ul-${listBuffer[0].key}`} className="list-disc pl-5 my-2 space-y-1">
             {listBuffer.map((item) => (
               <li key={item.key} className="text-xs text-gray-300 leading-relaxed">
-                {item.text}
+                {renderInline(item.text)}
               </li>
             ))}
           </ul>
@@ -80,25 +136,25 @@ export const DocumentViewerApp: React.FC<AppProps> = ({ initialProps, setTitle }
       if (line.startsWith('# ')) {
         elements.push(
           <h1 key={idx} className="text-xl font-bold text-white border-b border-gray-700/60 pb-2 mt-4 mb-2">
-            {line.replace('# ', '')}
+            {renderInline(line.replace('# ', ''))}
           </h1>
         );
       } else if (line.startsWith('## ')) {
         elements.push(
           <h2 key={idx} className="text-base font-bold text-cyan-400 mt-4 mb-1">
-            {line.replace('## ', '')}
+            {renderInline(line.replace('## ', ''))}
           </h2>
         );
       } else if (line.startsWith('### ')) {
         elements.push(
           <h3 key={idx} className="text-sm font-semibold text-purple-400 mt-3 mb-1">
-            {line.replace('### ', '')}
+            {renderInline(line.replace('### ', ''))}
           </h3>
         );
       } else if (line.startsWith('> ')) {
         elements.push(
           <blockquote key={idx} className="border-l-4 border-cyan-500 pl-3 my-2 text-xs italic text-gray-400">
-            {line.replace('> ', '')}
+            {renderInline(line.replace('> ', ''))}
           </blockquote>
         );
       } else if (line.trim() === '') {
@@ -106,7 +162,7 @@ export const DocumentViewerApp: React.FC<AppProps> = ({ initialProps, setTitle }
       } else {
         elements.push(
           <p key={idx} className="text-xs text-gray-300 leading-relaxed my-1">
-            {line}
+            {renderInline(line)}
           </p>
         );
       }

@@ -1,8 +1,9 @@
 // AetherOS - Main Desktop Surface Component with Icons, Windows & Context Menu
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useSystem } from '../../core/context';
 import { WindowFrame } from './WindowFrame';
 import { vfs } from '../../vfs/vfs';
+import { getMimeType, getAppForFile } from '../../vfs/mime';
 import type { VFSEntry, VFSNode } from '../../vfs/types';
 import {
   Terminal,
@@ -186,16 +187,9 @@ export const Desktop: React.FC = () => {
     if (entry.type === 'dir') {
       openWindow('file-manager', { initialPath: entry.path });
     } else {
-      const ext = entry.name.split('.').pop()?.toLowerCase();
-      if (['png', 'jpg', 'jpeg', 'svg', 'gif', 'webp'].includes(ext || '')) {
-        openWindow('image-viewer', { filePath: entry.path });
-      } else if (['mp3', 'wav', 'ogg', 'mp4', 'webm'].includes(ext || '')) {
-        openWindow('media-player', { filePath: entry.path });
-      } else if (['html', 'css', 'js', 'ts', 'jsx', 'tsx', 'json'].includes(ext || '')) {
-        openWindow('code-studio', { filePath: entry.path });
-      } else {
-        openWindow('text-editor', { filePath: entry.path });
-      }
+      const mime = getMimeType(entry.name);
+      const targetApp = getAppForFile(entry.name, mime);
+      openWindow(targetApp, { filePath: entry.path });
     }
   };
 
@@ -421,12 +415,25 @@ export const Desktop: React.FC = () => {
   // Filter windows by active workspace
   const visibleWindows = windows.filter((w) => w.workspaceId === activeWorkspace);
 
+  const resolvedWallpaper = useMemo(() => {
+    if (theme.wallpaper.startsWith('/')) {
+      try {
+        if (vfs.exists(theme.wallpaper)) {
+          return vfs.readFile(theme.wallpaper);
+        }
+      } catch {
+        // Fallback
+      }
+    }
+    return theme.wallpaper;
+  }, [theme.wallpaper]);
+
   return (
     <div
       onClick={handleDesktopClick}
       onContextMenu={handleContextMenu}
       style={{
-        backgroundImage: `url(${theme.wallpaper})`,
+        backgroundImage: `url(${resolvedWallpaper})`,
         backgroundSize: 'cover',
         backgroundPosition: 'center',
       }}

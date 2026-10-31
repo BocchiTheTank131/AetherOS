@@ -22,81 +22,138 @@ export const fsCommands: RegisteredCommand[] = [
         }
       }
 
-      if (paths.length > 1) {
-        const outList: string[] = [];
-        for (const p of paths) {
-          const resPath = vfs.resolve(context.cwd, p);
+      const formatTarget = (
+        targetPath: string,
+        displayName?: string
+      ): { stdout: string; stderr: string; exitCode: number } => {
+        try {
+          const stats = vfs.stat(targetPath);
+          if (stats.isFile()) {
+            if (longFormat) {
+              const permStr =
+                '-' +
+                ((stats.permissions & 0o400) ? 'r' : '-') +
+                ((stats.permissions & 0o200) ? 'w' : '-') +
+                ((stats.permissions & 0o100) ? 'x' : '-') +
+                ((stats.permissions & 0o040) ? 'r' : '-') +
+                ((stats.permissions & 0o020) ? 'w' : '-') +
+                ((stats.permissions & 0o010) ? 'x' : '-') +
+                ((stats.permissions & 0o004) ? 'r' : '-') +
+                ((stats.permissions & 0o002) ? 'w' : '-') +
+                ((stats.permissions & 0o001) ? 'x' : '-');
+              const sizeStr = stats.size.toString().padStart(6, ' ');
+              const dateStr = new Date(stats.modifiedAt).toLocaleDateString('en-US', {
+                month: 'short',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+              });
+              const colorName =
+                stats.permissions & 0o111
+                  ? `\x1b[1;32m${displayName || stats.name}*\x1b[0m`
+                  : displayName || stats.name;
+              return {
+                stdout: `${permStr} 1 ${stats.owner.padEnd(6, ' ')} aether ${sizeStr} ${dateStr} ${colorName}\n`,
+                stderr: '',
+                exitCode: 0,
+              };
+            }
+            return { stdout: (displayName || stats.name) + '\n', stderr: '', exitCode: 0 };
+          }
+
+          const entries = vfs.readdir(targetPath);
+          const filtered = showAll ? entries : entries.filter((e) => !e.name.startsWith('.'));
+
+          if (!longFormat) {
+            const names = filtered.map((e) => {
+              if (e.type === 'dir') return `\x1b[1;34m${e.name}/\x1b[0m`;
+              if (e.name.endsWith('.sh') || (e.permissions & 0o111)) return `\x1b[1;32m${e.name}*\x1b[0m`;
+              return e.name;
+            });
+            return { stdout: names.join('  ') + (names.length > 0 ? '\n' : ''), stderr: '', exitCode: 0 };
+          }
+
+          // Long format
+          const lines: string[] = [`total ${filtered.length * 4}`];
+          for (const e of filtered) {
+            const isDir = e.type === 'dir';
+            const permStr =
+              (isDir ? 'd' : '-') +
+              ((e.permissions & 0o400) ? 'r' : '-') +
+              ((e.permissions & 0o200) ? 'w' : '-') +
+              ((e.permissions & 0o100) ? 'x' : '-') +
+              ((e.permissions & 0o040) ? 'r' : '-') +
+              ((e.permissions & 0o020) ? 'w' : '-') +
+              ((e.permissions & 0o010) ? 'x' : '-') +
+              ((e.permissions & 0o004) ? 'r' : '-') +
+              ((e.permissions & 0o002) ? 'w' : '-') +
+              ((e.permissions & 0o001) ? 'x' : '-');
+
+            const sizeStr = e.size.toString().padStart(6, ' ');
+            const dateStr = new Date(e.modifiedAt).toLocaleDateString('en-US', {
+              month: 'short',
+              day: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+            });
+
+            const colorName = isDir
+              ? `\x1b[1;34m${e.name}/\x1b[0m`
+              : (e.permissions & 0o111)
+              ? `\x1b[1;32m${e.name}*\x1b[0m`
+              : e.name;
+
+            lines.push(`${permStr} 1 ${e.owner.padEnd(6, ' ')} aether ${sizeStr} ${dateStr} ${colorName}`);
+          }
+
+          return { stdout: lines.join('\n') + '\n', stderr: '', exitCode: 0 };
+        } catch {
+          return {
+            stdout: '',
+            stderr: `ls: cannot access '${displayName || targetPath}': No such file or directory\n`,
+            exitCode: 2,
+          };
+        }
+      };
+
+      if (paths.length === 0) {
+        return formatTarget(context.cwd);
+      }
+
+      if (paths.length === 1) {
+        const targetPath = vfs.resolve(context.cwd, paths[0]);
+        return formatTarget(targetPath, paths[0]);
+      }
+
+      let combinedOut = '';
+      let combinedErr = '';
+      let maxExit = 0;
+
+      for (let i = 0; i < paths.length; i++) {
+        const p = paths[i];
+        const resPath = vfs.resolve(context.cwd, p);
+        const res = formatTarget(resPath, p);
+        if (res.exitCode !== 0) {
+          combinedErr += res.stderr;
+          maxExit = Math.max(maxExit, res.exitCode);
+        } else {
           try {
-            const stats = vfs.stat(resPath);
-            if (stats.isFile()) {
-              outList.push(stats.name);
+            const stat = vfs.stat(resPath);
+            if (stat.isDirectory()) {
+              combinedOut += `${p}:\n${res.stdout}`;
             } else {
-              outList.push(stats.name + '/');
+              combinedOut += res.stdout;
             }
           } catch {
-            // Ignore missing
+            combinedOut += res.stdout;
           }
         }
-        return { stdout: outList.join('  ') + (outList.length ? '\n' : ''), stderr: '', exitCode: 0 };
+        if (i < paths.length - 1 && combinedOut.endsWith('\n')) {
+          combinedOut += '\n';
+        }
       }
 
-      const targetPath = paths.length === 1 ? vfs.resolve(context.cwd, paths[0]) : context.cwd;
-
-      try {
-        const stats = vfs.stat(targetPath);
-        if (stats.isFile()) {
-          return { stdout: stats.name + '\n', stderr: '', exitCode: 0 };
-        }
-
-        const entries = vfs.readdir(targetPath);
-        const filtered = showAll ? entries : entries.filter((e) => !e.name.startsWith('.'));
-
-        if (!longFormat) {
-          const names = filtered.map((e) => {
-            if (e.type === 'dir') return `\x1b[1;34m${e.name}/\x1b[0m`;
-            if (e.name.endsWith('.sh') || (e.permissions & 0o111)) return `\x1b[1;32m${e.name}*\x1b[0m`;
-            return e.name;
-          });
-          return { stdout: names.join('  ') + (names.length > 0 ? '\n' : ''), stderr: '', exitCode: 0 };
-        }
-
-        // Long format
-        const lines: string[] = [`total ${filtered.length * 4}`];
-        for (const e of filtered) {
-          const isDir = e.type === 'dir';
-          const permStr =
-            (isDir ? 'd' : '-') +
-            ((e.permissions & 0o400) ? 'r' : '-') +
-            ((e.permissions & 0o200) ? 'w' : '-') +
-            ((e.permissions & 0o100) ? 'x' : '-') +
-            ((e.permissions & 0o040) ? 'r' : '-') +
-            ((e.permissions & 0o020) ? 'w' : '-') +
-            ((e.permissions & 0o010) ? 'x' : '-') +
-            ((e.permissions & 0o004) ? 'r' : '-') +
-            ((e.permissions & 0o002) ? 'w' : '-') +
-            ((e.permissions & 0o001) ? 'x' : '-');
-
-          const sizeStr = e.size.toString().padStart(6, ' ');
-          const dateStr = new Date(e.modifiedAt).toLocaleDateString('en-US', {
-            month: 'short',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-          });
-
-          const colorName = isDir
-            ? `\x1b[1;34m${e.name}/\x1b[0m`
-            : (e.permissions & 0o111)
-            ? `\x1b[1;32m${e.name}*\x1b[0m`
-            : e.name;
-
-          lines.push(`${permStr} 1 ${e.owner.padEnd(6, ' ')} aether ${sizeStr} ${dateStr} ${colorName}`);
-        }
-
-        return { stdout: lines.join('\n') + '\n', stderr: '', exitCode: 0 };
-      } catch {
-        return { stdout: '', stderr: `ls: cannot access '${targetPath}': No such file or directory\n`, exitCode: 2 };
-      }
+      return { stdout: combinedOut, stderr: combinedErr, exitCode: maxExit };
     },
   },
   {
@@ -188,11 +245,7 @@ export const fsCommands: RegisteredCommand[] = [
       for (const t of args) {
         const resolved = vfs.resolve(context.cwd, t);
         if (vfs.exists(resolved)) {
-          // update modified time
-          const node = vfs.getNode(resolved);
-          if (node) {
-            node.modifiedAt = Date.now();
-          }
+          vfs.utimes(resolved);
         } else {
           vfs.writeFile(resolved, '', { owner: context.user });
         }
@@ -239,6 +292,11 @@ export const fsCommands: RegisteredCommand[] = [
 
       const dest = targets.pop()!;
       const resolvedDest = vfs.resolve(context.cwd, dest);
+      const isDir = vfs.exists(resolvedDest) && vfs.stat(resolvedDest).isDirectory();
+
+      if (targets.length > 1 && !isDir) {
+        return { stdout: '', stderr: `cp: target '${dest}' is not a directory\n`, exitCode: 1 };
+      }
 
       for (const src of targets) {
         const resolvedSrc = vfs.resolve(context.cwd, src);
@@ -423,6 +481,7 @@ export const fsCommands: RegisteredCommand[] = [
       let ignoreCase = false;
       let invert = false;
       let lineNumbers = false;
+      const colorize = args.includes('--color') || args.includes('--color=always');
       const operands: string[] = [];
 
       for (const arg of args) {
@@ -458,8 +517,8 @@ export const fsCommands: RegisteredCommand[] = [
           const keep = invert ? !matches : matches;
           if (keep) {
             const numPart = lineNumbers ? `${idx + 1}:` : '';
-            // Highlight match if not inverted using global regex
-            const formattedLine = invert
+            // Highlight match if not inverted and color enabled
+            const formattedLine = invert || !colorize
               ? line
               : line.replace(highlightRegex, (m) => `\x1b[1;31m${m}\x1b[0m`);
             matched.push(`${prefix}${numPart}${formattedLine}`);
@@ -643,7 +702,7 @@ export const fsCommands: RegisteredCommand[] = [
         }
       }
 
-      const lines = text.split('\n').filter(Boolean);
+      const lines = text.endsWith('\n') ? text.slice(0, -1).split('\n') : text.split('\n');
       lines.sort((a, b) => {
         if (numeric) {
           const na = parseFloat(a) || 0;

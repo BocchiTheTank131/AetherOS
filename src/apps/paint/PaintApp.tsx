@@ -63,8 +63,10 @@ export const PaintApp: React.FC<AppProps> = () => {
     if (!ctx) return;
 
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const scaleX = rect.width > 0 ? canvas.width / rect.width : 1;
+    const scaleY = rect.height > 0 ? canvas.height / rect.height : 1;
+    const x = (e.clientX - rect.left) * scaleX;
+    const y = (e.clientY - rect.top) * scaleY;
 
     ctx.lineWidth = tool === 'eraser' ? brushSize * 4 : brushSize;
     ctx.lineCap = 'round';

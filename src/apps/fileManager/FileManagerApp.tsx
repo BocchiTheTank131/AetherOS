@@ -215,10 +215,7 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
   const handleRestoreSelected = () => {
     for (const p of selectedPaths) {
       try {
-        const fileName = p.split('/').pop()!;
-        const cleanName = fileName.replace(/^\d+_/, '');
-        const targetPath = vfs.resolve('/home/aether/Documents', cleanName);
-        vfs.rename(p, targetPath);
+        vfs.restoreFromTrash(p);
       } catch (err) {
         alert('Restore error: ' + (err as Error).message);
       }
@@ -370,6 +367,8 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
         reader.readAsDataURL(file);
       }
     });
+
+    e.target.value = '';
   };
 
   // Get icon for entry

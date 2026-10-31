@@ -84,8 +84,12 @@ export function expandGlobs(pattern: string, cwd: string): string[] {
       '$';
     const regex = new RegExp(regexPattern);
 
+    const includeHidden = filePattern.startsWith('.');
     const matches = entries
-      .filter((e) => regex.test(e.name))
+      .filter((e) => {
+        if (!includeHidden && e.name.startsWith('.')) return false;
+        return regex.test(e.name);
+      })
       .map((e) => (isDirSearch ? `${dirPrefix}${e.name}` : e.name));
 
     if (matches.length === 0) {

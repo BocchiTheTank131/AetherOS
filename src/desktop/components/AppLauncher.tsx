@@ -228,12 +228,12 @@ export const AppLauncher: React.FC = () => {
                 <Clock className="w-3.5 h-3.5 text-cyan-400" />
                 <span>Recent Applications</span>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 overflow-x-auto pb-1">
                 {recentAppDefs.map((app) => (
                   <button
                     key={app.id}
                     onClick={() => handleLaunch(app)}
-                    className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-gray-800/80 hover:bg-cyan-500/20 border border-gray-700/60 transition-colors text-xs text-gray-200"
+                    className="flex-shrink-0 flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-gray-800/80 hover:bg-cyan-500/20 border border-gray-700/60 transition-colors text-xs text-gray-200"
                   >
                     <div className="w-4 h-4">{getAppIcon(app.icon)}</div>
                     <span className="truncate max-w-[85px]">{app.name}</span>

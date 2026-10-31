@@ -1,13 +1,27 @@
 // AetherOS - Lock Screen Component
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useSystem } from '../../core/context';
 import { audioService } from '../../core/audio';
+import { vfs } from '../../vfs/vfs';
 import { ArrowRight, User } from 'lucide-react';
 
 export const LockScreen: React.FC = () => {
   const { isLocked, setIsLocked, user, theme } = useSystem();
   const [password, setPassword] = useState('');
   const [time, setTime] = useState(() => new Date());
+
+  const resolvedWallpaper = useMemo(() => {
+    if (theme.wallpaper.startsWith('/')) {
+      try {
+        if (vfs.exists(theme.wallpaper)) {
+          return vfs.readFile(theme.wallpaper);
+        }
+      } catch {
+        // Fallback
+      }
+    }
+    return theme.wallpaper;
+  }, [theme.wallpaper]);
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
@@ -26,7 +40,7 @@ export const LockScreen: React.FC = () => {
   return (
     <div
       style={{
-        backgroundImage: `url(${theme.wallpaper})`,
+        backgroundImage: `url(${resolvedWallpaper})`,
         backgroundSize: 'cover',
         backgroundPosition: 'center',
       }}

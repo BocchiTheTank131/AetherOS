@@ -116,17 +116,19 @@ export const SettingsApp: React.FC<AppProps> = () => {
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = reader.result as string;
+      const targetPath = `/home/aether/Pictures/${file.name}`;
       try {
         if (!vfs.exists('/home/aether/Pictures')) {
           vfs.mkdir('/home/aether/Pictures');
         }
-        vfs.writeFile(`/home/aether/Pictures/${file.name}`, dataUrl, { isBinary: true });
+        vfs.writeFile(targetPath, dataUrl, { isBinary: true });
       } catch {
         // Ignore
       }
-      setTheme({ wallpaper: dataUrl });
+      setTheme({ wallpaper: targetPath });
     };
     reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   const handleToggleMute = () => {

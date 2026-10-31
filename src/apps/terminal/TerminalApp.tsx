@@ -15,7 +15,7 @@ interface TerminalTab {
   historyIdx: number;
 }
 
-export const TerminalApp: React.FC<AppProps> = ({ setTitle }) => {
+export const TerminalApp: React.FC<AppProps> = ({ setTitle, initialProps }) => {
   const [tabs, setTabs] = useState<TerminalTab[]>([
     {
       id: 'tab-1',
@@ -31,9 +31,18 @@ export const TerminalApp: React.FC<AppProps> = ({ setTitle }) => {
     },
   ]);
   const [activeTabId, setActiveTabId] = useState('tab-1');
-  const [inputVal, setInputVal] = useState('');
+  const [inputVal, setInputVal] = useState(
+    typeof initialProps?.initialCommand === 'string' ? initialProps.initialCommand : ''
+  );
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (initialProps?.initialCommand && typeof initialProps.initialCommand === 'string') {
+      setInputVal(initialProps.initialCommand);
+      inputRef.current?.focus();
+    }
+  }, [initialProps?.initialCommand]);
 
   const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
 
@@ -331,8 +340,15 @@ export const TerminalApp: React.FC<AppProps> = ({ setTitle }) => {
 
   // Convert ANSI escape sequences to styled spans
   const renderAnsi = (text: string) => {
-    // eslint-disable-next-line no-control-regex
-    const parts = text.split(/(\x1b\[[0-9;]*m)/g);
+    /* eslint-disable no-control-regex */
+    // Strip non-SGR ANSI escape sequences (cursor movement, clear line, private modes, OSC, etc.)
+    const cleanedText = text
+      .replace(/\x1b\[[0-9;]*[A-HJKSTfhilnsu]/g, '')
+      .replace(/\x1b\[\?[0-9;]*[a-zA-Z]/g, '')
+      .replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g, '');
+
+    const parts = cleanedText.split(/(\x1b\[[0-9;]*m)/g);
+    /* eslint-enable no-control-regex */
     let currentColor = '';
     let isBold = false;
 

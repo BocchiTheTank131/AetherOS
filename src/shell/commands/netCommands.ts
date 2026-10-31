@@ -40,7 +40,7 @@ export const netCommands: RegisteredCommand[] = [
         } else {
           try {
             const url = host.startsWith('http') ? host : `https://${host}`;
-            await fetch(url, { method: 'HEAD', mode: 'no-cors' });
+            await fetch(url, { method: 'HEAD', mode: 'no-cors', signal: AbortSignal.timeout(2000) });
             const time = (performance.now() - start).toFixed(2);
             lines.push(`64 bytes from ${host}: icmp_seq=${seq} ttl=56 time=${time} ms`);
             receivedCount++;

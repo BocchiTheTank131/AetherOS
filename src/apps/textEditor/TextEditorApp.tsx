@@ -94,6 +94,14 @@ export const TextEditorApp: React.FC<AppProps> = ({ initialProps, setTitle, isFo
 
   const closeTab = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    const targetTab = tabs.find((t) => t.id === id);
+    if (targetTab && targetTab.content !== targetTab.savedContent) {
+      const confirmDiscard = window.confirm(
+        `"${targetTab.fileName}" has unsaved changes. Discard changes and close?`
+      );
+      if (!confirmDiscard) return;
+    }
+
     const remaining = tabs.filter((t) => t.id !== id);
     if (remaining.length === 0) {
       openNewDoc();

@@ -29,11 +29,13 @@ export const WeatherApp: React.FC<AppProps> = () => {
   });
 
   useEffect(() => {
+    const controller = new AbortController();
     // Attempt to fetch real weather from Open-Meteo
     async function fetchWeather() {
       try {
         const res = await fetch(
-          'https://api.open-meteo.com/v1/forecast?latitude=37.77&longitude=-122.42&current=temperature_2m,relative_humidity_2m,wind_speed_10m'
+          'https://api.open-meteo.com/v1/forecast?latitude=37.77&longitude=-122.42&current=temperature_2m,relative_humidity_2m,wind_speed_10m',
+          { signal: controller.signal }
         );
         if (res.ok) {
           const json = await res.json();
@@ -49,6 +51,7 @@ export const WeatherApp: React.FC<AppProps> = () => {
       }
     }
     fetchWeather();
+    return () => controller.abort();
   }, []);
 
   return (

@@ -224,19 +224,26 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // Focus Window
   const focusWindow = useCallback((id: string) => {
+    const target = windows.find((w) => w.id === id);
+    if (target && target.workspaceId !== activeWorkspace) {
+      setActiveWorkspace(target.workspaceId);
+    }
+
     setTopZIndex((prevZ) => {
-      const newZ = prevZ + 1;
-      setWindows((prev) =>
-        prev.map((w) =>
-          w.id === id
-            ? { ...w, zIndex: newZ, isFocused: true, state: w.state === 'minimized' ? 'normal' : w.state }
-            : { ...w, isFocused: false }
-        )
-      );
-      systemEventBus.emit('window:focused', { windowId: id });
-      return newZ;
+      const nextZ = prevZ + 1;
+      return nextZ;
     });
-  }, []);
+
+    setWindows((prev) => {
+      const highestZ = Math.max(...prev.map((w) => w.zIndex), 0) + 1;
+      return prev.map((w) =>
+        w.id === id
+          ? { ...w, zIndex: highestZ, isFocused: true, state: w.state === 'minimized' ? 'normal' : w.state }
+          : { ...w, isFocused: false }
+      );
+    });
+    systemEventBus.emit('window:focused', { windowId: id });
+  }, [windows, activeWorkspace]);
 
   // Open Window (creates process in virtualKernel)
   const openWindow = useCallback(
@@ -328,12 +335,14 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     (id: string) => {
       const target = windows.find((w) => w.id === id);
       if (target) {
-        savedWindowPositions.current[target.appId] = {
-          x: target.x,
-          y: target.y,
-          width: target.width,
-          height: target.height,
-        };
+        if (target.state === 'normal') {
+          savedWindowPositions.current[target.appId] = {
+            x: target.x,
+            y: target.y,
+            width: target.width,
+            height: target.height,
+          };
+        }
         virtualKernel.exit(target.pid, 0);
       }
 
@@ -457,6 +466,8 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // Global Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isLocked) return;
+
       // Alt + Tab (Window switching)
       if (e.altKey && e.key === 'Tab') {
         e.preventDefault();
@@ -507,7 +518,7 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [windows, focusWindow, closeWindow, openWindow]);
+  }, [windows, isLocked, focusWindow, closeWindow, openWindow]);
 
   const value = useMemo<SystemContextValue>(
     () => ({

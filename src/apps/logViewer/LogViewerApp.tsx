@@ -34,8 +34,10 @@ export const LogViewerApp: React.FC<AppProps> = () => {
     const a = document.createElement('a');
     a.href = url;
     a.download = `aetheros-journal-${new Date().toISOString().slice(0, 10)}.log`;
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const getLevelBadge = (level: SystemLogEntry['level']) => {

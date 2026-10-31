@@ -37,6 +37,16 @@ export class IndexedDBStorage {
         req.onsuccess = () => {
           this.db = req.result;
           systemLogger.info('vfs', 'IndexedDB persistent storage connected');
+
+          if (typeof window !== 'undefined') {
+            window.addEventListener('beforeunload', () => {
+              this.flush();
+            });
+            window.addEventListener('pagehide', () => {
+              this.flush();
+            });
+          }
+
           resolve(true);
         };
 

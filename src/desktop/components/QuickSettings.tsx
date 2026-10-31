@@ -1,5 +1,5 @@
 // AetherOS - Quick Settings Tray Popover Component
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSystem } from '../../core/context';
 import { audioService } from '../../core/audio';
 import {
@@ -28,6 +28,24 @@ export const QuickSettings: React.FC = () => {
 
   const [volume, setVolume] = useState(audioService.getVolume());
   const [isMuted, setIsMuted] = useState(audioService.isSoundMuted());
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node) &&
+        !(e.target as HTMLElement).closest('[title="Quick Settings"]')
+      ) {
+        setQuickSettingsOpen(false);
+      }
+    };
+
+    if (quickSettingsOpen) {
+      window.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => window.removeEventListener('mousedown', handleClickOutside);
+  }, [quickSettingsOpen, setQuickSettingsOpen]);
 
   if (!quickSettingsOpen) return null;
 
@@ -44,6 +62,7 @@ export const QuickSettings: React.FC = () => {
 
   return (
     <div
+      ref={containerRef}
       onClick={(e) => e.stopPropagation()}
       className={`fixed right-4 ${
         theme.dockPosition === 'top' ? 'top-14' : 'bottom-14'

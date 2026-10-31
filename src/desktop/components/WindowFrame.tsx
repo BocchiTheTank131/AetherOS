@@ -179,20 +179,24 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({ window: win }) => {
         let nextW = initialResize.winW;
         let nextH = initialResize.winH;
 
-        if (resizingDir.includes('e')) nextW += dx;
-        if (resizingDir.includes('s')) nextH += dy;
+        if (resizingDir.includes('e')) {
+          nextW = Math.max(win.minWidth, initialResize.winW + dx);
+        }
+        if (resizingDir.includes('s')) {
+          nextH = Math.max(win.minHeight, initialResize.winH + dy);
+        }
         if (resizingDir.includes('w')) {
-          nextW -= dx;
-          nextX += dx;
+          const clampedW = Math.max(win.minWidth, initialResize.winW - dx);
+          nextX = initialResize.winX + (initialResize.winW - clampedW);
+          nextW = clampedW;
         }
         if (resizingDir.includes('n')) {
-          nextH -= dy;
-          nextY += dy;
+          const clampedH = Math.max(win.minHeight, initialResize.winH - dy);
+          nextY = initialResize.winY + (initialResize.winH - clampedH);
+          nextH = clampedH;
         }
 
-        if (nextW >= win.minWidth && nextH >= win.minHeight) {
-          updateWindowSize(win.id, nextW, nextH, nextX, nextY);
-        }
+        updateWindowSize(win.id, nextW, nextH, nextX, nextY);
       }
     };
 

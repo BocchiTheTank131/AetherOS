@@ -79,6 +79,9 @@ export function parse(tokens: Token[]): CommandChain[] {
         }
         i += 2;
         continue;
+      } else {
+        const nextVal = i + 1 < tokens.length ? tokens[i + 1].value : 'newline';
+        throw new Error(`syntax error near unexpected token '${nextVal}'`);
       }
     }
 

@@ -55,7 +55,7 @@ export const CommandPalette: React.FC = () => {
       id: c.name,
       title: c.name,
       subtitle: c.description,
-      action: () => openWindow('terminal'),
+      action: () => openWindow('terminal', { initialCommand: c.name }),
     }));
 
   const allResults = [...apps, ...files, ...cmds];
