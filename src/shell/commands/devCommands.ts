@@ -4,7 +4,7 @@ import { vfs } from '../../vfs/vfs';
 import { aetherRuntime } from '../../runtime/AetherRuntime';
 
 // Real RFC 1321 MD5 calculation
-export function computeMd5(str: string): string {
+export function computeMd5(input: string | Uint8Array): string {
   function safeAdd(x: number, y: number) {
     const lsw = (x & 0xffff) + (y & 0xffff);
     const msw = (x >> 16) + (y >> 16) + (lsw >> 16);
@@ -29,19 +29,11 @@ export function computeMd5(str: string): string {
     return md5cmn(c ^ (b | ~d), a, b, x, s, t);
   }
 
-  const utf8: number[] = [];
-  for (let i = 0; i < str.length; i++) {
-    const code = str.charCodeAt(i);
-    if (code < 128) utf8.push(code);
-    else if (code < 2048) utf8.push((code >> 6) | 192, (code & 63) | 128);
-    else if (code < 65536) utf8.push((code >> 12) | 224, ((code >> 6) & 63) | 128, (code & 63) | 128);
-    else utf8.push((code >> 18) | 240, ((code >> 12) & 63) | 128, ((code >> 6) & 63) | 128, (code & 63) | 128);
-  }
-
-  const n = utf8.length;
+  const bytes = typeof input === 'string' ? new TextEncoder().encode(input) : input;
+  const n = bytes.length;
   const words: number[] = [];
   for (let i = 0; i < n; i++) {
-    words[i >> 2] = (words[i >> 2] || 0) | (utf8[i] << ((i % 4) * 8));
+    words[i >> 2] = (words[i >> 2] || 0) | (bytes[i] << ((i % 4) * 8));
   }
   words[n >> 2] = (words[n >> 2] || 0) | (0x80 << ((n % 4) * 8));
   const totalLen = (((n + 8) >> 6) + 1) * 16;
@@ -151,10 +143,10 @@ export const devCommands: RegisteredCommand[] = [
       const decode = args.includes('-d');
       const files = args.filter((a) => a !== '-d');
 
-      let text = stdin;
+      let fileBytes: Uint8Array | null = null;
       if (files.length > 0) {
         try {
-          text = vfs.readFile(vfs.resolve(context.cwd, files[0]));
+          fileBytes = vfs.readBytes(vfs.resolve(context.cwd, files[0]));
         } catch {
           return { stdout: '', stderr: `base64: ${files[0]}: No such file or directory\n`, exitCode: 1 };
         }
@@ -162,12 +154,13 @@ export const devCommands: RegisteredCommand[] = [
 
       try {
         if (decode) {
-          const binary = atob(text.trim());
+          const text = fileBytes ? new TextDecoder().decode(fileBytes).trim() : stdin.trim();
+          const binary = atob(text);
           const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
           const res = new TextDecoder().decode(bytes);
           return { stdout: res + '\n', stderr: '', exitCode: 0 };
         } else {
-          const bytes = new TextEncoder().encode(text);
+          const bytes = fileBytes || new TextEncoder().encode(stdin);
           let binary = '';
           const len = bytes.byteLength;
           for (let i = 0; i < len; i++) {
@@ -186,23 +179,22 @@ export const devCommands: RegisteredCommand[] = [
     description: 'Compute and check SHA256 message digest',
     usage: 'sha256sum [file...]',
     execute: async (args, context, stdin): Promise<ExecutionResult> => {
-      const hashText = async (text: string): Promise<string> => {
-        const msgBuffer = new TextEncoder().encode(text);
-        const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+      const hashBytes = async (bytes: Uint8Array): Promise<string> => {
+        const hashBuffer = await crypto.subtle.digest('SHA-256', bytes as Uint8Array<ArrayBuffer>);
         const hashArray = Array.from(new Uint8Array(hashBuffer));
         return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
       };
 
       if (args.length === 0) {
-        const h = await hashText(stdin);
+        const h = await hashBytes(new TextEncoder().encode(stdin));
         return { stdout: `${h}  -\n`, stderr: '', exitCode: 0 };
       }
 
       let out = '';
       for (const f of args) {
         try {
-          const content = vfs.readFile(vfs.resolve(context.cwd, f));
-          const h = await hashText(content);
+          const bytes = vfs.readBytes(vfs.resolve(context.cwd, f));
+          const h = await hashBytes(bytes);
           out += `${h}  ${f}\n`;
         } catch {
           return { stdout: out, stderr: `sha256sum: ${f}: No such file or directory\n`, exitCode: 1 };
@@ -223,8 +215,8 @@ export const devCommands: RegisteredCommand[] = [
       let out = '';
       for (const f of args) {
         try {
-          const content = vfs.readFile(vfs.resolve(context.cwd, f));
-          out += `${computeMd5(content)}  ${f}\n`;
+          const bytes = vfs.readBytes(vfs.resolve(context.cwd, f));
+          out += `${computeMd5(bytes)}  ${f}\n`;
         } catch {
           return { stdout: out, stderr: `md5sum: ${f}: No such file or directory\n`, exitCode: 1 };
         }

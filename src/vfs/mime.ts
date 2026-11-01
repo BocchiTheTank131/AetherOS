@@ -83,7 +83,18 @@ export function isVideoMime(mime: string): boolean {
   return mime.startsWith('video/');
 }
 
+import { fileAssociations } from '../appPlatform/FileAssociations';
+
 export function getAppForFile(filename: string, mime: string): string {
+  const parts = filename.split('.');
+  if (parts.length > 1) {
+    const ext = '.' + parts.pop()!.toLowerCase();
+    const registeredApps = fileAssociations.getAppsForExtension(ext);
+    if (registeredApps.length > 0) {
+      return registeredApps[0];
+    }
+  }
+
   if (isImageMime(mime)) return 'image-viewer';
   if (isAudioMime(mime) || isVideoMime(mime)) return 'media-player';
   if (mime === 'text/markdown') return 'document-viewer';
@@ -92,6 +103,10 @@ export function getAppForFile(filename: string, mime: string): string {
     filename.endsWith('.html') ||
     filename.endsWith('.js') ||
     filename.endsWith('.ts') ||
+    filename.endsWith('.jsx') ||
+    filename.endsWith('.tsx') ||
+    filename.endsWith('.py') ||
+    filename.endsWith('.json') ||
     filename.endsWith('.css')
   ) {
     return 'code-studio';

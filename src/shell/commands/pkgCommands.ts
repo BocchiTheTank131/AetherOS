@@ -212,6 +212,8 @@ Usage:
 
         vfs.mkdir(targetDir, { recursive: true });
         for (const [relPath, content] of Object.entries(tmpl.files)) {
+          const parentDir = `${targetDir}/${relPath}`.split('/').slice(0, -1).join('/') || '/';
+          if (!vfs.exists(parentDir)) vfs.mkdir(parentDir, { recursive: true });
           vfs.writeFile(`${targetDir}/${relPath}`, content);
         }
 
@@ -265,14 +267,26 @@ Usage:
           const manifestRaw = vfs.readFile(manifestPath);
           const manifest = JSON.parse(manifestRaw);
 
-          const entries = vfs.readdir(targetPath);
-          const packFiles = new Map<string, string>();
-
-          for (const entry of entries) {
-            if (entry.type === 'file' && !entry.path.includes('/dist/')) {
-              const rel = entry.path.replace(targetPath, '').replace(/^\/+/, '');
-              packFiles.set(rel, vfs.readFile(entry.path));
+          const collectFilesRecursively = (dirPath: string): string[] => {
+            const result: string[] = [];
+            const entries = vfs.readdir(dirPath);
+            for (const entry of entries) {
+              if (entry.path.includes('/dist/')) continue;
+              if (entry.type === 'file') {
+                result.push(entry.path);
+              } else if (entry.type === 'dir') {
+                result.push(...collectFilesRecursively(entry.path));
+              }
             }
+            return result;
+          };
+
+          const allFiles = collectFilesRecursively(targetPath);
+          const packFiles = new Map<string, Uint8Array>();
+
+          for (const filePath of allFiles) {
+            const rel = filePath.replace(targetPath, '').replace(/^\/+/, '');
+            packFiles.set(rel, vfs.readBytes(filePath));
           }
 
           const archiveBytes = await PackageArchive.pack(packFiles);

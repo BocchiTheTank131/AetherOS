@@ -20,8 +20,16 @@ export class ShellExecutor {
       return { stdout: '', stderr: '', exitCode: 0 };
     }
 
+    // Ensure context structures exist
+    if (!context.history) {
+      context.history = [];
+    }
+    if (!context.aliases) {
+      context.aliases = {};
+    }
+
     // Add to history
-    if (context.history[context.history.length - 1] !== input) {
+    if (context.history.length === 0 || context.history[context.history.length - 1] !== input) {
       context.history.push(input);
     }
 

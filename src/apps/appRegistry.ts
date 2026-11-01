@@ -26,6 +26,7 @@ import { AppHost } from '../appPlatform/AppHost';
 
 export class AppRegistry {
   private apps = new Map<string, AppDefinition>();
+  private dynamicDefs = new Map<string, AppDefinition>();
 
   constructor() {
     this.registerCoreApps();
@@ -292,13 +293,20 @@ export class AppRegistry {
   }
 
   private createDynamicDef(rec: InstalledAppRecord): AppDefinition {
-    return {
+    const cacheKey = `${rec.id}@${rec.version}`;
+    const cached = this.dynamicDefs.get(cacheKey);
+    if (cached) return cached;
+
+    const DynamicComponent: React.FC<AppProps> = (props) => React.createElement(AppHost, { ...props, appId: rec.id });
+    DynamicComponent.displayName = `DynamicApp_${rec.id}`;
+
+    const def: AppDefinition = {
       id: rec.id,
       name: rec.name,
       icon: rec.icon || 'Package',
       category: 'Utilities',
       description: rec.description,
-      component: (props: AppProps) => React.createElement(AppHost, { ...props, appId: rec.id }),
+      component: DynamicComponent,
       defaultWidth: rec.manifest.window?.defaultWidth || 700,
       defaultHeight: rec.manifest.window?.defaultHeight || 480,
       minWidth: rec.manifest.window?.minWidth || 360,
@@ -309,6 +317,9 @@ export class AppRegistry {
       packageId: rec.packageId,
       executable: `${rec.installDir}/${rec.entry}`,
     };
+
+    this.dynamicDefs.set(cacheKey, def);
+    return def;
   }
 
   public get(id: string): AppDefinition | undefined {

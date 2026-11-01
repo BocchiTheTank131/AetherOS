@@ -25,7 +25,7 @@
 - **Styling:** Tailwind CSS 4 (`@tailwindcss/vite`), Lucide React icons
 - **Audio:** Web Audio API (procedural oscillator synthesizer)
 - **Storage:** Browser IndexedDB (primary persistence) with in-memory VFS caching
-- **Testing:** Vitest 5 (109 passed automated tests)
+- **Testing:** Vitest 5 (141 passed automated tests across 9 test suites)
 - **Linter:** Oxlint
 
 ### Essential Commands
@@ -60,6 +60,7 @@ src/
 │   ├── eventBus.ts        # Typed system-wide pub/sub event bus
 │   ├── kernel.ts          # VirtualKernel: PID table, signal dispatcher, uptime
 │   ├── logger.ts          # SystemLogger: structured circular buffer (dmesg / journalctl)
+│   ├── dialog.ts          # Centralized System Dialog Service (alert, confirm, prompt)
 │   ├── audio.ts           # AudioService: Web Audio API procedural sound synthesizer
 │   └── context.tsx        # SystemProvider & useSystem() OS context hook
 │
@@ -70,6 +71,33 @@ src/
 │   │   └── sandboxSource.ts # Hardened worker sandbox with stripped ambient APIs
 │   └── api/
 │       └── guestFs.ts     # Sandboxed guest aether.fs RPC bridge
+│
+├── runtimes/              # Language Runtimes & Compilers
+│   ├── python/            # Python Execution Subsystem (Pyodide WebAssembly)
+│   │   ├── types.ts       # Python execution options, messages, results
+│   │   ├── pythonWorkerSource.ts # Hardened Pyodide worker sandbox
+│   │   ├── PythonFileBridge.ts   # Bidirectional VFS <-> MEMFS sync bridge
+│   │   ├── PythonSession.ts      # Session lifecycle, PID tracking, timeouts
+│   │   └── PythonRuntime.ts      # Multi-session coordinator
+│   └── typescript/        # TypeScript Compiler & Language Intelligence
+│       ├── types.ts       # Diagnostics, completions, hover types
+│       ├── TypeScriptCompiler.ts # Transpiler, semantic analyzer, module bundler
+│       └── TypeScriptService.ts  # Autocomplete, definition, hover provider
+│
+├── git/                   # Local Git Version Control Subsystem (isomorphic-git)
+│   ├── GitFileSystemAdapter.ts # POSIX adapter binding isomorphic-git to VFS
+│   ├── GitDiff.ts         # Unified line-by-line diff engine & patch generator
+│   └── GitService.ts      # High-level Git API (init, status, add, commit, log, diff, branch, checkout)
+│
+├── developer/             # Developer Subsystem & Project Management
+│   ├── types.ts           # ProjectConfig, TaskDefinition, TaskExecution
+│   ├── ProjectManager.ts  # Workspace detection and project discovery
+│   └── TaskManager.ts     # Script and build task runner with exit code handling
+│
+├── editor/                # Modular Code Editor Engine
+│   ├── types.ts           # Editor position, selection, search options
+│   ├── syntaxHighlight.ts # Multi-language tokenizer (TS, JS, Py, HTML, CSS, JSON, Shell, MD)
+│   └── EditorHost.tsx     # Professional editor host with gutters, brackets, search/replace, go-to-line
 │
 ├── vfs/                   # Virtual Filesystem Engine (AetherFS 2.0)
 │   ├── types.ts           # VFSNode, VFSEntry, VFSStats, VFSWatchCallback interfaces
@@ -93,6 +121,9 @@ src/
 │       ├── scriptCommands.ts # jobs, fg, bg, wait, source, test, [
 │       ├── netCommands.ts # ping, curl, wget
 │       ├── devCommands.ts # base64, sha256sum, md5sum, jq, js, node
+│       ├── gitCommands.ts # git (init, status, add, commit, log, diff, branch, checkout, restore)
+│       ├── pythonCommands.ts # python, python3 (-c, script execution, stdlib)
+│       ├── tscCommands.ts # tsc (transpilation, type-checking, multi-file bundling)
 │       └── pkgCommands.ts # aetherpkg CLI interface
 │
 ├── pkg/                   # Package Management Subsystem (.aepkg & repository)
@@ -128,6 +159,8 @@ src/
 │       ├── Taskbar.tsx            # Dock, running app badges, tray, clock, workspace switcher
 │       ├── AppLauncher.tsx        # Start menu with categories, search, user profile, power
 │       ├── CommandPalette.tsx     # Alt+Space quick runner (apps, files, shell commands)
+│       ├── DialogHost.tsx         # Centralized System Modal Dialog Host
+│       ├── AppErrorBoundary.tsx   # Per-window crash recovery & error boundary
 │       ├── NotificationCenter.tsx # Toast alerts and slide-out notification drawer
 │       ├── QuickSettings.tsx      # System tray quick settings (volume, dark/light, wifi, power)
 │       ├── BootScreen.tsx         # Linux boot splash & systemd unit startup log animation
@@ -240,6 +273,65 @@ Located at `src/shell/jobControl.ts` and `src/shell/commands/scriptCommands.ts`.
 - `fg` / `bg`: Toggles execution between foreground and background.
 - `wait`: Awaits completion of specific background PIDs or all active jobs.
 
+### 4.8 Local Git Subsystem (`gitService`)
+Located at `src/git/GitService.ts` and `src/git/GitFileSystemAdapter.ts`.
+- Powered by `isomorphic-git` running entirely in the browser on top of `AetherFS 2.0`.
+- Provides 10-method POSIX filesystem adapter: `readFile`, `writeFile`, `mkdir`, `rmdir`, `unlink`, `stat`, `lstat`, `readdir`, `readlink`, `symlink`.
+- Methods:
+  - `gitService.init(dir, defaultBranch?)`: Initializes a new Git repository.
+  - `gitService.status(dir)`: Returns staged, modified, unstaged, and untracked file statuses.
+  - `gitService.add(dir, filepath)` / `gitService.remove(dir, filepath)`.
+  - `gitService.commit(dir, message, author?)`: Creates SHA-1 commits and updates branch head.
+  - `gitService.log(dir, depth?)`: Reads commit history with commit IDs, timestamps, and messages.
+  - `gitService.diff(dir, filepath?)`: Computes line-by-line diffs via `GitDiff.ts` with additions/deletions.
+  - `gitService.branch(dir, branchName)` / `gitService.checkout(dir, ref)`: Manages and checks out branches.
+  - `gitService.restore(dir, filepath)`: Restores modified files from HEAD index.
+
+### 4.9 Real Python Runtime Subsystem (`pythonRuntime`)
+Located at `src/runtimes/python/PythonRuntime.ts`.
+- Powered by Pyodide WebAssembly with isolated WebWorker execution and ambient API stripping.
+- Bidirectional VFS synchronization via `PythonFileBridge`: synchronizes project files to Pyodide MEMFS prior to execution, and synchronizes modified/created files back to `AetherFS` on completion.
+- Session lifecycle with kernel PID integration, output streaming (stdout/stderr), POSIX timeout handling (exit code 124), and abort signal cancellation.
+- CLI: `python <script.py>`, `python -c "code"`, `python --version`.
+
+### 4.10 TypeScript Compiler & Intelligence Subsystem
+Located at `src/runtimes/typescript/TypeScriptCompiler.ts` and `TypeScriptService.ts`.
+- `typeScriptCompiler.transpile(code)`: Fast in-browser AST transpile stripping types, interfaces, enums, type assertions, and decorators.
+- `typeScriptCompiler.typeCheck(filename, code)`: Semantic analyzer detecting undeclared variables (`TS2304`), type mismatch assignments (`TS2322`), and syntax errors (`TS1005`).
+- `typeScriptCompiler.bundleProject(entryPath)`: Multi-file module bundler resolving relative ES imports and building a self-contained runtime bundle in `dist/main.js`.
+- `typeScriptService.getCompletions(code, line, col)`: Language intelligence providing keyword and scoped symbol autocompletions.
+- CLI: `tsc <file.ts>`, `tsc --noEmit`, `tsc -p tsconfig.json`.
+
+### 4.11 Project & Task Management Subsystems
+Located at `src/developer/ProjectManager.ts` and `src/developer/TaskManager.ts`.
+- `projectManager.findProjects(root)`: Discovers projects by inspecting `manifest.json`, `package.json`, `tsconfig.json`, or `.git`.
+- `taskManager.getTasks(projectRoot)`: Extracts tasks defined in `package.json` (`scripts`) or `manifest.json`.
+- `taskManager.runTask(task, onOutput)`: Executes build/test/run tasks via `shellExecutor` with real-time output streaming.
+
+### 4.12 Code Studio 2.0 & Syntax Highlighting Engine
+Located at `src/apps/codeStudio/CodeStudioApp.tsx` and `src/editor/EditorHost.tsx`.
+- Activity Bar with 5 workbench modes: Files Explorer, Git Source Control, Full-text Search, Problems / Diagnostics, and Build Tasks.
+- Multi-tab file editor with dirty state indicator dots and split editing (horizontal and vertical).
+- `EditorHost`: Syntax highlighting for TypeScript, JavaScript, Python, HTML, CSS, JSON, Shell, Markdown, and Plain text; active line highlight, line number gutter, auto-indent, bracket closing, `Ctrl+F` find/replace modal, `Ctrl+G` go-to-line modal.
+- Integrated `StudioTerminal`: Full `aesh` shell instance bound to project root directory.
+- `StudioDiffViewer`: Unified diff inspector with green addition and red deletion line coloring.
+- Direct packaging to `.aepkg` with host download and one-click desktop installation.
+
+### 4.13 System Dialog Service (`dialogService`)
+Located at `src/core/dialog.ts` and `src/desktop/components/DialogHost.tsx`.
+- Centralized system dialog manager replacing native browser `alert()`, `confirm()`, and `prompt()` modals across all applications.
+- Features Tab/Shift+Tab focus trapping, Enter to confirm, Escape to cancel, status levels (`info`, `success`, `warning`, `error`), and validation hooks.
+- Asynchronous Promise API:
+  - `dialogService.alert({ title?, message, level?, okText? })`: Promise<void>
+  - `dialogService.confirm({ title?, message, confirmText?, cancelText?, danger? })`: Promise<boolean>
+  - `dialogService.prompt({ title?, message, defaultValue?, placeholder?, validate? })`: Promise<string | null>
+  - `dialogService.isOpen()`: boolean
+
+### 4.14 Application Crash Boundary (`AppErrorBoundary`)
+Located at `src/desktop/components/AppErrorBoundary.tsx`.
+- Per-window error boundary wrapping every application component in `WindowFrame.tsx`.
+- Catches unhandled lifecycle and render errors, logs structured diagnostics to `systemLogger.error('app', ...)`, and renders a recovery panel with "Restart Application", "Close Window", and collapsible stack trace inspection without crashing the desktop compositor.
+
 ---
 
 ## 5. Critical Invariants & Rules for Agents
@@ -289,6 +381,34 @@ Never attach a global `window.addEventListener('keydown', ...)` inside an applic
 
 ### ⚠️ Invariant 10: App Launcher & Dock Icon Constraining
 - All Lucide icon components or image elements displayed in constrained areas (e.g. Recent Applications row, Dock, Window titlebar) must specify explicit `size` props or constraints alongside CSS classes (e.g. `size={14}` and `w-3.5 h-3.5`) to prevent presentation overflow or text collisions.
+
+### ⚠️ Invariant 11: Binary-Safe Byte Operations for Hashes and Packages
+- Always use `vfs.readBytes()` (not `vfs.readFile()`) when calculating cryptographic hashes (`sha256sum`, `md5sum`, `base64`) or packaging archives (`aetherpkg build`). Text decoding decodes arbitrary byte sequences as UTF-8, destroying binary payloads (such as PNG/JPEG images or precompiled WASM binaries).
+
+### ⚠️ Invariant 12: Python Sandbox Isolation & MEMFS Synchronization
+- In `pythonWorkerSource.ts`, Pyodide runs inside a WebWorker with all ambient host network, storage, and worker capabilities stripped.
+- Filesystem synchronization between `AetherFS` and Pyodide MEMFS must strictly use `PythonFileBridge` without leaking host browser global scope or executing unsanitized code in the main thread.
+
+### ⚠️ Invariant 13: Local Git POSIX File System Invariants
+- `GitFileSystemAdapter` must implement all 10 filesystem command callbacks expected by isomorphic-git (`readFile`, `writeFile`, `mkdir`, `rmdir`, `unlink`, `stat`, `lstat`, `readdir`, `readlink`, `symlink`).
+- Never perform Git operations directly on host disk; all repositories reside in `AetherFS 2.0` under `/home/aether/` or project roots.
+
+### ⚠️ Invariant 14: React Pure Render & Ref Safety
+- Never assign to React refs (e.g. `openWindowRef.current = openWindow`) directly during component render body. Always assign inside `useEffect` to ensure React Compiler and concurrent mode safety.
+
+### ⚠️ Invariant 15: Centralized System Dialogs — Zero Native Browser Modals
+- Never invoke native browser `alert()`, `confirm()`, or `prompt()` modal dialogs in applications or desktop components.
+- Always use the centralized `dialogService` from `src/core/dialog.ts` (`dialogService.alert`, `dialogService.confirm`, `dialogService.prompt`), which provides keyboard trapping, focus preservation, validation, and theme awareness.
+
+### ⚠️ Invariant 16: Window Title Updates & Callback Memoization
+- Always memoize `onClose` and `setTitle` callbacks passed into window application components (`WindowFrame.tsx`, `AppHost.tsx`).
+- In `context.tsx`, `updateWindowTitle` must guard against identical title assignments (`if (target.title === title) return prev;`) to prevent triggering runaway React state re-render cascades.
+
+### ⚠️ Invariant 17: Pointer Capture Masking for Framed Applications
+- When dragging or resizing windows or displaying modals across embedded `<iframe>` views (`AppHost`, `CodeStudioApp`, `WebBrowserApp`), render an active pointer overlay mask (`fixed inset-0 z-[99999] cursor-move select-none`) to prevent embedded iframe documents from swallowing mouse events.
+
+### ⚠️ Invariant 18: Elevated System Context for Package Staging
+- The package installer (`packageInstaller.ts`) and system daemons operate with root privileges when staging application files into `/opt/aether/apps`. Always pass `{ context: { user: 'root', uid: 0 } }` to `vfs.mkdir` and `vfs.writeBytes` so that POSIX virtual permission checks allow system-level installation into root-owned paths.
 
 ---
 

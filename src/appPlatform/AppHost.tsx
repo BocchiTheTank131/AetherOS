@@ -281,7 +281,7 @@ export const AppHost: React.FC<AppHostProps> = ({
         case 'fs:readText': {
           const filePath = vfs.normalizePath(String(p.path));
           const appPrivateDir = `/home/aether/.local/share/aether/apps/${appId}`;
-          const isPrivate = filePath.startsWith(appPrivateDir);
+          const isPrivate = filePath === appPrivateDir || filePath.startsWith(appPrivateDir + '/');
 
           if (!isPrivate && !permissionManager.hasPermission(appId, 'filesystem:read')) {
             sendResponse(false, undefined, "Permission denied: 'filesystem:read' is required");
@@ -296,7 +296,7 @@ export const AppHost: React.FC<AppHostProps> = ({
         case 'fs:writeText': {
           const filePath = vfs.normalizePath(String(p.path));
           const appPrivateDir = `/home/aether/.local/share/aether/apps/${appId}`;
-          const isPrivate = filePath.startsWith(appPrivateDir);
+          const isPrivate = filePath === appPrivateDir || filePath.startsWith(appPrivateDir + '/');
 
           if (!isPrivate && !permissionManager.hasPermission(appId, 'filesystem:write')) {
             sendResponse(false, undefined, "Permission denied: 'filesystem:write' is required");
@@ -311,7 +311,7 @@ export const AppHost: React.FC<AppHostProps> = ({
         case 'fs:readBytes': {
           const filePath = vfs.normalizePath(String(p.path));
           const appPrivateDir = `/home/aether/.local/share/aether/apps/${appId}`;
-          const isPrivate = filePath.startsWith(appPrivateDir);
+          const isPrivate = filePath === appPrivateDir || filePath.startsWith(appPrivateDir + '/');
 
           if (!isPrivate && !permissionManager.hasPermission(appId, 'filesystem:read')) {
             sendResponse(false, undefined, "Permission denied: 'filesystem:read' is required");
@@ -331,7 +331,7 @@ export const AppHost: React.FC<AppHostProps> = ({
         case 'fs:writeBytes': {
           const filePath = vfs.normalizePath(String(p.path));
           const appPrivateDir = `/home/aether/.local/share/aether/apps/${appId}`;
-          const isPrivate = filePath.startsWith(appPrivateDir);
+          const isPrivate = filePath === appPrivateDir || filePath.startsWith(appPrivateDir + '/');
 
           if (!isPrivate && !permissionManager.hasPermission(appId, 'filesystem:write')) {
             sendResponse(false, undefined, "Permission denied: 'filesystem:write' is required");

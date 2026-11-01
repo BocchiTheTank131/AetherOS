@@ -98,6 +98,7 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const savedWindowPositions = React.useRef<
     Record<string, { x: number; y: number; width: number; height: number }>
   >({});
+  const openWindowRef = React.useRef<(appId: string, props?: Record<string, unknown>) => string>(() => '');
 
   // Synchronize system theme classes and CSS variables with document root
   useEffect(() => {
@@ -249,7 +250,7 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const unsubOpenReq = systemEventBus.on('window:open_requested', (event: unknown) => {
       const e = event as { appId: string; props?: Record<string, unknown> };
       if (e?.appId) {
-        openWindow(e.appId, e.props);
+        openWindowRef.current(e.appId, e.props);
       }
     });
 
@@ -421,6 +422,10 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     },
     [windows, user.username, topZIndex, activeWorkspace, focusWindow]
   );
+
+  useEffect(() => {
+    openWindowRef.current = openWindow;
+  }, [openWindow]);
 
   // Close Window (terminates process in kernel)
   const closeWindow = useCallback(

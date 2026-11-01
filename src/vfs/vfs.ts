@@ -1273,6 +1273,18 @@ export class VirtualFileSystem {
     this.notifyWatchers(normLink, 'create');
   }
 
+  public readlink(path: string): string {
+    const norm = this.normalizePath(path);
+    const node = this.getNodeRaw(norm);
+    if (!node) {
+      throw new Error(`ENOENT: no such file or directory, readlink '${path}'`);
+    }
+    if (node.type !== 'symlink') {
+      throw new Error(`EINVAL: invalid argument, readlink '${path}'`);
+    }
+    return node.targetPath || '';
+  }
+
   public chmod(path: string, mode: number): void {
     const node = this.nodes.get(this.normalizePath(path));
     if (!node) {
