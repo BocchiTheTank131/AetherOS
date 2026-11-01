@@ -21,6 +21,11 @@ export class RuntimeManager {
       limits: options?.limits || this.limits,
       onStdout: options?.onStdout,
       onStderr: options?.onStderr,
+      onComplete: (id, pid) => {
+        this.activeSessions.delete(id);
+        this.pidToSession.delete(pid);
+        options?.onComplete?.(id, pid);
+      },
     });
 
     this.activeSessions.set(session.id, session);

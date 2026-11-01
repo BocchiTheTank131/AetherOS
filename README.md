@@ -17,7 +17,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-7.0-3178c6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-4.3-38bdf8?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![Vite](https://img.shields.io/badge/Vite-8.3-646cff?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
-[![Vitest](https://img.shields.io/badge/Tests-70%20Passed-34d399?style=for-the-badge&logo=vitest&logoColor=black)](https://vitest.dev/)
+[![Vitest](https://img.shields.io/badge/Tests-83%20Passed-34d399?style=for-the-badge&logo=vitest&logoColor=black)](https://vitest.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-amber?style=for-the-badge)](LICENSE)
 
 [Architecture](#-architectural-overview) • [What's New in v1.2.0](#-whats-new-in-v120-real-computing) • [Subsystems](#-subsystem-deep-dive) • [Applications](#-native-application-suite) • [Shell CLI](#-shell-command-reference-50-utilities) • [Quickstart](#-getting-started) • [Contributing](#-developer-guides)

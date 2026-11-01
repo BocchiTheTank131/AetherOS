@@ -86,17 +86,38 @@ export const SANDBOX_WORKER_CODE = `
     });
   }
 
-  // Lock down sensitive ambient worker APIs
-  try { self.importScripts = undefined; } catch {}
-  try { self.fetch = undefined; } catch {}
-  try { self.XMLHttpRequest = undefined; } catch {}
-  try { self.WebSocket = undefined; } catch {}
-  try { self.indexedDB = undefined; } catch {}
-  try { self.Worker = undefined; } catch {}
-  try { self.SharedWorker = undefined; } catch {}
-  try { self.BroadcastChannel = undefined; } catch {}
-  try { self.Notification = undefined; } catch {}
-  try { self.close = undefined; } catch {}
+  // Lock down sensitive ambient worker APIs across prototypes and global scope
+  const scopes = [
+    typeof WorkerGlobalScope !== 'undefined' ? WorkerGlobalScope.prototype : null,
+    typeof DedicatedWorkerGlobalScope !== 'undefined' ? DedicatedWorkerGlobalScope.prototype : null,
+    self
+  ];
+  const blocked = [
+    'importScripts',
+    'fetch',
+    'XMLHttpRequest',
+    'WebSocket',
+    'indexedDB',
+    'Worker',
+    'SharedWorker',
+    'BroadcastChannel',
+    'Notification',
+    'close'
+  ];
+  for (const scope of scopes) {
+    if (!scope) continue;
+    for (const prop of blocked) {
+      try {
+        Object.defineProperty(scope, prop, {
+          value: undefined,
+          writable: false,
+          configurable: false,
+        });
+      } catch {
+        try { scope[prop] = undefined; } catch {}
+      }
+    }
+  }
 
   globalThis.console = guestConsole;
   globalThis.aether = guestAether;

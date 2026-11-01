@@ -97,7 +97,7 @@ export interface ShellJob {
   id: number;
   pid: number;
   command: string;
-  status: 'running' | 'stopped' | 'done';
+  status: 'running' | 'stopped' | 'done' | 'error';
   startTime: number;
   resultPromise?: Promise<ExecutionResult>;
 }

@@ -52,7 +52,7 @@ export interface VFSWriteOptions {
   group?: string;
   permissions?: number;
   isBinary?: boolean;
-  context?: VFSUserContext;
+  context?: Partial<VFSUserContext> & { user?: string };
 }
 
 export type VFSWatchCallback = (event: {

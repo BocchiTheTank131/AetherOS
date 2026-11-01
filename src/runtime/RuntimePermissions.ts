@@ -1,4 +1,5 @@
 // AetherOS - Runtime Permission Scopes & Verification
+import { vfs } from '../vfs/vfs';
 
 export type RuntimePermissionScope =
   | 'filesystem:read'
@@ -26,17 +27,18 @@ export function checkRuntimePathAccess(
   mode: 'read' | 'write',
   permissions: RuntimePermissions
 ): boolean {
+  const norm = vfs.normalizePath(path);
   if (mode === 'read') {
     if (!permissions.scopes.has('filesystem:read')) return false;
     return permissions.allowedReadPaths.some(
-      (prefix) => path === prefix || path.startsWith(prefix.endsWith('/') ? prefix : prefix + '/')
+      (prefix) => norm === prefix || norm.startsWith(prefix.endsWith('/') ? prefix : prefix + '/')
     );
   }
 
   if (mode === 'write') {
     if (!permissions.scopes.has('filesystem:write')) return false;
     return permissions.allowedWritePaths.some(
-      (prefix) => path === prefix || path.startsWith(prefix.endsWith('/') ? prefix : prefix + '/')
+      (prefix) => norm === prefix || norm.startsWith(prefix.endsWith('/') ? prefix : prefix + '/')
     );
   }
 

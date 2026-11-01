@@ -29,6 +29,7 @@ export const BootScreen: React.FC<BootScreenProps> = ({ onComplete }) => {
 
   useEffect(() => {
     let currentIdx = 0;
+    let trailingTimeout: ReturnType<typeof setTimeout> | null = null;
     const interval = setInterval(() => {
       if (currentIdx < BOOT_STEPS.length) {
         setLogs((prev) => [...prev, BOOT_STEPS[currentIdx]]);
@@ -36,13 +37,18 @@ export const BootScreen: React.FC<BootScreenProps> = ({ onComplete }) => {
         currentIdx++;
       } else {
         clearInterval(interval);
-        setTimeout(() => {
+        trailingTimeout = setTimeout(() => {
           onComplete();
         }, 600);
       }
     }, 180);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      if (trailingTimeout) {
+        clearTimeout(trailingTimeout);
+      }
+    };
   }, [onComplete]);
 
   return (

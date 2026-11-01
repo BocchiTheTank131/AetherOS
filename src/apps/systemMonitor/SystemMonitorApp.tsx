@@ -29,7 +29,7 @@ export const SystemMonitorApp: React.FC<AppProps> = () => {
       setProcesses(virtualKernel.getProcesses());
       setCpuHistory((prev) => [...prev.slice(1), sample.cpuPercent]);
       setMemHistory((prev) => [...prev.slice(1), sample.memoryPercent]);
-    });
+    }, { immediate: false });
 
     return () => unsub();
   }, []);

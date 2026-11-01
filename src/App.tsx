@@ -1,6 +1,7 @@
 // AetherOS - Main Operating System Application Root
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { SystemProvider, useSystem } from './core/context';
+import { systemEventBus } from './core/eventBus';
 import { BootScreen } from './desktop/components/BootScreen';
 import { LockScreen } from './desktop/components/LockScreen';
 import { Desktop } from './desktop/components/Desktop';
@@ -14,6 +15,19 @@ import { Power } from 'lucide-react';
 const AetherOSDesktop: React.FC = () => {
   const { booted, isPoweredOff, powerOnSystem } = useSystem();
   const [bootCompleted, setBootCompleted] = useState(false);
+
+  useEffect(() => {
+    const unsubRestart = systemEventBus.on('system:restart', () => {
+      setBootCompleted(false);
+    });
+    const unsubShutdown = systemEventBus.on('system:shutdown', () => {
+      setBootCompleted(false);
+    });
+    return () => {
+      unsubRestart();
+      unsubShutdown();
+    };
+  }, []);
 
   if (isPoweredOff) {
     return (

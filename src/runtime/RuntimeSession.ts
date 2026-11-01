@@ -25,6 +25,7 @@ export interface RuntimeSessionOptions {
   limits?: Partial<RuntimeLimits>;
   onStdout?: (chunk: string) => void;
   onStderr?: (chunk: string) => void;
+  onComplete?: (sessionId: string, pid: number) => void;
 }
 
 export class RuntimeSession {
@@ -41,11 +42,13 @@ export class RuntimeSession {
   private limits: RuntimeLimits;
   private startTime = 0;
   private resolveExecution?: (res: RuntimeExecutionResult) => void;
+  private onComplete?: (sessionId: string, pid: number) => void;
 
   constructor(options: RuntimeSessionOptions) {
     this.id = options.sessionId || `session_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     this.permissions = options.permissions;
     this.limits = { ...DEFAULT_RUNTIME_LIMITS, ...options.limits };
+    this.onComplete = options.onComplete;
 
     // Register with Virtual Kernel
     const proc = virtualKernel.spawn({
@@ -193,10 +196,24 @@ export class RuntimeSession {
     const prevAether = (globalThis as Record<string, unknown>).aether;
     (globalThis as Record<string, unknown>).aether = guestAether;
 
+    let timedOut = false;
+    let fallbackTimeout: ReturnType<typeof setTimeout> | null = null;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      fallbackTimeout = setTimeout(() => {
+        timedOut = true;
+        reject(new Error('TIMEOUT_LIMIT_REACHED'));
+      }, this.limits.timeoutMs);
+    });
+
     try {
       const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
       const fn = new AsyncFunction('aether', 'args', 'console', '"use strict";\n' + code);
-      const res = await fn(guestAether, options?.args || [], mockConsole);
+      const res = await Promise.race([
+        fn(guestAether, options?.args || [], mockConsole),
+        timeoutPromise,
+      ]);
+
+      if (fallbackTimeout) clearTimeout(fallbackTimeout);
 
       if (performance.now() - this.startTime >= this.limits.timeoutMs) {
         this.handleTimeout();
@@ -209,7 +226,9 @@ export class RuntimeSession {
       this.status = 'completed';
       this.finish(0, res);
     } catch (err) {
-      if (performance.now() - this.startTime >= this.limits.timeoutMs) {
+      if (fallbackTimeout) clearTimeout(fallbackTimeout);
+
+      if (timedOut || (err as Error).message === 'TIMEOUT_LIMIT_REACHED' || performance.now() - this.startTime >= this.limits.timeoutMs) {
         this.handleTimeout();
         return;
       }
@@ -222,14 +241,16 @@ export class RuntimeSession {
       this.status = 'error';
       this.finish(1);
     } finally {
+      if (fallbackTimeout) clearTimeout(fallbackTimeout);
       (globalThis as Record<string, unknown>).aether = prevAether;
     }
   }
 
   private async handleFsRequest(req: { id: string; method: string; path: string; content?: string; bytesBase64?: string }): Promise<void> {
     const { id, method, path } = req;
+    const normPath = vfs.normalizePath(path);
     const isWrite = method.startsWith('write');
-    const allowed = checkRuntimePathAccess(path, isWrite ? 'write' : 'read', this.permissions);
+    const allowed = checkRuntimePathAccess(normPath, isWrite ? 'write' : 'read', this.permissions);
 
     if (!allowed) {
       this.worker?.postMessage({
@@ -243,25 +264,29 @@ export class RuntimeSession {
     try {
       let result: unknown = null;
       if (method === 'readText') {
-        result = await vfs.readText(path);
+        result = await vfs.readText(normPath);
       } else if (method === 'writeText') {
-        await vfs.writeText(path, req.content ?? '');
+        await vfs.writeText(normPath, req.content ?? '');
         result = true;
       } else if (method === 'readBytes') {
-        const bytes = await vfs.readBytes(path);
+        const bytes = await vfs.readBytes(normPath);
         let bin = '';
-        for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+        const chunkSize = 8192;
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+          const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+          bin += String.fromCharCode.apply(null, chunk as unknown as number[]);
+        }
         result = { base64: btoa(bin) };
       } else if (method === 'writeBytes') {
         const bin = atob(req.bytesBase64 || '');
         const bytes = new Uint8Array(bin.length);
         for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-        await vfs.writeBytes(path, bytes);
+        await vfs.writeBytes(normPath, bytes);
         result = true;
       } else if (method === 'exists') {
-        result = vfs.exists(path);
+        result = vfs.exists(normPath);
       } else if (method === 'stat') {
-        result = vfs.stat(path);
+        result = vfs.stat(normPath);
       }
 
       this.worker?.postMessage({
@@ -321,6 +346,7 @@ export class RuntimeSession {
   private finish(exitCode: number, result?: unknown): void {
     const durationMs = Math.round(performance.now() - this.startTime);
     virtualKernel.exit(this.pid, exitCode);
+    this.onComplete?.(this.id, this.pid);
 
     if (this.resolveExecution) {
       this.resolveExecution({

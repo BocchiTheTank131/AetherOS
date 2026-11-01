@@ -119,7 +119,29 @@ export class VirtualFileSystem {
     }
 
     const node = this.getNodeRaw(norm);
-    if (!node) return true; // File not found will be handled by operation
+    if (!node) {
+      // For non-existent paths, verify parent traversal and write permission if creating
+      const parts = norm.split('/').filter(Boolean);
+      let currPath = '';
+      const parentDepth = parts.length > 1 ? parts.length - 1 : 0;
+      for (let i = 0; i < parentDepth; i++) {
+        currPath += '/' + parts[i];
+        const dirNode = this.nodes.get(currPath);
+        if (dirNode && dirNode.type === 'dir') {
+          if (!this.checkNodePermission(dirNode, 'x', ctx)) {
+            return false;
+          }
+        }
+      }
+      if (modeChar === 'w' && parts.length > 1) {
+        const parentPath = '/' + parts.slice(0, -1).join('/');
+        const parentDir = this.nodes.get(parentPath);
+        if (parentDir && parentDir.type === 'dir') {
+          return this.checkNodePermission(parentDir, 'w', ctx);
+        }
+      }
+      return true;
+    }
 
     // Verify parent directory traversal (execute permission)
     const parts = norm.split('/').filter(Boolean);
@@ -598,14 +620,6 @@ export class VirtualFileSystem {
     const norm = this.normalizePath(path);
     if (norm === '/dev/null') return;
 
-    if (!this.checkAccess(norm, 'w', options?.context)) {
-      const parts = norm.split('/').filter(Boolean);
-      const parentPath = parts.length <= 1 ? '/' : '/' + parts.slice(0, -1).join('/');
-      if (!this.checkAccess(parentPath, 'w', options?.context)) {
-        throw new Error(`EACCES: permission denied, write '${path}'`);
-      }
-    }
-
     const parts = norm.split('/').filter(Boolean);
     if (parts.length === 0) {
       throw new Error(`EISDIR: cannot write directly to root directory`);
@@ -613,6 +627,19 @@ export class VirtualFileSystem {
 
     const name = parts[parts.length - 1];
     const parentPath = parts.length === 1 ? '/' : '/' + parts.slice(0, -1).join('/');
+    const existing = this.nodes.get(norm);
+
+    if (options?.context) {
+      if (existing) {
+        if (!this.checkAccess(norm, 'w', options.context)) {
+          throw new Error(`EACCES: permission denied, write '${path}'`);
+        }
+      } else {
+        if (!this.checkAccess(parentPath, 'w', options.context)) {
+          throw new Error(`EACCES: permission denied, write '${path}'`);
+        }
+      }
+    }
 
     const parent = this.getNode(parentPath);
     if (!parent) {
@@ -622,7 +649,6 @@ export class VirtualFileSystem {
       throw new Error(`ENOTDIR: not a directory, '${parentPath}'`);
     }
 
-    const existing = this.nodes.get(norm);
     const now = Date.now();
     const mime = getMimeType(name);
     const isText =
@@ -704,11 +730,13 @@ export class VirtualFileSystem {
 
     if (node.binaryContent) {
       if (node.isBinary) {
-        // Construct base64 representation for binary consumers
+        // Construct base64 representation for binary consumers in safe chunks to avoid UI thread freeze
         let binaryStr = '';
         const len = node.binaryContent.byteLength;
-        for (let i = 0; i < len; i++) {
-          binaryStr += String.fromCharCode(node.binaryContent[i]);
+        const chunkSize = 8192;
+        for (let i = 0; i < len; i += chunkSize) {
+          const chunk = node.binaryContent.subarray(i, Math.min(i + chunkSize, len));
+          binaryStr += String.fromCharCode.apply(null, chunk as unknown as number[]);
         }
         return `data:${node.mimeType || 'application/octet-stream'};base64,${btoa(binaryStr)}`;
       }
@@ -731,14 +759,6 @@ export class VirtualFileSystem {
     const norm = this.normalizePath(path);
     if (norm === '/dev/null') return;
 
-    if (!this.checkAccess(norm, 'w', options?.context)) {
-      const parts = norm.split('/').filter(Boolean);
-      const parentPath = parts.length <= 1 ? '/' : '/' + parts.slice(0, -1).join('/');
-      if (!this.checkAccess(parentPath, 'w', options?.context)) {
-        throw new Error(`EACCES: permission denied, write '${path}'`);
-      }
-    }
-
     const parts = norm.split('/').filter(Boolean);
     if (parts.length === 0) {
       throw new Error(`EISDIR: cannot write directly to root directory`);
@@ -746,6 +766,19 @@ export class VirtualFileSystem {
 
     const name = parts[parts.length - 1];
     const parentPath = parts.length === 1 ? '/' : '/' + parts.slice(0, -1).join('/');
+    const existing = this.nodes.get(norm);
+
+    if (options?.context) {
+      if (existing) {
+        if (!this.checkAccess(norm, 'w', options.context)) {
+          throw new Error(`EACCES: permission denied, write '${path}'`);
+        }
+      } else {
+        if (!this.checkAccess(parentPath, 'w', options.context)) {
+          throw new Error(`EACCES: permission denied, write '${path}'`);
+        }
+      }
+    }
 
     // Check parent exists and is directory
     const parent = this.getNode(parentPath);
@@ -756,29 +789,37 @@ export class VirtualFileSystem {
       throw new Error(`ENOTDIR: not a directory, '${parentPath}'`);
     }
 
-    const existing = this.nodes.get(norm);
     const now = Date.now();
 
-    let binaryContent: Uint8Array;
+    let binaryContent: Uint8Array | undefined;
+    let storedContent: string | undefined = content;
     let size: number;
     const isBinary = options?.isBinary ?? existing?.isBinary ?? false;
 
-    if (isBinary && content.startsWith('data:')) {
-      try {
-        const base64Data = content.split(',')[1] || '';
-        const binStr = atob(base64Data);
-        binaryContent = new Uint8Array(binStr.length);
-        for (let i = 0; i < binStr.length; i++) {
-          binaryContent[i] = binStr.charCodeAt(i);
+    if (isBinary) {
+      if (content.startsWith('data:')) {
+        try {
+          const base64Data = content.split(',')[1] || '';
+          const binStr = atob(base64Data);
+          binaryContent = new Uint8Array(binStr.length);
+          for (let i = 0; i < binStr.length; i++) {
+            binaryContent[i] = binStr.charCodeAt(i);
+          }
+          size = binaryContent.byteLength;
+        } catch {
+          binaryContent = new TextEncoder().encode(content);
+          size = binaryContent.byteLength;
         }
-        size = binaryContent.byteLength;
-      } catch {
+      } else {
         binaryContent = new TextEncoder().encode(content);
         size = binaryContent.byteLength;
       }
+      storedContent = undefined; // Lazily reconstructed on demand
     } else {
-      binaryContent = new TextEncoder().encode(content);
-      size = binaryContent.byteLength;
+      // Store string content and avoid allocating/duplicating Uint8Array memory
+      size = new TextEncoder().encode(content).byteLength;
+      binaryContent = undefined;
+      storedContent = content;
     }
 
     const node: VFSNode = {
@@ -786,7 +827,7 @@ export class VirtualFileSystem {
       path: norm,
       parentPath,
       type: 'file',
-      content,
+      content: storedContent,
       binaryContent,
       size,
       createdAt: existing ? existing.createdAt : now,
@@ -804,13 +845,36 @@ export class VirtualFileSystem {
     this.notifyWatchers(norm, existing ? 'modify' : 'create');
   }
 
-  public appendFile(path: string, content: string): void {
+  public appendFile(path: string, content: string | Uint8Array): void {
     const norm = this.normalizePath(path);
+    if (content instanceof Uint8Array) {
+      this.appendBytes(norm, content);
+      return;
+    }
     if (this.exists(norm)) {
+      const node = this.getNode(norm);
+      if (node && node.isBinary) {
+        const appendedBytes = new TextEncoder().encode(content);
+        this.appendBytes(norm, appendedBytes);
+        return;
+      }
       const existing = this.readFile(norm);
       this.writeFile(norm, existing + content);
     } else {
       this.writeFile(norm, content);
+    }
+  }
+
+  public appendBytes(path: string, bytes: Uint8Array): void {
+    const norm = this.normalizePath(path);
+    if (this.exists(norm)) {
+      const existingBytes = this.readBytesSync(norm);
+      const combined = new Uint8Array(existingBytes.length + bytes.length);
+      combined.set(existingBytes, 0);
+      combined.set(bytes, existingBytes.length);
+      this.writeBytesSync(norm, combined);
+    } else {
+      this.writeBytesSync(norm, bytes);
     }
   }
 
@@ -1342,6 +1406,7 @@ export class VirtualFileSystem {
     if (this.exists('/home/aether/.trash/.info')) {
       try {
         this.rmdir('/home/aether/.trash/.info', { recursive: true });
+        this.mkdir('/home/aether/.trash/.info', { recursive: true });
       } catch {
         // Ignore
       }

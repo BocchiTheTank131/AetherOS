@@ -25,7 +25,7 @@
 - **Styling:** Tailwind CSS 4 (`@tailwindcss/vite`), Lucide React icons
 - **Audio:** Web Audio API (procedural oscillator synthesizer)
 - **Storage:** Browser IndexedDB (primary persistence) with in-memory VFS caching
-- **Testing:** Vitest 5 (70 passed automated tests)
+- **Testing:** Vitest 5 (83 passed automated tests)
 - **Linter:** Oxlint
 
 ### Essential Commands

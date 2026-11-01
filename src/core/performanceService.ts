@@ -43,15 +43,27 @@ export class PerformanceService {
     return this.history[this.history.length - 1] ?? this.takeSample();
   }
 
-  public subscribe(callback: (sample: PerformanceSample) => void): () => void {
+  public subscribe(
+    callback: (sample: PerformanceSample) => void,
+    options?: { immediate?: boolean }
+  ): () => void {
     this.subscribers.add(callback);
     // Auto-start sampling when first subscriber attaches to conserve battery/CPU when inactive
     if (!this.timer) {
       this.startSampling();
     }
 
-    // Immediately push current sample
-    callback(this.getCurrentSample());
+    const immediate = options?.immediate ?? true;
+    if (immediate) {
+      callback(this.getCurrentSample());
+    } else {
+      // Defer pushing initial sample to prevent synchronous setState cascading renders in React useEffect
+      queueMicrotask(() => {
+        if (this.subscribers.has(callback)) {
+          callback(this.getCurrentSample());
+        }
+      });
+    }
 
     return () => {
       this.subscribers.delete(callback);

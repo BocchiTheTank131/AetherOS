@@ -2,12 +2,12 @@
 import type { RegisteredCommand, ExecutionResult } from '../types';
 import { vfs } from '../../vfs/vfs';
 
-function evaluateTest(args: string[], cwd: string): boolean {
+function evaluateTest(args: string[], cwd: string, user?: string): boolean {
   if (args.length === 0) return false;
 
   // Unary negation at the start of expression
   if (args[0] === '!') {
-    return !evaluateTest(args.slice(1), cwd);
+    return !evaluateTest(args.slice(1), cwd, user);
   }
 
   // 1 argument: true if non-empty string
@@ -33,9 +33,11 @@ function evaluateTest(args: string[], cwd: string): boolean {
       case '-h': // Symbolic link
         return vfs.exists(resolved) && vfs.lstat(resolved).isSymbolicLink();
       case '-r': // Readable
+        return vfs.exists(resolved) && vfs.checkAccess(resolved, 'r', user ? { username: user } : undefined);
       case '-w': // Writable
+        return vfs.exists(resolved) && vfs.checkAccess(resolved, 'w', user ? { username: user } : undefined);
       case '-x': // Executable
-        return vfs.exists(resolved);
+        return vfs.exists(resolved) && vfs.checkAccess(resolved, 'x', user ? { username: user } : undefined);
       case '-z': // Zero length
         return target.length === 0;
       case '-n': // Non-zero length
@@ -84,7 +86,7 @@ export const scriptCommands: RegisteredCommand[] = [
     usage: 'test <expression>',
     manual: 'test - evaluate conditional expressions (POSIX test)',
     execute: (args, context): ExecutionResult => {
-      const result = evaluateTest(args, context.cwd);
+      const result = evaluateTest(args, context.cwd, context.user);
       return {
         stdout: '',
         stderr: '',
@@ -106,7 +108,7 @@ export const scriptCommands: RegisteredCommand[] = [
         };
       }
       const testArgs = args.slice(0, args.length - 1);
-      const result = evaluateTest(testArgs, context.cwd);
+      const result = evaluateTest(testArgs, context.cwd, context.user);
       return {
         stdout: '',
         stderr: '',
@@ -220,9 +222,10 @@ export const scriptCommands: RegisteredCommand[] = [
         const promises = Array.from(context.jobs.values())
           .filter((j) => j.resultPromise)
           .map((j) => j.resultPromise!);
-        await Promise.all(promises);
+        const results = await Promise.all(promises);
         context.jobs.clear();
-        return { stdout: '', stderr: '', exitCode: 0 };
+        const lastExit = results.length > 0 ? results[results.length - 1].exitCode : 0;
+        return { stdout: '', stderr: '', exitCode: lastExit };
       }
 
       let lastExit = 0;

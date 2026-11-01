@@ -4,6 +4,7 @@ import type { AppProps } from '../types';
 import { packageManager } from '../../pkg/packageManager';
 import type { AetherPackage } from '../../pkg/types';
 import { useSystem } from '../../core/context';
+import { systemEventBus } from '../../core/eventBus';
 import {
   Package,
   Search,
@@ -31,6 +32,12 @@ export const SoftwareCenterApp: React.FC<AppProps> = () => {
 
   useEffect(() => {
     loadPackages();
+    const unsub1 = systemEventBus.on('package:installed', () => loadPackages());
+    const unsub2 = systemEventBus.on('package:removed', () => loadPackages());
+    return () => {
+      unsub1();
+      unsub2();
+    };
   }, []);
 
   const handleInstall = (pkg: AetherPackage) => {

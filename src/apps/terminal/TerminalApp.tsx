@@ -119,24 +119,37 @@ export const TerminalApp: React.FC<AppProps> = ({ setTitle, initialProps }) => {
       return;
     }
 
-    const res = await shellExecutor.execute(cmd, activeTab.context);
+    const targetTabId = activeTabId;
+    try {
+      const res = await shellExecutor.execute(cmd, activeTab.context);
 
-    setTabs((prev) =>
-      prev.map((t) => {
-        if (t.id !== activeTabId) return t;
-        const newHist = [...t.history];
-        if (res.stdout) {
-          newHist.push({ type: 'output', text: res.stdout });
-        }
-        if (res.stderr) {
-          newHist.push({ type: 'error', text: res.stderr });
-        }
-        return {
-          ...t,
-          history: newHist,
-        };
-      })
-    );
+      setTabs((prev) =>
+        prev.map((t) => {
+          if (t.id !== targetTabId) return t;
+          const newHist = [...t.history];
+          if (res.stdout) {
+            newHist.push({ type: 'output', text: res.stdout });
+          }
+          if (res.stderr) {
+            newHist.push({ type: 'error', text: res.stderr });
+          }
+          return {
+            ...t,
+            history: newHist,
+          };
+        })
+      );
+    } catch (err) {
+      setTabs((prev) =>
+        prev.map((t) => {
+          if (t.id !== targetTabId) return t;
+          return {
+            ...t,
+            history: [...t.history, { type: 'error', text: `aesh: ${(err as Error).message}\n` }],
+          };
+        })
+      );
+    }
   }, [activeTab, activeTabId, inputVal]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {

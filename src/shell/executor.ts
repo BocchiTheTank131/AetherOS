@@ -89,16 +89,27 @@ export class ShellExecutor {
               user: context.user,
             });
 
-            const jobPromise = this.executePipeline(chain.pipeline.commands, context).then(
-              (res) => {
+            const jobPromise = this.executePipeline(chain.pipeline.commands, context)
+              .then((res) => {
                 const job = context.jobs?.get(jobId);
                 if (job) {
                   job.status = 'done';
                 }
                 virtualKernel.exit(proc.pid, res.exitCode);
                 return res;
-              }
-            );
+              })
+              .catch((err) => {
+                const job = context.jobs?.get(jobId);
+                if (job) {
+                  job.status = 'error';
+                }
+                virtualKernel.exit(proc.pid, 1);
+                return {
+                  stdout: '',
+                  stderr: `aesh: background job ${jobId} failed: ${(err as Error).message}\n`,
+                  exitCode: 1,
+                };
+              });
 
             context.jobs.set(jobId, {
               id: jobId,
@@ -191,8 +202,12 @@ export class ShellExecutor {
         }
 
         case 'while': {
+          let iterations = 0;
           while (true) {
             if (context.aborted) break;
+            if (++iterations % 100 === 0) {
+              await new Promise((resolve) => setTimeout(resolve, 0));
+            }
             const testRes = await this.executeStatements(stmt.test, context);
             if (testRes.exitCode !== 0) break;
 
@@ -213,10 +228,16 @@ export class ShellExecutor {
             const matches = arm.patterns.some((pat) => {
               const expPat = expandVariables(pat, context);
               if (expPat === '*' || expPat === targetWord) return true;
-              const regex = new RegExp(
-                `^${expPat.replace(/[-[\]{}()+?.,\\^$|#\s]/g, '\\$&').replace(/\*/g, '.*')}$`
-              );
-              return regex.test(targetWord);
+              try {
+                const regexPattern = expPat
+                  .replace(/[()+.\\^$|]/g, '\\$&')
+                  .replace(/\*/g, '.*')
+                  .replace(/\?/g, '.');
+                const regex = new RegExp(`^${regexPattern}$`);
+                return regex.test(targetWord);
+              } catch {
+                return false;
+              }
             });
 
             if (matches) {
@@ -318,15 +339,37 @@ export class ShellExecutor {
 
       for (const r of cmd.redirections) {
         const targetPath = vfs.resolve(context.cwd, expandVariables(r.target, context));
-        if (r.type === 'out') {
-          vfs.writeFile(targetPath, cmdStdout, { owner: context.user });
-          cmdStdout = '';
-        } else if (r.type === 'append') {
-          vfs.appendFile(targetPath, cmdStdout);
-          cmdStdout = '';
-        } else if (r.type === 'err') {
-          vfs.writeFile(targetPath, cmdStderr, { owner: context.user });
-          cmdStderr = '';
+        try {
+          if (r.type === 'out') {
+            vfs.writeFile(targetPath, cmdStdout, {
+              owner: context.user,
+              context: {
+                username: context.user,
+                uid: context.user === 'root' ? 0 : 1000,
+                gid: context.user === 'root' ? 0 : 1000,
+              },
+            });
+            cmdStdout = '';
+          } else if (r.type === 'append') {
+            vfs.appendFile(targetPath, cmdStdout);
+            cmdStdout = '';
+          } else if (r.type === 'err') {
+            vfs.writeFile(targetPath, cmdStderr, {
+              owner: context.user,
+              context: {
+                username: context.user,
+                uid: context.user === 'root' ? 0 : 1000,
+                gid: context.user === 'root' ? 0 : 1000,
+              },
+            });
+            cmdStderr = '';
+          }
+        } catch (err) {
+          return {
+            stdout: '',
+            stderr: `aesh: ${r.target}: ${(err as Error).message}\n`,
+            exitCode: 1,
+          };
         }
       }
 
@@ -436,37 +479,76 @@ export class ShellExecutor {
     }
 
     // Check if it's an executable script file in VFS
-    const scriptPath = vfs.resolve(context.cwd, name);
-    if (vfs.exists(scriptPath)) {
-      try {
-        const scriptStat = vfs.stat(scriptPath);
-        if (scriptStat.isFile()) {
-          const content = vfs.readFile(scriptPath);
-
-          // Check shebang for node/js runtime
-          if (
-            content.startsWith('#!/bin/node') ||
-            content.startsWith('#!/usr/bin/env node') ||
-            content.startsWith('#!/bin/js') ||
-            scriptPath.endsWith('.js')
-          ) {
-            const { aetherRuntime } = await import('../runtime/AetherRuntime');
-            const runRes = await aetherRuntime.execute(
-              content.replace(/^#!.*\n/, ''),
-              {
-                commandName: name,
-                args,
-              }
-            );
-            return {
-              stdout: runRes.stdout,
-              stderr: runRes.stderr,
-              exitCode: runRes.exitCode,
-            };
+    let scriptPath: string | null = null;
+    if (name.includes('/')) {
+      const candidate = vfs.resolve(context.cwd, name);
+      if (vfs.exists(candidate)) {
+        try {
+          const s = vfs.stat(candidate);
+          if (s.isFile()) {
+            const content = vfs.readFile(candidate);
+            const isExecutable =
+              (s.permissions & 0o111) !== 0 ||
+              candidate.endsWith('.js') ||
+              candidate.endsWith('.sh') ||
+              content.startsWith('#!');
+            if (isExecutable) {
+              scriptPath = candidate;
+            }
           }
-
-          return await this.executeScript(content, context, args, scriptPath);
+        } catch {}
+      }
+    } else {
+      const pathDirs = (context.env['PATH'] || '/bin:/usr/bin').split(':').filter(Boolean);
+      for (const dir of pathDirs) {
+        const candidate = vfs.resolve(dir, name);
+        if (vfs.exists(candidate)) {
+          try {
+            const s = vfs.stat(candidate);
+            if (s.isFile()) {
+              const content = vfs.readFile(candidate);
+              const isExecutable =
+                (s.permissions & 0o111) !== 0 ||
+                candidate.endsWith('.js') ||
+                candidate.endsWith('.sh') ||
+                content.startsWith('#!');
+              if (isExecutable) {
+                scriptPath = candidate;
+                break;
+              }
+            }
+          } catch {}
         }
+      }
+    }
+
+    if (scriptPath) {
+      try {
+        const content = vfs.readFile(scriptPath);
+
+        // Check shebang for node/js runtime
+        if (
+          content.startsWith('#!/bin/node') ||
+          content.startsWith('#!/usr/bin/env node') ||
+          content.startsWith('#!/bin/js') ||
+          scriptPath.endsWith('.js')
+        ) {
+          const { aetherRuntime } = await import('../runtime/AetherRuntime');
+          const runRes = await aetherRuntime.execute(
+            content.replace(/^#!.*\n/, ''),
+            {
+              commandName: name,
+              args,
+            }
+          );
+          return {
+            stdout: runRes.stdout,
+            stderr: runRes.stderr,
+            exitCode: runRes.exitCode,
+          };
+        }
+
+        return await this.executeScript(content, context, args, scriptPath);
       } catch {
         // Fall through
       }
@@ -499,14 +581,19 @@ export class ShellExecutor {
     const savedAt = context.env['@'];
     const savedStar = context.env['*'];
 
-    context.scriptName = scriptPath || 'aesh';
-    context.positionalArgs = args;
-    context.env['0'] = context.scriptName;
-    context.env['#'] = String(args.length);
-    context.env['@'] = args.join(' ');
-    context.env['*'] = args.join(' ');
-    for (let k = 1; k <= 9; k++) {
-      context.env[String(k)] = args[k - 1] ?? '';
+    const hasArgs = args && args.length > 0;
+    if (scriptPath) {
+      context.scriptName = scriptPath;
+      context.env['0'] = scriptPath;
+    }
+    if (hasArgs) {
+      context.positionalArgs = args;
+      context.env['#'] = String(args.length);
+      context.env['@'] = args.join(' ');
+      context.env['*'] = args.join(' ');
+      for (let k = 1; k <= 9; k++) {
+        context.env[String(k)] = args[k - 1] ?? '';
+      }
     }
 
     try {
@@ -515,23 +602,25 @@ export class ShellExecutor {
       const stmts = parseScript(tokens);
       return await this.executeStatements(stmts, context);
     } finally {
+      if (hasArgs) {
+        context.positionalArgs = savedPositional;
+        for (let k = 1; k <= 9; k++) {
+          if (savedNumbered[String(k)]) {
+            context.env[String(k)] = savedNumbered[String(k)];
+          } else {
+            delete context.env[String(k)];
+          }
+        }
+        if (savedHash !== undefined) context.env['#'] = savedHash;
+        else delete context.env['#'];
+        if (savedAt !== undefined) context.env['@'] = savedAt;
+        else delete context.env['@'];
+        if (savedStar !== undefined) context.env['*'] = savedStar;
+        else delete context.env['*'];
+      }
       context.scriptName = savedScript;
-      context.positionalArgs = savedPositional;
       if (saved0 !== undefined) context.env['0'] = saved0;
       else delete context.env['0'];
-      for (let k = 1; k <= 9; k++) {
-        if (savedNumbered[String(k)]) {
-          context.env[String(k)] = savedNumbered[String(k)];
-        } else {
-          delete context.env[String(k)];
-        }
-      }
-      if (savedHash !== undefined) context.env['#'] = savedHash;
-      else delete context.env['#'];
-      if (savedAt !== undefined) context.env['@'] = savedAt;
-      else delete context.env['@'];
-      if (savedStar !== undefined) context.env['*'] = savedStar;
-      else delete context.env['*'];
     }
   }
 }
