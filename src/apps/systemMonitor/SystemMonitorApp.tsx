@@ -2,9 +2,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { AppProps } from '../types';
 import { virtualKernel } from '../../core/kernel';
+import { performanceService, type PerformanceSample } from '../../core/performanceService';
 import type { Process } from '../../core/types';
 import { useSystem } from '../../core/context';
-import { Activity, Cpu, HardDrive, Server, XCircle, Search } from 'lucide-react';
+import { Activity, Cpu, HardDrive, Server, XCircle, Search, Gauge } from 'lucide-react';
 
 export const SystemMonitorApp: React.FC<AppProps> = () => {
   const { closeWindow } = useSystem();
@@ -12,6 +13,7 @@ export const SystemMonitorApp: React.FC<AppProps> = () => {
   const [processes, setProcesses] = useState<Process[]>([]);
   const [selectedPid, setSelectedPid] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [latestSample, setLatestSample] = useState<PerformanceSample | null>(null);
 
   // Performance history buffers
   const [cpuHistory, setCpuHistory] = useState<number[]>(Array(30).fill(0));
@@ -20,22 +22,16 @@ export const SystemMonitorApp: React.FC<AppProps> = () => {
   const cpuCanvasRef = useRef<HTMLCanvasElement>(null);
   const memCanvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Poll process & performance metrics
+  // Subscribe to Centralized Performance Monitoring Service
   useEffect(() => {
-    const update = () => {
-      const procs = virtualKernel.getProcesses();
-      setProcesses(procs);
+    const unsub = performanceService.subscribe((sample) => {
+      setLatestSample(sample);
+      setProcesses(virtualKernel.getProcesses());
+      setCpuHistory((prev) => [...prev.slice(1), sample.cpuPercent]);
+      setMemHistory((prev) => [...prev.slice(1), sample.memoryPercent]);
+    });
 
-      const cpu = virtualKernel.getAverageCpuUsage();
-      const mem = virtualKernel.getTotalMemoryUsage();
-
-      setCpuHistory((prev) => [...prev.slice(1), cpu]);
-      setMemHistory((prev) => [...prev.slice(1), mem.percent]);
-    };
-
-    update();
-    const interval = setInterval(update, 1000);
-    return () => clearInterval(interval);
+    return () => unsub();
   }, []);
 
   // Render CPU Canvas Chart
@@ -151,8 +147,15 @@ export const SystemMonitorApp: React.FC<AppProps> = () => {
       p.command.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const mem = virtualKernel.getTotalMemoryUsage();
-  const currentCpu = virtualKernel.getAverageCpuUsage();
+  const mem = latestSample
+    ? {
+        usedKb: latestSample.usedMemoryKb,
+        totalKb: latestSample.totalMemoryKb,
+        percent: latestSample.memoryPercent,
+        source: latestSample.source,
+      }
+    : virtualKernel.getTotalMemoryUsage();
+  const currentCpu = latestSample ? latestSample.cpuPercent : virtualKernel.getAverageCpuUsage();
 
   const services = [
     { name: 'vfs.service', desc: 'Virtual Filesystem & IndexedDB Engine', status: 'active' },
@@ -348,7 +351,10 @@ export const SystemMonitorApp: React.FC<AppProps> = () => {
 
       {/* Footer Info */}
       <div className="flex items-center justify-between px-3 py-1 bg-[#161f2e] border-t border-gray-700/60 text-[11px] text-gray-400">
-        <span>Processes: {processes.length} total</span>
+        <div className="flex items-center gap-3">
+          <span>Processes: {processes.length} total</span>
+          <span>Workers: {latestSample?.activeWorkers ?? 0} active</span>
+        </div>
         <span>Uptime: {virtualKernel.getFormattedUptime()}</span>
       </div>
     </div>

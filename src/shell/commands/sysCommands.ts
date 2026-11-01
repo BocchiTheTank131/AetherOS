@@ -3,6 +3,7 @@ import type { RegisteredCommand, ExecutionResult } from '../types';
 import { virtualKernel } from '../../core/kernel';
 import { systemLogger } from '../../core/logger';
 import { systemEventBus } from '../../core/eventBus';
+import { AETHER_VERSION } from '../../core/version';
 
 export const sysCommands: RegisteredCommand[] = [
   {
@@ -193,13 +194,13 @@ export const sysCommands: RegisteredCommand[] = [
       const all = args.includes('-a');
       if (all) {
         return {
-          stdout: 'Linux aetheros 6.8.0-aether #1 SMP PREEMPT_DYNAMIC Sat Oct 31 2026 x86_64 GNU/Linux\n',
+          stdout: `Linux aetheros ${AETHER_VERSION.kernel} #1 SMP PREEMPT_DYNAMIC ${AETHER_VERSION.architecture} GNU/Linux (AetherOS v${AETHER_VERSION.version})\n`,
           stderr: '',
           exitCode: 0,
         };
       }
-      if (args.includes('-r')) return { stdout: '6.8.0-aether\n', stderr: '', exitCode: 0 };
-      if (args.includes('-m')) return { stdout: 'x86_64\n', stderr: '', exitCode: 0 };
+      if (args.includes('-r')) return { stdout: `${AETHER_VERSION.kernel}\n`, stderr: '', exitCode: 0 };
+      if (args.includes('-m')) return { stdout: `${AETHER_VERSION.architecture}\n`, stderr: '', exitCode: 0 };
       return { stdout: 'Linux\n', stderr: '', exitCode: 0 };
     },
   },
@@ -250,19 +251,19 @@ export const sysCommands: RegisteredCommand[] = [
       const info = [
         '\x1b[1;36maether@aetheros\x1b[0m',
         '\x1b[1;30m--------------\x1b[0m',
-        '\x1b[1;36mOS:\x1b[0m AetherOS 1.0 LTS (Quantum Breeze) x86_64',
+        `\x1b[1;36mOS:\x1b[0m AetherOS ${AETHER_VERSION.version} (${AETHER_VERSION.codename}) ${AETHER_VERSION.architecture}`,
         '\x1b[1;36mHost:\x1b[0m Browser Virtual Machine (HTML5/Wasm)',
-        '\x1b[1;36mKernel:\x1b[0m 6.8.0-aether (AetherCore)',
+        `\x1b[1;36mKernel:\x1b[0m ${AETHER_VERSION.kernel} (AetherCore)`,
         `\x1b[1;36mUptime:\x1b[0m ${up}`,
         `\x1b[1;36mProcesses:\x1b[0m ${procs} (virtual kernel)`,
-        '\x1b[1;36mShell:\x1b[0m aesh 1.0 (Aether Shell)',
+        `\x1b[1;36mShell:\x1b[0m ${AETHER_VERSION.shell}`,
         '\x1b[1;36mDisplay:\x1b[0m 1920x1080 @ 60Hz',
         '\x1b[1;36mDE:\x1b[0m Aether Desktop (Modern Linux Compositor)',
-        '\x1b[1;36mWM:\x1b[0m AetherWM',
+        `\x1b[1;36mWM:\x1b[0m ${AETHER_VERSION.compositor}`,
         '\x1b[1;36mTheme:\x1b[0m Obsidian Glass [Dark]',
         '\x1b[1;36mIcons:\x1b[0m Lucide Modern Linux',
         '\x1b[1;36mTerminal:\x1b[0m Aether Terminal',
-        '\x1b[1;36mCPU:\x1b[0m Virtual Core (Multi-Threaded WebWorker)',
+        '\x1b[1;36mRuntime:\x1b[0m Aether Isolated JS Engine (WebWorker)',
         `\x1b[1;36mMemory:\x1b[0m ${Math.round(mem.usedKb / 1024)}MiB / ${Math.round(mem.totalKb / 1024)}MiB (${mem.percent}%)`,
         '',
         '  \x1b[40m   \x1b[41m   \x1b[42m   \x1b[43m   \x1b[44m   \x1b[45m   \x1b[46m   \x1b[47m   \x1b[0m',

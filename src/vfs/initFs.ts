@@ -1,6 +1,7 @@
 // AetherOS - Initial Linux Filesystem Skeleton & Default Files
 import type { VFSNode } from './types';
 import { getMimeType } from './mime';
+import { AETHER_VERSION } from '../core/version';
 
 export function createDefaultFileSystem(): Map<string, VFSNode> {
   const map = new Map<string, VFSNode>();
@@ -156,16 +157,17 @@ echo "Script complete."
   addFile(
     '/etc/os-release',
     `NAME="AetherOS"
-VERSION="1.0 LTS (Quantum Breeze)"
+VERSION="${AETHER_VERSION.version} (${AETHER_VERSION.codename})"
 ID=aetheros
 ID_LIKE=linux
-PRETTY_NAME="AetherOS 1.0 LTS"
-VERSION_ID="1.0"
-HOME_URL="https://aetheros.dev"
-SUPPORT_URL="https://aetheros.dev/support"
-BUG_REPORT_URL="https://aetheros.dev/issues"
+PRETTY_NAME="AetherOS ${AETHER_VERSION.version} (${AETHER_VERSION.codename})"
+VERSION_ID="${AETHER_VERSION.version}"
+HOME_URL="${AETHER_VERSION.repoUrl}"
+SUPPORT_URL="${AETHER_VERSION.repoUrl}/issues"
+BUG_REPORT_URL="${AETHER_VERSION.repoUrl}/issues"
 `
   );
+  addFile('/etc/issue', `AetherOS ${AETHER_VERSION.version} \\n \\l\n\n`);
 
   addFile(
     '/etc/profile',
@@ -200,21 +202,45 @@ alias update="aetherpkg update"
   // Desktop starter files
   addFile(
     '/home/aether/Desktop/Welcome.txt',
-    `Welcome to AetherOS 1.0!
-===================================
-AetherOS is an advanced, fully functional, Linux-inspired browser-based operating system.
+    `Welcome to AetherOS v${AETHER_VERSION.version} (${AETHER_VERSION.codename})!
+=============================================================
+AetherOS is a high-fidelity, Linux-inspired virtual operating environment running directly in your web browser.
 
-Key Highlights:
-1. Real Persistent Filesystem: Any changes you make in Terminal, File Manager, or Text Editor persist via IndexedDB!
-2. Full aesh Shell: Supports pipes (|), redirection (>, >>, <), variable expansion ($HOME, $USER), globbing (*.txt), and built-in Linux utilities.
-3. Complete App Suite: File Manager, Code Studio, Terminal, Web Browser, System Monitor, Software Center, Media Player, Calculator, Notes, and Settings.
-4. Window Management: Drag, resize, snap to edges (Super + Arrow), Alt+Tab switching, virtual workspaces, and quick runner (Alt+Space).
-5. aetherpkg Package Manager: Install and manage additional packages from CLI or Software Center.
+Key Features & v1.2 Capabilities:
+1. Real Persistent Filesystem (AetherFS 2.0): Binary-safe storage (readBytes/writeBytes), POSIX access control, symbolic links, and versioned SHA-256 system backup/restore persisted via browser IndexedDB.
+2. Aether Secure Runtime: Isolated, interruptible JavaScript execution subsystem (WebWorker sandbox) with streaming stdout/stderr, execution timeouts, cancelation, and authorized 'aether.fs' API access.
+3. Advanced aesh Shell: Full POSIX scripting (if/then/elif/else/fi, for/while loops, case-esac, functions, positional params $1..$9, $#, $@, test/[ ]), background jobs (&, jobs, fg, bg, wait), pipes (|), and redirections (>, >>, <, 2>).
+4. Centralized Honest Telemetry: Real CPU and memory telemetry based on actual browser heap metrics and virtual process accounting without synthetic random jitter.
+5. Code Studio IDE: Integrated development environment with live sandbox preview and runtime JavaScript execution controls (run, stop, clear logs).
+6. 19 Native Applications & Games: File Manager, Terminal, Text Editor, Web Browser, System Monitor, Software Center, Media Player, Paint, Audio Recorder, Calculator, Notes, 2048, Minesweeper, and Weather.
 
-Try running 'fastfetch' in the Terminal or opening File Manager to explore the system!
+Try running 'fastfetch', 'js ~/Projects/real-computing/hello.js', or open System Monitor to explore!
 `,
     'aether',
     0o644
+  );
+
+  // Real Computing Starter Project
+  addDir('/home/aether/Projects/real-computing', 'aether', 0o755);
+  addFile(
+    '/home/aether/Projects/real-computing/hello.js',
+    `// AetherOS v1.2.0: Real Computing Starter Script
+console.log("AetherOS runtime working!");
+
+// Demonstrate guest aether.fs bridge
+async function main() {
+  if (typeof aether !== 'undefined' && aether.fs) {
+    const readmePath = '/home/aether/Desktop/Welcome.txt';
+    const exists = await aether.fs.exists(readmePath);
+    console.log("[AetherFS] Welcome file exists:", exists);
+    console.log("[AetherFS] System ready for computing workloads.");
+  }
+}
+
+main();
+`,
+    'aether',
+    0o755
   );
 
   // Documents

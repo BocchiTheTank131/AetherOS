@@ -33,31 +33,39 @@ export const SoftwareCenterApp: React.FC<AppProps> = () => {
     loadPackages();
   }, []);
 
-  const handleInstall = async (pkg: AetherPackage) => {
+  const handleInstall = (pkg: AetherPackage) => {
     setBusyPackageId(pkg.id);
-    await new Promise((r) => setTimeout(r, 600)); // realistic unpacking delay
-    packageManager.install(pkg.id);
+    const success = packageManager.install(pkg.id);
     loadPackages();
     setBusyPackageId(null);
-    addNotification({
-      title: 'Software Center',
-      message: `${pkg.name} has been successfully installed.`,
-      level: 'success',
-    });
+    if (success) {
+      addNotification({
+        title: 'Software Center',
+        message: `${pkg.name} (${pkg.version}) has been activated.`,
+        level: 'success',
+      });
+    } else {
+      addNotification({
+        title: 'Software Center',
+        message: `Failed to activate ${pkg.name}.`,
+        level: 'error',
+      });
+    }
   };
 
-  const handleRemove = async (pkg: AetherPackage) => {
-    if (!confirm(`Are you sure you want to uninstall ${pkg.name}?`)) return;
+  const handleRemove = (pkg: AetherPackage) => {
+    if (!confirm(`Are you sure you want to deactivate ${pkg.name}?`)) return;
     setBusyPackageId(pkg.id);
-    await new Promise((r) => setTimeout(r, 400));
-    packageManager.remove(pkg.id);
+    const success = packageManager.remove(pkg.id);
     loadPackages();
     setBusyPackageId(null);
-    addNotification({
-      title: 'Software Center',
-      message: `${pkg.name} has been uninstalled.`,
-      level: 'info',
-    });
+    if (success) {
+      addNotification({
+        title: 'Software Center',
+        message: `${pkg.name} has been deactivated.`,
+        level: 'info',
+      });
+    }
   };
 
   const getPackageIcon = (iconName: string) => {

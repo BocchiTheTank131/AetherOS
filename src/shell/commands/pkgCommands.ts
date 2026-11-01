@@ -49,7 +49,7 @@ export const pkgCommands: RegisteredCommand[] = [
         }
 
         packageManager.install(target);
-        const out = `Reading package lists... Done\nBuilding dependency tree... Done\nThe following NEW packages will be installed:\n  ${pkg.id} (${pkg.version})\nNeed to get ${pkg.sizeKb} kB of archives.\nUnpacking ${pkg.id} (${pkg.version})...\nSetting up ${pkg.id} (${pkg.version})...\nProcessing triggers for desktop-file-utils...\n\x1b[1;32mSuccessfully installed ${pkg.name}.\x1b[0m\n`;
+        const out = `Reading repository package catalog... Done\nEnabling bundled application: ${pkg.name} (${pkg.id} v${pkg.version})\nRegistering desktop launcher entries and MIME handlers...\nUpdating application registry: /var/lib/aetherpkg/installed.json\n\x1b[1;32mSuccessfully installed and activated ${pkg.name}.\x1b[0m\n`;
         return { stdout: out, stderr: '', exitCode: 0 };
       }
 
@@ -64,7 +64,7 @@ export const pkgCommands: RegisteredCommand[] = [
         }
 
         packageManager.remove(target);
-        const out = `Reading package lists... Done\nRemoving ${pkg.id} (${pkg.version})...\nProcessing triggers for desktop-file-utils...\n\x1b[1;33mSuccessfully removed ${pkg.name}.\x1b[0m\n`;
+        const out = `Deactivating application: ${pkg.name} (${pkg.id} v${pkg.version})...\nRemoving desktop launcher entries and MIME associations...\nUpdating application registry: /var/lib/aetherpkg/installed.json\n\x1b[1;33mSuccessfully deactivated ${pkg.name}.\x1b[0m\n`;
         return { stdout: out, stderr: '', exitCode: 0 };
       }
 

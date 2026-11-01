@@ -3,6 +3,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { vfs } from '../vfs/vfs';
 import { shellExecutor } from '../shell/executor';
 import { virtualKernel } from '../core/kernel';
+import { performanceService } from '../core/performanceService';
+import { AETHER_VERSION } from '../core/version';
 import { aetherRuntime } from '../runtime/AetherRuntime';
 import type { ShellContext } from '../shell/types';
 
@@ -325,6 +327,56 @@ describe('AetherOS v1.2.0: Real Computing', () => {
 
       const cpu = virtualKernel.getAverageCpuUsage();
       expect(cpu).toBeGreaterThanOrEqual(0.0);
+    });
+
+    it('synthesizes dynamic /proc/<pid>/status and cmdline for active processes', () => {
+      expect(vfs.exists('/proc/1')).toBe(true);
+      expect(vfs.exists('/proc/1/status')).toBe(true);
+      expect(vfs.exists('/proc/1/cmdline')).toBe(true);
+
+      const status = vfs.readFile('/proc/1/status');
+      expect(status).toContain('Name:\tsystemd');
+      expect(status).toContain('Pid:\t1');
+      expect(status).toContain('State:\tR (running)');
+
+      const cmdline = vfs.readFile('/proc/1/cmdline');
+      expect(cmdline).toContain('/sbin/init');
+
+      const procEntries = vfs.readdir('/proc');
+      expect(procEntries.some((e) => e.name === '1' && e.type === 'dir')).toBe(true);
+
+      const pid1Entries = vfs.readdir('/proc/1');
+      expect(pid1Entries.some((e) => e.name === 'status')).toBe(true);
+      expect(pid1Entries.some((e) => e.name === 'cmdline')).toBe(true);
+    });
+
+    it('collects real performance samples via performanceService and supports measureTask', async () => {
+      const sample = performanceService.getCurrentSample();
+      expect(sample.cpuPercent).toBeGreaterThanOrEqual(0);
+      expect(sample.totalMemoryKb).toBeGreaterThan(0);
+      expect(sample.activeProcesses).toBeGreaterThanOrEqual(3);
+
+      let notified = false;
+      const unsub = performanceService.subscribe((s) => {
+        if (s.activeProcesses > 0) notified = true;
+      });
+      expect(notified).toBe(true);
+      unsub();
+
+      const measured = await performanceService.measureTask('test_computation', 'task', () => {
+        let sum = 0;
+        for (let i = 0; i < 1000; i++) sum += i;
+        return sum;
+      });
+      expect(measured.result).toBe(499500);
+      expect(measured.durationMs).toBeGreaterThanOrEqual(0);
+    });
+
+    it('enforces centralized version consistency across AETHER_VERSION', () => {
+      expect(AETHER_VERSION.version).toBe('1.2.0');
+      expect(AETHER_VERSION.codename).toBe('Real Computing');
+      expect(vfs.readFile('/proc/version')).toContain('1.2.0');
+      expect(vfs.readFile('/etc/os-release')).toContain('VERSION_ID="1.2.0"');
     });
   });
 });

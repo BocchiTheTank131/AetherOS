@@ -17,7 +17,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-7.0-3178c6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-4.3-38bdf8?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![Vite](https://img.shields.io/badge/Vite-8.3-646cff?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
-[![Vitest](https://img.shields.io/badge/Tests-65%20Passed-34d399?style=for-the-badge&logo=vitest&logoColor=black)](https://vitest.dev/)
+[![Vitest](https://img.shields.io/badge/Tests-70%20Passed-34d399?style=for-the-badge&logo=vitest&logoColor=black)](https://vitest.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-amber?style=for-the-badge)](LICENSE)
 
 [Architecture](#-architectural-overview) • [What's New in v1.2.0](#-whats-new-in-v120-real-computing) • [Subsystems](#-subsystem-deep-dive) • [Applications](#-native-application-suite) • [Shell CLI](#-shell-command-reference-50-utilities) • [Quickstart](#-getting-started) • [Contributing](#-developer-guides)
@@ -114,7 +114,7 @@ AetherOS v1.2.0 transforms AetherOS from a simulation into a capable, reliable, 
   - `SIGKILL` (9, uncatchable immediate termination, exit code 137)
   - `SIGSTOP` (19, transitions process state to `stopped`)
   - `SIGCONT` (18, resumes process state back to `running`)
-- **Resource Accounting**: Active 3-second sampler generating realistic virtual CPU utilization jitter and memory RSS footprint dynamically tracked per process.
+- **Resource Accounting & Performance Service (`performanceService`)**: Centralized telemetry provider tracking live host memory (`performance.memory` where supported), aggregate virtual kernel footprint, real CPU utilization, active Web Worker instances, and sliding 60-sample historical buffers. Timers pause automatically when idle to eliminate CPU overhead.
 - **Typed System Event Bus (`systemEventBus`)**: Pub/Sub bus handling OS-wide events (`process:started`, `process:terminated`, `filesystem:changed`, `package:installed`, `theme:changed`, `window:opened`, etc.).
 - **Structured System Logger (`systemLogger`)**: 1,000-entry in-memory circular ring buffer capturing `debug`, `info`, `warn`, and `error` events with timestamps and subsystem tags. Powers `dmesg`, `journalctl`, and the GUI Log Viewer.
 
@@ -125,7 +125,10 @@ AetherOS v1.2.0 transforms AetherOS from a simulation into a capable, reliable, 
   - `/proc/version`: Kernel build version (`Linux version 6.8.0-aether ...`).
   - `/proc/uptime`: Real-time system uptime and idle time in seconds.
   - `/proc/meminfo`: Live virtual memory statistics (`MemTotal`, `MemFree`, `Buffers`, `Cached`).
-  - `/proc/cpuinfo`: Hardware concurrency thread count and simulated CPU specifications.
+  - `/proc/cpuinfo`: Hardware concurrency thread count and host-aligned CPU specifications.
+  - `/proc/<pid>/status`: Per-process state, PID, PPID, virtual memory RSS, and thread count generated on-demand directly from the kernel process table.
+  - `/proc/<pid>/cmdline`: Null-separated command line invocation string for active processes.
+  - Dynamic `/proc` directory enumeration dynamically lists active process PIDs as subdirectories.
   - `/dev/null`: Discards all written data; returns EOF immediately on read.
   - `/dev/zero`: Generates continuous zero streams on demand.
   - `/dev/random` & `/dev/urandom`: Cryptographically secure pseudorandom byte streams via Web Crypto `crypto.getRandomValues()`.
@@ -257,6 +260,14 @@ AetherOS includes **19 desktop applications** spanning 7 categories:
 - `reboot` — Gracefully restart the virtual operating system.
 - `shutdown` — Power down the virtual environment.
 
+### Scripting & Job Control
+- `jobs` — List active background jobs and their command lines.
+- `fg [job_id]` — Bring a background job to the foreground.
+- `bg [job_id]` — Resume a stopped or background job in the background.
+- `wait [pid]` — Wait for specified background process or all background jobs to finish.
+- `source <file>` / `. <file>` — Execute shell commands from a script file in the current shell environment.
+- `test <expr>` / `[ <expr> ]` — Evaluate conditional expressions (`-f`, `-d`, `-e`, `-s`, `-z`, `-n`, `=`, `!=`, `-eq`, `-ne`, `-lt`, `-gt`).
+
 ### Text & Environment Builtins
 - `echo [-n] [-e] [text...]` — Display a line of text with optional escape interpretation.
 - `printf <format> [args...]` — Format and print text according to format specifiers.
@@ -329,6 +340,8 @@ When booting AetherOS, a full virtual filesystem structure is synthesized and pe
 │       ├── Pictures/
 │       │   └── aether_constellation.svg # Vector artwork readable by Image Viewer
 │       ├── Projects/
+│       │   ├── real-computing/# AetherOS v1.2.0 starter project
+│       │   │   └── hello.js   # Script using aether.fs sandbox API
 │       │   └── web-demo/      # Starter project editable in Code Studio
 │       │       ├── index.html # Interactive HTML markup
 │       │       ├── style.css  # Modern CSS styling with glassmorphism

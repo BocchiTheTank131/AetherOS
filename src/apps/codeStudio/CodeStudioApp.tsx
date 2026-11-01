@@ -1,15 +1,17 @@
 // AetherOS - Code Studio IDE with Project Explorer & Live Sandbox Preview
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { AppProps } from '../types';
 import { vfs } from '../../vfs/vfs';
-import { aetherRuntime } from '../../runtime/AetherRuntime';
+import { aetherRuntime, type RuntimeSession } from '../../runtime/AetherRuntime';
 import {
   Play,
+  Square,
   RefreshCw,
   FileCode,
   Save,
   Terminal,
   Eye,
+  Trash2,
 } from 'lucide-react';
 
 export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
@@ -29,6 +31,9 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
   const [previewHtml, setPreviewHtml] = useState('');
   const [activeTab, setActiveTab] = useState<'editor' | 'preview'>('editor');
   const [logs, setLogs] = useState<string[]>([]);
+  const [isRunning, setIsRunning] = useState(false);
+  const [activePid, setActivePid] = useState<number | null>(null);
+  const activeSessionRef = useRef<RuntimeSession | null>(null);
 
   // Scan project files
   const refreshProject = useCallback(() => {
@@ -112,16 +117,35 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
 
   const handleRunJs = async () => {
     handleSaveAll();
-    setLogs((prev) => [...prev, `[Run ${new Date().toLocaleTimeString()}] Executing ${activeFileName} in Aether Secure Runtime...`]);
     try {
-      const res = await aetherRuntime.execute(currentContent, {
+      const session = aetherRuntime.createSession({
         commandName: `js ${activeFileName}`,
         onStdout: (chunk) => setLogs((prev) => [...prev, chunk.trimEnd()]),
         onStderr: (chunk) => setLogs((prev) => [...prev, `[Error] ${chunk.trimEnd()}`]),
       });
+      activeSessionRef.current = session;
+      setIsRunning(true);
+      setActivePid(session.pid);
+      setLogs((prev) => [
+        ...prev,
+        `[Run ${new Date().toLocaleTimeString()}] Executing ${activeFileName} in Aether Secure Runtime (PID ${session.pid})...`,
+      ]);
+
+      const res = await session.execute(currentContent);
       setLogs((prev) => [...prev, `[Finished] Process exited with code ${res.exitCode} (${res.durationMs}ms)`]);
     } catch (err) {
       setLogs((prev) => [...prev, `[Fatal] Execution failed: ${(err as Error).message}`]);
+    } finally {
+      setIsRunning(false);
+      setActivePid(null);
+      activeSessionRef.current = null;
+    }
+  };
+
+  const handleStopExecution = () => {
+    if (activeSessionRef.current) {
+      activeSessionRef.current.cancel();
+      setLogs((prev) => [...prev, `[Stopped] User cancelled execution (PID ${activePid})`]);
     }
   };
 
@@ -141,14 +165,25 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
 
         <div className="flex items-center gap-1.5">
           {activeFile.endsWith('.js') && (
-            <button
-              onClick={handleRunJs}
-              className="flex items-center gap-1 px-2.5 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded text-xs font-medium"
-              title="Run in Aether Secure Runtime"
-            >
-              <Play className="w-3.5 h-3.5" />
-              <span>Run in Runtime</span>
-            </button>
+            isRunning ? (
+              <button
+                onClick={handleStopExecution}
+                className="flex items-center gap-1 px-2.5 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded text-xs font-medium animate-pulse"
+                title="Stop Running Script"
+              >
+                <Square className="w-3.5 h-3.5" />
+                <span>Stop (PID {activePid})</span>
+              </button>
+            ) : (
+              <button
+                onClick={handleRunJs}
+                className="flex items-center gap-1 px-2.5 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded text-xs font-medium"
+                title="Run in Aether Secure Runtime"
+              >
+                <Play className="w-3.5 h-3.5" />
+                <span>Run in Runtime</span>
+              </button>
+            )
           )}
           <button
             onClick={handleSaveAll}
@@ -268,16 +303,35 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
           </div>
 
           {/* Mini Console Output */}
-          <div className="h-24 bg-[#0d1017] border-t border-gray-800 p-2 font-mono text-[11px] overflow-y-auto select-text text-gray-400">
-            <div className="flex items-center gap-1 text-gray-500 pb-1 border-b border-gray-800 mb-1 select-none font-semibold">
-              <Terminal className="w-3 h-3" />
-              <span>Preview Build Logs</span>
-            </div>
-            {logs.map((log, idx) => (
-              <div key={idx} className="leading-relaxed">
-                {log}
+          <div className="h-28 bg-[#0d1017] border-t border-gray-800 p-2 font-mono text-[11px] overflow-y-auto select-text text-gray-400">
+            <div className="flex items-center justify-between text-gray-500 pb-1 border-b border-gray-800 mb-1 select-none font-semibold">
+              <div className="flex items-center gap-1.5">
+                <Terminal className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Runtime Output & Logs</span>
+                {isRunning && (
+                  <span className="text-[10px] text-amber-400 font-normal">
+                    (PID {activePid} running)
+                  </span>
+                )}
               </div>
-            ))}
+              <button
+                onClick={() => setLogs([])}
+                className="flex items-center gap-1 hover:text-white transition-colors"
+                title="Clear Logs"
+              >
+                <Trash2 className="w-3 h-3" />
+                <span className="text-[10px]">Clear</span>
+              </button>
+            </div>
+            {logs.length === 0 ? (
+              <div className="text-gray-600 italic">No output. Click "Run in Runtime" or "Run Preview" to execute.</div>
+            ) : (
+              logs.map((log, idx) => (
+                <div key={idx} className="leading-relaxed">
+                  {log}
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>

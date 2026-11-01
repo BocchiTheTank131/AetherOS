@@ -14,6 +14,26 @@ import { createDefaultFileSystem } from './initFs';
 import { systemLogger } from '../core/logger';
 import { systemEventBus } from '../core/eventBus';
 import { virtualKernel } from '../core/kernel';
+import { AETHER_VERSION } from '../core/version';
+
+async function computeSha256(data: string): Promise<string> {
+  if (typeof crypto !== 'undefined' && crypto.subtle) {
+    try {
+      const encoder = new TextEncoder();
+      const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(data));
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+    } catch {
+      // Fallback below
+    }
+  }
+  let hash = 0;
+  for (let i = 0; i < data.length; i++) {
+    hash = (hash << 5) - hash + data.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash).toString(16).padStart(8, '0');
+}
 
 export class VirtualFileSystem {
   private nodes = new Map<string, VFSNode>();
@@ -211,19 +231,102 @@ export class VirtualFileSystem {
     }
 
     if (norm === '/proc/version') {
+      const verContent = `AetherCore virtual kernel version ${AETHER_VERSION.kernel} (AetherOS v${AETHER_VERSION.version} ${AETHER_VERSION.codename}; ${AETHER_VERSION.architecture}) #1 SMP PREEMPT\n`;
       return {
         name: 'version',
         path: '/proc/version',
         parentPath: '/proc',
         type: 'file',
-        size: 64,
+        size: verContent.length,
         createdAt: Date.now(),
         modifiedAt: Date.now(),
         permissions: 0o444,
         owner: 'root',
         group: 'root',
-        content: 'Linux version 6.8.0-aetheros (browser-wasm) (gcc 13.2.0) #1 SMP PREEMPT\n',
+        content: verContent,
       };
+    }
+
+    // Dynamic /proc/<pid> directories and process status
+    const procStatusMatch = norm.match(/^\/proc\/(\d+)\/status$/);
+    if (procStatusMatch) {
+      const pid = parseInt(procStatusMatch[1], 10);
+      const proc = virtualKernel.getProcess(pid);
+      if (proc) {
+        const stateChar = proc.state === 'running' ? 'R (running)' : proc.state === 'stopped' ? 'T (stopped)' : 'Z (zombie)';
+        const statusContent = [
+          `Name:\t${proc.name}`,
+          `Umask:\t0022`,
+          `State:\t${stateChar}`,
+          `Tgid:\t${proc.pid}`,
+          `Ngid:\t0`,
+          `Pid:\t${proc.pid}`,
+          `PPid:\t${proc.ppid}`,
+          `Uid:\t${proc.user === 'root' ? '0\t0\t0\t0' : '1000\t1000\t1000\t1000'}`,
+          `Gid:\t${proc.user === 'root' ? '0\t0\t0\t0' : '1000\t1000\t1000\t1000'}`,
+          `FDSize:\t64`,
+          `VmPeak:\t${proc.memoryKb} kB`,
+          `VmSize:\t${proc.memoryKb} kB`,
+          `VmRSS:\t${proc.memoryKb} kB`,
+          `Threads:\t1`,
+          '',
+        ].join('\n');
+        return {
+          name: 'status',
+          path: norm,
+          parentPath: `/proc/${pid}`,
+          type: 'file',
+          size: statusContent.length,
+          createdAt: proc.startTime,
+          modifiedAt: Date.now(),
+          permissions: 0o444,
+          owner: proc.user,
+          group: 'aether',
+          content: statusContent,
+        };
+      }
+    }
+
+    const procCmdlineMatch = norm.match(/^\/proc\/(\d+)\/cmdline$/);
+    if (procCmdlineMatch) {
+      const pid = parseInt(procCmdlineMatch[1], 10);
+      const proc = virtualKernel.getProcess(pid);
+      if (proc) {
+        const cmdContent = [proc.command, ...(proc.args || [])].join('\0') + '\0';
+        return {
+          name: 'cmdline',
+          path: norm,
+          parentPath: `/proc/${pid}`,
+          type: 'file',
+          size: cmdContent.length,
+          createdAt: proc.startTime,
+          modifiedAt: Date.now(),
+          permissions: 0o444,
+          owner: proc.user,
+          group: 'aether',
+          content: cmdContent,
+        };
+      }
+    }
+
+    const procDirMatch = norm.match(/^\/proc\/(\d+)$/);
+    if (procDirMatch) {
+      const pid = parseInt(procDirMatch[1], 10);
+      const proc = virtualKernel.getProcess(pid);
+      if (proc) {
+        return {
+          name: String(pid),
+          path: norm,
+          parentPath: '/proc',
+          type: 'dir',
+          size: 0,
+          createdAt: proc.startTime,
+          modifiedAt: Date.now(),
+          permissions: 0o555,
+          owner: proc.user,
+          group: 'aether',
+        };
+      }
     }
 
     if (norm === '/proc/meminfo') {
@@ -780,11 +883,36 @@ export class VirtualFileSystem {
 
     // Synthesize /proc entries
     if (norm === '/proc') {
-      return [
+      const procEntries: VFSEntry[] = [
         { name: 'uptime', path: '/proc/uptime', type: 'file', size: 32, modifiedAt: Date.now(), permissions: 0o444, owner: 'root' },
         { name: 'version', path: '/proc/version', type: 'file', size: 64, modifiedAt: Date.now(), permissions: 0o444, owner: 'root' },
         { name: 'meminfo', path: '/proc/meminfo', type: 'file', size: 256, modifiedAt: Date.now(), permissions: 0o444, owner: 'root' },
         { name: 'cpuinfo', path: '/proc/cpuinfo', type: 'file', size: 512, modifiedAt: Date.now(), permissions: 0o444, owner: 'root' },
+      ];
+      for (const p of virtualKernel.getProcesses()) {
+        procEntries.push({
+          name: String(p.pid),
+          path: `/proc/${p.pid}`,
+          type: 'dir',
+          size: 0,
+          modifiedAt: p.startTime,
+          permissions: 0o555,
+          owner: p.user,
+        });
+      }
+      return procEntries;
+    }
+
+    const pidDirMatch = norm.match(/^\/proc\/(\d+)$/);
+    if (pidDirMatch) {
+      const pid = parseInt(pidDirMatch[1], 10);
+      const proc = virtualKernel.getProcess(pid);
+      if (!proc) {
+        throw new Error(`ENOENT: no such process or directory, scandir '${path}'`);
+      }
+      return [
+        { name: 'status', path: `/proc/${pid}/status`, type: 'file', size: 256, modifiedAt: Date.now(), permissions: 0o444, owner: proc.user },
+        { name: 'cmdline', path: `/proc/${pid}/cmdline`, type: 'file', size: 64, modifiedAt: Date.now(), permissions: 0o444, owner: proc.user },
       ];
     }
 
@@ -1274,12 +1402,7 @@ export class VirtualFileSystem {
     }
 
     const payload = JSON.stringify(exportNodes);
-    let hash = 0;
-    for (let i = 0; i < payload.length; i++) {
-      hash = (hash << 5) - hash + payload.charCodeAt(i);
-      hash |= 0;
-    }
-    const checksum = Math.abs(hash).toString(16).padStart(8, '0');
+    const checksum = await computeSha256(payload);
 
     const backup: VFSBackupData = {
       version: 2,
@@ -1306,12 +1429,7 @@ export class VirtualFileSystem {
 
       // Checksum verification
       const payload = JSON.stringify(parsed.nodes);
-      let hash = 0;
-      for (let i = 0; i < payload.length; i++) {
-        hash = (hash << 5) - hash + payload.charCodeAt(i);
-        hash |= 0;
-      }
-      const calculatedChecksum = Math.abs(hash).toString(16).padStart(8, '0');
+      const calculatedChecksum = await computeSha256(payload);
       if (parsed.checksum && parsed.checksum !== calculatedChecksum) {
         return false;
       }

@@ -1,23 +1,24 @@
 // AetherOS - Realistic Animated Boot Screen & Systemd Startup Logs
 import React, { useState, useEffect } from 'react';
 import { Terminal } from 'lucide-react';
+import { AETHER_VERSION } from '../../core/version';
 
 interface BootScreenProps {
   onComplete: () => void;
 }
 
 const BOOT_STEPS = [
-  'AetherCore Kernel version 6.8.0-aether loading...',
-  'Checking virtual filesystem integrity (fsck.ext4)... clean',
+  `AetherCore Kernel version ${AETHER_VERSION.kernel} (v${AETHER_VERSION.version}) loading...`,
+  'Checking virtual filesystem integrity (AetherFS 2.0 fsck)... clean',
   'Mounting persistent IndexedDB virtual filesystem on /...',
-  'Mounting virtual pseudo-filesystem /proc...',
+  'Mounting virtual pseudo-filesystem /proc with PID status tables...',
   'Creating device nodes in /dev (null, zero, urandom)...',
   'Starting systemd-journald system logger...',
   'Starting aether-sound.service (Web Audio API Synthesizer)...',
   'Loading aetherpkg package repository database...',
   'Setting hostname to aetheros...',
   'Initializing user session for aether (UID: 1000)...',
-  'Starting Aether Desktop Compositor...',
+  'Starting Aether Desktop Compositor (AetherWM)...',
   'Reached target Graphical Desktop Interface.',
 ];
 

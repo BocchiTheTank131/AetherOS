@@ -4,42 +4,46 @@ export const SANDBOX_WORKER_CODE = `
 (function() {
   'use strict';
 
+  // Secure internal host bridge (private to worker closure)
+  const postToHost = typeof self !== 'undefined' && typeof self.postMessage === 'function'
+    ? self.postMessage.bind(self)
+    : function() {};
+
   // Pending host requests map
   const pendingRequests = new Map();
   let reqSeq = 0;
 
-  // Intercept console
-  const origConsole = console;
-  globalThis.console = {
+  // Intercept console with bounded string formatting
+  const guestConsole = Object.freeze({
     log: function(...args) {
-      self.postMessage({
+      postToHost({
         type: 'stdout',
         text: args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)).join(' ') + '\\n'
       });
     },
     info: function(...args) {
-      self.postMessage({
+      postToHost({
         type: 'stdout',
         text: '[INFO] ' + args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)).join(' ') + '\\n'
       });
     },
     warn: function(...args) {
-      self.postMessage({
+      postToHost({
         type: 'stderr',
         text: '[WARN] ' + args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)).join(' ') + '\\n'
       });
     },
     error: function(...args) {
-      self.postMessage({
+      postToHost({
         type: 'stderr',
         text: '[ERROR] ' + args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)).join(' ') + '\\n'
       });
     }
-  };
+  });
 
   // Secure guest AetherOS bridge API
-  globalThis.aether = {
-    fs: {
+  const guestAether = Object.freeze({
+    fs: Object.freeze({
       readText: function(path) {
         return sendFsRequest('readText', { path });
       },
@@ -66,14 +70,14 @@ export const SANDBOX_WORKER_CODE = `
       stat: function(path) {
         return sendFsRequest('stat', { path });
       }
-    }
-  };
+    })
+  });
 
   function sendFsRequest(method, params) {
     return new Promise((resolve, reject) => {
       const id = 'req_' + (++reqSeq);
       pendingRequests.set(id, { resolve, reject });
-      self.postMessage({
+      postToHost({
         type: 'fs_request',
         id,
         method,
@@ -88,6 +92,14 @@ export const SANDBOX_WORKER_CODE = `
   try { self.XMLHttpRequest = undefined; } catch {}
   try { self.WebSocket = undefined; } catch {}
   try { self.indexedDB = undefined; } catch {}
+  try { self.Worker = undefined; } catch {}
+  try { self.SharedWorker = undefined; } catch {}
+  try { self.BroadcastChannel = undefined; } catch {}
+  try { self.Notification = undefined; } catch {}
+  try { self.close = undefined; } catch {}
+
+  globalThis.console = guestConsole;
+  globalThis.aether = guestAether;
 
   // Message dispatcher
   self.onmessage = async function(e) {
@@ -112,14 +124,14 @@ export const SANDBOX_WORKER_CODE = `
         const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
         // Wrapped with strict mode and sandboxed arguments
         const fn = new AsyncFunction('aether', 'args', 'console', '"use strict";\\n' + msg.code);
-        const result = await fn(globalThis.aether, msg.args || [], globalThis.console);
-        self.postMessage({ type: 'exit', exitCode: 0, result });
+        const result = await fn(guestAether, msg.args || [], guestConsole);
+        postToHost({ type: 'exit', exitCode: 0, result });
       } catch (err) {
-        self.postMessage({
+        postToHost({
           type: 'stderr',
           text: (err && err.stack ? err.stack : (err && err.message ? err.message : String(err))) + '\\n'
         });
-        self.postMessage({ type: 'exit', exitCode: 1 });
+        postToHost({ type: 'exit', exitCode: 1 });
       }
     }
   };

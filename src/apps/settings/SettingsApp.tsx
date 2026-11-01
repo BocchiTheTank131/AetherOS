@@ -4,6 +4,7 @@ import type { AppProps } from '../types';
 import { useSystem } from '../../core/context';
 import { vfs } from '../../vfs/vfs';
 import { virtualKernel } from '../../core/kernel';
+import { AETHER_VERSION } from '../../core/version';
 import { audioService } from '../../core/audio';
 import {
   Palette,
@@ -554,31 +555,39 @@ export const SettingsApp: React.FC<AppProps> = () => {
             <div className="bg-[#1e293b] p-4 rounded-xl border border-gray-700/60 space-y-3 text-xs text-gray-300">
               <div className="flex justify-between py-1 border-b border-gray-700/60">
                 <span>OS Name:</span>
-                <span className="font-semibold text-white">AetherOS Linux</span>
+                <span className="font-semibold text-white">AetherOS</span>
               </div>
               <div className="flex justify-between py-1 border-b border-gray-700/60">
                 <span>Version:</span>
-                <span className="font-mono text-cyan-400">1.1.0 (Rolling Release)</span>
+                <span className="font-mono text-cyan-400">v{AETHER_VERSION.version} ({AETHER_VERSION.codename})</span>
               </div>
               <div className="flex justify-between py-1 border-b border-gray-700/60">
-                <span>Kernel:</span>
-                <span className="font-mono text-cyan-400">{virtualKernel.getKernelVersion()}</span>
+                <span>Virtual Kernel:</span>
+                <span className="font-mono text-cyan-400">{AETHER_VERSION.kernel} (AetherCore)</span>
               </div>
               <div className="flex justify-between py-1 border-b border-gray-700/60">
                 <span>Architecture:</span>
-                <span className="font-mono text-white">x86_64-browser-wasm</span>
+                <span className="font-mono text-white">{AETHER_VERSION.architecture}</span>
               </div>
               <div className="flex justify-between py-1 border-b border-gray-700/60">
-                <span>Window Manager:</span>
-                <span className="font-mono text-white">AetherWM v1.1 Compositor</span>
+                <span>Compositor:</span>
+                <span className="font-mono text-white">{AETHER_VERSION.compositor}</span>
               </div>
               <div className="flex justify-between py-1 border-b border-gray-700/60">
-                <span>Default Shell:</span>
-                <span className="font-mono text-white">aesh (Aether Shell)</span>
+                <span>Shell:</span>
+                <span className="font-mono text-white">{AETHER_VERSION.shell}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-gray-700/60">
+                <span>Execution Runtime:</span>
+                <span className="font-mono text-purple-400">{AETHER_VERSION.runtime}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-gray-700/60">
+                <span>Virtual Filesystem:</span>
+                <span className="font-mono text-teal-400">{AETHER_VERSION.vfs}</span>
               </div>
               <div className="flex justify-between py-1">
-                <span>Storage Engine:</span>
-                <span className="font-mono text-emerald-400">Browser IndexedDB Engine</span>
+                <span>Persistence:</span>
+                <span className="font-mono text-emerald-400">IndexedDB Persistent Store</span>
               </div>
             </div>
           </div>

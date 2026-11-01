@@ -318,14 +318,29 @@ export const devCommands: RegisteredCommand[] = [
       if (args[0] === '-v' || args[0] === '--version') {
         return {
           stdout:
-            'v20.12.0 (aether-runtime shim)\nNote: Native Node.js C++ bindings and built-ins (\'fs\', \'child_process\', \'net\') are unavailable in browser. Use \'aether.fs\' API.\n',
+            'v20.12.0 (aether-runtime shim)\nNote: Native Node.js C++ bindings and built-ins (\'fs\', \'child_process\', \'http\') are unavailable in browser. Use \'aether.fs\' API.\n',
+          stderr: '',
+          exitCode: 0,
+        };
+      }
+
+      if (args.length === 0 && !stdin.trim()) {
+        return {
+          stdout:
+            'AetherOS JavaScript Runtime (v1.2.0)\nNote: Native Node.js C++ bindings and built-ins (fs, child_process, http) are unavailable in browser environment.\nTo execute JavaScript, use "js <file.js>" or "js -e <code>".\nVirtual filesystem access is available through the "aether.fs" API.\n',
           stderr: '',
           exitCode: 0,
         };
       }
 
       const jsCmd = devCommands.find((c) => c.name === 'js')!;
-      return jsCmd.execute(args, context, stdin);
+      const res = await jsCmd.execute(args, context, stdin);
+      const notice = '[aether-node] Notice: Running in browser sandbox via Aether Runtime. Native Node.js C++ bindings are unavailable.\n';
+      return {
+        stdout: notice + res.stdout,
+        stderr: res.stderr,
+        exitCode: res.exitCode,
+      };
     },
   },
 ];

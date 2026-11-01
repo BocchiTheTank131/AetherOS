@@ -9,8 +9,9 @@
 
 **AetherOS** is a browser-native, Linux-inspired operating environment. It does not emulate hardware CPU instructions (e.g. x86/ARM emulators); instead, it provides a high-fidelity **virtual operating environment** that implements authentic Linux paradigms running directly on web standards:
 - **AetherCore:** Virtual kernel managing PID processes, signal handlers (`SIGTERM`, `SIGKILL`, `SIGSTOP`, `SIGCONT`), and resource stats.
-- **VFS (Virtual Filesystem):** Full Linux-compliant filesystem hierarchy (`/bin`, `/etc`, `/home/aether`, `/proc`, `/dev`, etc.) persisted in browser IndexedDB.
-- **aesh (Aether Shell):** POSIX-like command shell with tokenization, AST parser, pipelines (`|`), input/output redirections (`>`, `>>`, `<`, `2>`), conditional chaining (`&&`, `||`, `;`), environment variables, globbing, and 40+ built-in utilities.
+- **AetherFS 2.0 (Virtual Filesystem):** Full Linux-compliant filesystem hierarchy (`/bin`, `/etc`, `/home/aether`, `/proc`, `/dev`, etc.) persisted in browser IndexedDB with binary-safe byte operations, POSIX virtual permissions (`checkAccess`), dynamic `/proc/<pid>` introspection, and SHA-256 backup verification.
+- **AetherRuntime:** Isolated WebWorker sandbox execution engine for guest JavaScript with ambient capability lockdown, streaming stdout/stderr, execution timeouts (POSIX exit 124), cancellation, and a guest `aether.fs` bridge.
+- **aesh (Aether Shell):** POSIX-compliant command shell with lexer, recursive descent AST parser, pipelines (`|`), input/output redirections (`>`, `>>`, `<`, `2>`), conditional chaining (`&&`, `||`, `;`), control structures (`if/then/elif/else/fi`, `for`, `while`, `case/esac`), shell functions, background job control (`&`, `jobs`, `fg`, `bg`, `wait`), environment variables, globbing, and 50+ built-in utilities.
 - **AetherWM & Desktop:** Multi-window compositor with 8-direction resizing, dragging, snapping, 4 virtual workspaces, dock/taskbar, app launcher, quick runner, and notification drawer.
 - **App Platform & aetherpkg:** Central registry for 14 core system applications, plus an official package manager (`aetherpkg`) supporting installable modules.
 
@@ -24,7 +25,7 @@
 - **Styling:** Tailwind CSS 4 (`@tailwindcss/vite`), Lucide React icons
 - **Audio:** Web Audio API (procedural oscillator synthesizer)
 - **Storage:** Browser IndexedDB (primary persistence) with in-memory VFS caching
-- **Testing:** Vitest 5
+- **Testing:** Vitest 5 (70 passed automated tests)
 - **Linter:** Oxlint
 
 ### Essential Commands
@@ -53,6 +54,8 @@ npm run preview
 ```text
 src/
 ├── core/                  # Core OS Foundation & Services
+│   ├── version.ts         # Canonical AETHER_VERSION single source of truth
+│   ├── performanceService.ts # Centralized performance telemetry & sampling
 │   ├── types.ts           # Process, user, theme, event interfaces
 │   ├── eventBus.ts        # Typed system-wide pub/sub event bus
 │   ├── kernel.ts          # VirtualKernel: PID table, signal dispatcher, uptime
@@ -60,9 +63,17 @@ src/
 │   ├── audio.ts           # AudioService: Web Audio API procedural sound synthesizer
 │   └── context.tsx        # SystemProvider & useSystem() OS context hook
 │
-├── vfs/                   # Virtual Filesystem Engine
+├── runtime/               # Secure Isolated Guest Execution Engine
+│   ├── types.ts           # Runtime execution interfaces, options, and events
+│   ├── AetherRuntime.ts   # WebWorker guest runtime orchestrator
+│   ├── workers/
+│   │   └── sandboxSource.ts # Hardened worker sandbox with stripped ambient APIs
+│   └── api/
+│       └── guestFs.ts     # Sandboxed guest aether.fs RPC bridge
+│
+├── vfs/                   # Virtual Filesystem Engine (AetherFS 2.0)
 │   ├── types.ts           # VFSNode, VFSEntry, VFSStats, VFSWatchCallback interfaces
-│   ├── vfs.ts             # VirtualFileSystem: POSIX operations, /proc & /dev dynamic nodes
+│   ├── vfs.ts             # VirtualFileSystem: POSIX operations, /proc/<pid> & /dev dynamic nodes
 │   ├── idbStorage.ts      # IndexedDB batch persistence engine with write-behind queues
 │   ├── initFs.ts          # Default Linux filesystem skeleton & default files
 │   ├── mime.ts            # Extension-to-MIME detection & default app associations
@@ -71,7 +82,7 @@ src/
 ├── shell/                 # aesh Command Shell & Terminal Engine
 │   ├── types.ts           # Tokens, AST nodes, ExecutionResult, ShellContext
 │   ├── lexer.ts           # Shell tokenizer (quotes, escapes, operators)
-│   ├── parser.ts          # AST parser (pipelines, redirections, logical chains)
+│   ├── parser.ts          # AST parser (pipelines, redirections, logical chains, scripting AST)
 │   ├── environment.ts     # Variable expansion ($HOME, $?) & glob expansion (*.txt)
 │   ├── registry.ts        # Central command registry
 │   ├── executor.ts        # Pipeline & redirection execution runtime
@@ -79,6 +90,7 @@ src/
 │       ├── fsCommands.ts  # ls, cd, pwd, mkdir, rmdir, touch, cat, cp, mv, rm, tree, find, grep, etc.
 │       ├── sysCommands.ts # ps, top, htop, kill, killall, uptime, whoami, uname, free, fastfetch, dmesg
 │       ├── textCommands.ts# echo, printf, clear, history, alias, export, env, which, date, seq, etc.
+│       ├── scriptCommands.ts # jobs, fg, bg, wait, source, test, [
 │       ├── netCommands.ts # ping, curl, wget
 │       ├── devCommands.ts # base64, sha256sum, md5sum, jq, js, node
 │       └── pkgCommands.ts # aetherpkg CLI interface
@@ -186,6 +198,27 @@ Located at `src/vfs/vfs.ts`.
 Located at `src/shell/executor.ts`.
 - `shellExecutor.execute(commandString, shellContext)`: Executes a pipeline or logical chain asynchronously, returns `{ stdout, stderr, exitCode }`.
 - Automatically handles variable expansion, globbing, alias expansion, redirection, and kernel process lifecycle tracking.
+- Scripting engine: Evaluates control structures (`if`, `for`, `while`, `case`), shell functions, and background job launching (`&`).
+
+### 4.5 Aether Runtime (`aetherRuntime`)
+Located at `src/runtime/AetherRuntime.ts`.
+- `aetherRuntime.execute(options)`: Spawns an isolated WebWorker task, maps a kernel PID, binds stdout/stderr streams, enforces timeouts (exit code 124), and terminates with `worker.terminate()`.
+- Provides an asynchronous bridge (`aether.fs`) into VFS for guest scripts.
+- Strips ambient web APIs in `sandboxSource.ts` to ensure guest confinement.
+
+### 4.6 Performance Service (`performanceService`)
+Located at `src/core/performanceService.ts`.
+- Real-time telemetry provider aggregating host browser JS heap (via `performance.memory` where supported), kernel process allocations, active worker counts, and execution metrics.
+- Manages a sliding 60-sample historical window for UI charts.
+- Subscriptions pause timers when no listeners are attached to conserve CPU cycles.
+- `performanceService.measureTask(label, fn)`: Measures asynchronous execution latency.
+
+### 4.7 POSIX Job Control
+Located at `src/shell/jobControl.ts` and `src/shell/commands/scriptCommands.ts`.
+- Background tasks (`cmd &`) register as managed jobs.
+- `jobs`: Lists active background jobs and execution states.
+- `fg` / `bg`: Toggles execution between foreground and background.
+- `wait`: Awaits completion of specific background PIDs or all active jobs.
 
 ---
 
@@ -215,6 +248,18 @@ Never attach a global `window.addEventListener('keydown', ...)` inside an applic
 ### ⚠️ Invariant 5: Clean Up Web Audio & Object URLs
 - When using `AudioContext` in apps, close the context or disconnect nodes on unmount to avoid hitting the browser's maximum AudioContext limit.
 - When generating `URL.createObjectURL(blob)` (in `ImageViewerApp`, `LogViewerApp`, or `SettingsApp`), always invoke `URL.revokeObjectURL(url)` after use to prevent memory leaks.
+
+### ⚠️ Invariant 6: Ambient Capability Lockdown in Guest Sandboxes
+- In `sandboxSource.ts`, never expose ambient network, storage, or worker constructors (`fetch`, `XMLHttpRequest`, `WebSocket`, `Worker`, `BroadcastChannel`, `Notification`, `indexedDB`, `importScripts`) inside the guest evaluation scope.
+- Post-message transport listeners must be captured within a secure closure and deleted from the global scope prior to code evaluation.
+
+### ⚠️ Invariant 7: Honest Telemetry (No Arbitrary Synthetic Math.random() Jitter)
+- Do not inject arbitrary `Math.random()` numbers into system telemetry or process statistics.
+- Metrics must reflect real host heap measurements (where supported) or deterministic virtual kernel process accounting via `performanceService`.
+
+### ⚠️ Invariant 8: Centralized Versioning
+- Never hardcode OS version strings in UI components, terminal banners, or CLI outputs.
+- Always import and reference `AETHER_VERSION` from `src/core/version.ts`.
 
 ---
 

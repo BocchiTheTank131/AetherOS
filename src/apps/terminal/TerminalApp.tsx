@@ -5,6 +5,7 @@ import { shellExecutor } from '../../shell/executor';
 import { createDefaultShellContext } from '../../shell/environment';
 import { commandRegistry } from '../../shell/registry';
 import { vfs } from '../../vfs/vfs';
+import { AETHER_VERSION } from '../../core/version';
 import { Plus, X } from 'lucide-react';
 
 interface TerminalTab {
@@ -23,7 +24,7 @@ export const TerminalApp: React.FC<AppProps> = ({ setTitle, initialProps }) => {
       history: [
         {
           type: 'output',
-          text: '\x1b[1;36mAetherOS 1.0 (x86_64-pc-aetheros)\x1b[0m\nWelcome to AetherOS. The aesh shell is ready.\nType \x1b[1;32mhelp\x1b[0m for commands or \x1b[1;33mfastfetch\x1b[0m for system overview.\n',
+          text: `\x1b[1;36mAetherOS v${AETHER_VERSION.version} (${AETHER_VERSION.codename}) [${AETHER_VERSION.architecture}]\x1b[0m\nWelcome to AetherOS. The ${AETHER_VERSION.shell} is ready.\nType \x1b[1;32mhelp\x1b[0m for commands, \x1b[1;33mfastfetch\x1b[0m for system overview, or \x1b[1;35mjs\x1b[0m for script execution.\n`,
         },
       ],
       context: createDefaultShellContext(),
