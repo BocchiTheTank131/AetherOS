@@ -1,5 +1,6 @@
 // AetherOS - Application Platform Registry
-import type { AppDefinition } from './types';
+import React from 'react';
+import type { AppDefinition, AppProps } from './types';
 import { TerminalApp } from './terminal/TerminalApp';
 import { FileManagerApp } from './fileManager/FileManagerApp';
 import { TextEditorApp } from './textEditor/TextEditorApp';
@@ -20,6 +21,8 @@ import { PaintApp } from './paint/PaintApp';
 import { WeatherApp } from './weather/WeatherApp';
 import { AudioRecorderApp } from './audioRecorder/AudioRecorderApp';
 import { packageManager } from '../pkg/packageManager';
+import { dynamicAppRegistry, type InstalledAppRecord } from '../appPlatform/DynamicAppRegistry';
+import { AppHost } from '../appPlatform/AppHost';
 
 export class AppRegistry {
   private apps = new Map<string, AppDefinition>();
@@ -288,8 +291,35 @@ export class AppRegistry {
     }
   }
 
+  private createDynamicDef(rec: InstalledAppRecord): AppDefinition {
+    return {
+      id: rec.id,
+      name: rec.name,
+      icon: rec.icon || 'Package',
+      category: 'Utilities',
+      description: rec.description,
+      component: (props: AppProps) => React.createElement(AppHost, { ...props, appId: rec.id }),
+      defaultWidth: rec.manifest.window?.defaultWidth || 700,
+      defaultHeight: rec.manifest.window?.defaultHeight || 480,
+      minWidth: rec.manifest.window?.minWidth || 360,
+      minHeight: rec.manifest.window?.minHeight || 280,
+      isExternal: true,
+      version: rec.version,
+      author: rec.author,
+      packageId: rec.packageId,
+      executable: `${rec.installDir}/${rec.entry}`,
+    };
+  }
+
   public get(id: string): AppDefinition | undefined {
-    return this.apps.get(id);
+    if (this.apps.has(id)) {
+      return this.apps.get(id);
+    }
+    const dyn = dynamicAppRegistry.get(id);
+    if (dyn) {
+      return this.createDynamicDef(dyn);
+    }
+    return undefined;
   }
 
   public getApp(id: string): AppDefinition | undefined {
@@ -297,9 +327,8 @@ export class AppRegistry {
   }
 
   public getAll(): AppDefinition[] {
-    // Only return package-installed apps if installed (or built-in)
     const installed = packageManager.getInstalled().map((p) => p.appId);
-    return Array.from(this.apps.values()).filter((app) => {
+    const builtIns = Array.from(this.apps.values()).filter((app) => {
       // Core built-in apps are always available
       if (
         [
@@ -321,13 +350,19 @@ export class AppRegistry {
       ) {
         return true;
       }
-      // If it's an aetherpkg package, only show if installed
       return installed.includes(app.id);
     });
+
+    const dynamics = dynamicAppRegistry.getAll().map((rec) => this.createDynamicDef(rec));
+    return [...builtIns, ...dynamics];
   }
 
   public getByCategory(category: string): AppDefinition[] {
     return this.getAll().filter((a) => a.category === category);
+  }
+
+  public subscribe(listener: () => void): () => void {
+    return dynamicAppRegistry.subscribe(listener);
   }
 }
 

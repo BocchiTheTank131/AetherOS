@@ -9,6 +9,7 @@ import { systemEventBus } from './eventBus';
 import { audioService } from './audio';
 import { appRegistry } from '../apps/appRegistry';
 import { packageManager } from '../pkg/packageManager';
+import { SessionManager } from '../session/SessionManager';
 
 export const DEFAULT_THEME: SystemTheme = {
   mode: 'dark',
@@ -98,6 +99,23 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     Record<string, { x: number; y: number; width: number; height: number }>
   >({});
 
+  // Synchronize system theme classes and CSS variables with document root
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme.mode === 'light') {
+      root.classList.add('light');
+      root.classList.remove('dark');
+    } else {
+      root.classList.add('dark');
+      root.classList.remove('light');
+    }
+    root.style.setProperty('--aether-accent', theme.accentHex || '#06b6d4');
+    root.style.setProperty(
+      '--aether-font-size',
+      theme.fontSize === 'small' ? '12px' : theme.fontSize === 'large' ? '16px' : '14px'
+    );
+  }, [theme.mode, theme.accentHex, theme.fontSize]);
+
   // Viewport resize clamping
   useEffect(() => {
     const handleResize = () => {
@@ -148,6 +166,50 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
       } catch {}
 
+      // Restore desktop session if available
+      try {
+        const savedSession = SessionManager.loadSession((id) => !!appRegistry.get(id));
+        if (savedSession && mounted) {
+          if (savedSession.activeWorkspace) {
+            setActiveWorkspace(savedSession.activeWorkspace);
+          }
+          if (savedSession.windows.length > 0) {
+            const restoredWins: WindowInstance[] = savedSession.windows.map((sw, idx) => {
+              const winId = `win-${sw.appId}-${Date.now()}-${idx}`;
+              const app = appRegistry.get(sw.appId);
+              const proc = virtualKernel.spawn({
+                name: app?.name || sw.title,
+                command: app?.executable || `/usr/bin/${sw.appId}`,
+                user: DEFAULT_USER.username,
+                windowId: winId,
+                appId: sw.appId,
+              });
+              return {
+                id: winId,
+                appId: sw.appId,
+                title: sw.title,
+                icon: app?.icon || 'Package',
+                x: sw.x,
+                y: sw.y,
+                width: sw.width,
+                height: sw.height,
+                minWidth: app?.minWidth || 360,
+                minHeight: app?.minHeight || 280,
+                zIndex: 10 + idx,
+                isFocused: idx === savedSession.windows.length - 1,
+                state: sw.state,
+                workspaceId: sw.workspace,
+                pid: proc.pid,
+              };
+            });
+            setWindows(restoredWins);
+            setTopZIndex(10 + restoredWins.length);
+          }
+        }
+      } catch (err) {
+        systemLogger.warn('session', `Session restore notice: ${String(err)}`);
+      }
+
       if (mounted) {
         setBooted(true);
         systemLogger.info('boot', 'AetherOS desktop environment ready');
@@ -172,12 +234,42 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setWindows([]);
     });
 
+    const unsubAppClose = systemEventBus.on('app:close_requested', (event: unknown) => {
+      const e = event as { appId: string };
+      if (!e?.appId) return;
+      setWindows((prev) => {
+        const matching = prev.filter((w) => w.appId === e.appId);
+        for (const win of matching) {
+          virtualKernel.exit(win.pid, 0);
+        }
+        return prev.filter((w) => w.appId !== e.appId);
+      });
+    });
+
+    const unsubOpenReq = systemEventBus.on('window:open_requested', (event: unknown) => {
+      const e = event as { appId: string; props?: Record<string, unknown> };
+      if (e?.appId) {
+        openWindow(e.appId, e.props);
+      }
+    });
+
     return () => {
       mounted = false;
       unsubRestart();
       unsubShutdown();
+      unsubAppClose();
+      unsubOpenReq();
     };
   }, []);
+
+  // Persist session state across browser reloads
+  useEffect(() => {
+    if (!booted) return;
+    const timer = setTimeout(() => {
+      SessionManager.saveSession(activeWorkspace, windows);
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [windows, activeWorkspace, booted]);
 
   // Update theme and persist to VFS
   const setTheme = useCallback((newTheme: Partial<SystemTheme>) => {
@@ -373,11 +465,32 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   );
 
   // Minimize Window
-  const minimizeWindow = useCallback((id: string) => {
-    setWindows((prev) =>
-      prev.map((w) => (w.id === id ? { ...w, state: 'minimized', isFocused: false } : w))
-    );
-  }, []);
+  const minimizeWindow = useCallback(
+    (id: string) => {
+      setWindows((prev) => {
+        const target = prev.find((w) => w.id === id);
+        const next = prev.map((w) =>
+          w.id === id ? { ...w, state: 'minimized' as WindowDisplayState, isFocused: false } : w
+        );
+        if (target?.isFocused) {
+          const workspaceWins = next.filter(
+            (w) => w.workspaceId === activeWorkspace && w.state !== 'minimized'
+          );
+          if (workspaceWins.length > 0) {
+            const top = workspaceWins.reduce(
+              (max, w) => (w.zIndex > max.zIndex ? w : max),
+              workspaceWins[0]
+            );
+            return next.map((w) =>
+              w.id === top.id ? { ...w, isFocused: true } : { ...w, isFocused: false }
+            );
+          }
+        }
+        return next;
+      });
+    },
+    [activeWorkspace]
+  );
 
   // Maximize Window
   const maximizeWindow = useCallback((id: string) => {
@@ -440,9 +553,11 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   );
 
   const updateWindowTitle = useCallback((id: string, title: string) => {
-    setWindows((prev) =>
-      prev.map((w) => (w.id === id ? { ...w, title } : w))
-    );
+    setWindows((prev) => {
+      const target = prev.find((w) => w.id === id);
+      if (!target || target.title === title) return prev;
+      return prev.map((w) => (w.id === id ? { ...w, title } : w));
+    });
   }, []);
 
   const rebootSystem = useCallback(() => {
@@ -467,6 +582,13 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (isLocked) return;
+
+      // Workspace switching: Alt + 1..4
+      if (e.altKey && !e.ctrlKey && !e.shiftKey && ['1', '2', '3', '4'].includes(e.key)) {
+        e.preventDefault();
+        setActiveWorkspace(parseInt(e.key, 10));
+        return;
+      }
 
       // Alt + Tab (Window switching)
       if (e.altKey && e.key === 'Tab') {
@@ -498,15 +620,15 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       // Super + T or Ctrl + Alt + T (Terminal)
       if (
         ((e.metaKey || (e.ctrlKey && e.altKey)) && (e.key === 't' || e.key === 'T')) ||
-        (e.ctrlKey && e.altKey && e.key === 't')
+        (e.ctrlKey && e.altKey && (e.key === 't' || e.key === 'T'))
       ) {
         e.preventDefault();
         openWindow('terminal');
         return;
       }
 
-      // Alt + F4 (Close focused window)
-      if (e.altKey && e.key === 'F4') {
+      // Alt + W or Alt + F4 (Close focused window)
+      if (e.altKey && (e.key === 'F4' || e.key.toLowerCase() === 'w')) {
         e.preventDefault();
         const focused = windows.find((w) => w.isFocused);
         if (focused) {
@@ -514,11 +636,50 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
         return;
       }
+
+      // Window Snapping / Maximizing Shortcuts:
+      // Alt + Left Arrow -> Snap Left
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        const focused = windows.find((w) => w.isFocused);
+        if (focused) snapWindow(focused.id, 'left');
+        return;
+      }
+
+      // Alt + Right Arrow -> Snap Right
+      if (e.altKey && e.key === 'ArrowRight') {
+        e.preventDefault();
+        const focused = windows.find((w) => w.isFocused);
+        if (focused) snapWindow(focused.id, 'right');
+        return;
+      }
+
+      // Alt + Up Arrow -> Maximize
+      if (e.altKey && e.key === 'ArrowUp') {
+        e.preventDefault();
+        const focused = windows.find((w) => w.isFocused);
+        if (focused) maximizeWindow(focused.id);
+        return;
+      }
+
+      // Alt + Down Arrow -> Restore / Minimize
+      if (e.altKey && e.key === 'ArrowDown') {
+        e.preventDefault();
+        const focused = windows.find((w) => w.isFocused);
+        if (focused) {
+          if (focused.state === 'maximized' || focused.state === 'snapped-left' || focused.state === 'snapped-right') {
+            maximizeWindow(focused.id); // restores to normal
+          } else {
+            minimizeWindow(focused.id);
+          }
+        }
+        return;
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [windows, isLocked, focusWindow, closeWindow, openWindow]);
+  }, [windows, isLocked, focusWindow, closeWindow, openWindow, snapWindow, maximizeWindow, minimizeWindow]);
 
   const value = useMemo<SystemContextValue>(
     () => ({

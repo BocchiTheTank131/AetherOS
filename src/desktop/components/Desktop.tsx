@@ -4,6 +4,7 @@ import { useSystem } from '../../core/context';
 import { WindowFrame } from './WindowFrame';
 import { vfs } from '../../vfs/vfs';
 import { getMimeType, getAppForFile } from '../../vfs/mime';
+import { dialogService } from '../../core/dialog';
 import type { VFSEntry, VFSNode } from '../../vfs/types';
 import {
   Terminal,
@@ -349,22 +350,48 @@ export const Desktop: React.FC = () => {
     setIconContextMenu({ x: clampedX, y: clampedY, icon: item });
   };
 
-  const handleCreateFolder = () => {
-    const name = prompt('Folder name:', 'New Folder');
-    if (name) {
-      vfs.mkdir(vfs.resolve('/home/aether/Desktop', name));
-      loadDesktopFiles();
-    }
+  const handleCreateFolder = async () => {
     setContextMenu(null);
+    const name = await dialogService.prompt({
+      title: 'New Folder',
+      message: 'Enter name for new directory on Desktop:',
+      defaultValue: 'New Folder',
+      validate: (v) => (!v.trim() ? 'Folder name cannot be empty' : null),
+    });
+    if (name) {
+      try {
+        vfs.mkdir(vfs.resolve('/home/aether/Desktop', name));
+        loadDesktopFiles();
+      } catch (err: unknown) {
+        dialogService.alert({
+          title: 'Error Creating Folder',
+          message: err instanceof Error ? err.message : 'Failed to create folder',
+          level: 'error',
+        });
+      }
+    }
   };
 
-  const handleCreateFile = () => {
-    const name = prompt('File name:', 'notes.txt');
-    if (name) {
-      vfs.writeFile(vfs.resolve('/home/aether/Desktop', name), '');
-      loadDesktopFiles();
-    }
+  const handleCreateFile = async () => {
     setContextMenu(null);
+    const name = await dialogService.prompt({
+      title: 'New File',
+      message: 'Enter filename for new document:',
+      defaultValue: 'notes.txt',
+      validate: (v) => (!v.trim() ? 'Filename cannot be empty' : null),
+    });
+    if (name) {
+      try {
+        vfs.writeFile(vfs.resolve('/home/aether/Desktop', name), '');
+        loadDesktopFiles();
+      } catch (err: unknown) {
+        dialogService.alert({
+          title: 'Error Creating File',
+          message: err instanceof Error ? err.message : 'Failed to create file',
+          level: 'error',
+        });
+      }
+    }
   };
 
   const handleShowProperties = (icon: DesktopIcon) => {
@@ -384,30 +411,49 @@ export const Desktop: React.FC = () => {
     }
   };
 
-  const handleRenameIcon = (icon: DesktopIcon) => {
+  const handleRenameIcon = async (icon: DesktopIcon) => {
     setIconContextMenu(null);
     if (!icon.path || !vfs.exists(icon.path)) return;
-    const newName = prompt('Enter new name:', icon.name);
+    const newName = await dialogService.prompt({
+      title: 'Rename Desktop Item',
+      message: `Enter new name for "${icon.name}":`,
+      defaultValue: icon.name,
+      validate: (v) => (!v.trim() ? 'Name cannot be empty' : null),
+    });
     if (newName && newName !== icon.name) {
       try {
         const dest = vfs.resolve('/home/aether/Desktop', newName);
         vfs.rename(icon.path, dest);
         loadDesktopFiles();
       } catch (err: unknown) {
-        alert(err instanceof Error ? err.message : 'Rename failed');
+        dialogService.alert({
+          title: 'Rename Failed',
+          message: err instanceof Error ? err.message : 'Rename failed',
+          level: 'error',
+        });
       }
     }
   };
 
-  const handleDeleteIcon = (icon: DesktopIcon) => {
+  const handleDeleteIcon = async (icon: DesktopIcon) => {
     setIconContextMenu(null);
     if (!icon.path || !vfs.exists(icon.path)) return;
-    if (confirm(`Move "${icon.name}" to Trash?`)) {
+    const confirmed = await dialogService.confirm({
+      title: 'Move to Trash',
+      message: `Are you sure you want to move "${icon.name}" to Trash?`,
+      confirmText: 'Move to Trash',
+      danger: true,
+    });
+    if (confirmed) {
       try {
         vfs.moveToTrash(icon.path);
         loadDesktopFiles();
       } catch (err: unknown) {
-        alert(err instanceof Error ? err.message : 'Failed to move to trash');
+        dialogService.alert({
+          title: 'Delete Failed',
+          message: err instanceof Error ? err.message : 'Failed to move to trash',
+          level: 'error',
+        });
       }
     }
   };

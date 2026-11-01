@@ -6,12 +6,11 @@ import type { SystemLogEntry } from '../../core/types';
 import { Terminal, Search, Trash2, Download, AlertTriangle, AlertCircle, Info } from 'lucide-react';
 
 export const LogViewerApp: React.FC<AppProps> = () => {
-  const [logs, setLogs] = useState<SystemLogEntry[]>([]);
+  const [logs, setLogs] = useState<SystemLogEntry[]>(() => systemLogger.getLogs());
   const [levelFilter, setLevelFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
 
   useEffect(() => {
-    setLogs(systemLogger.getLogs());
     const unsub = systemLogger.subscribe((entry) => {
       setLogs((prev) => [...prev.slice(-999), entry]);
     });

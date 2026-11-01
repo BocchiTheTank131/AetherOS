@@ -193,6 +193,9 @@ export const Game2048App: React.FC<AppProps> = ({ isFocused }) => {
         return;
       }
 
+      // Do not intercept OS modifier shortcuts (e.g. Alt+Left for window snapping, Ctrl+A for select all)
+      if (e.altKey || e.ctrlKey || e.metaKey) return;
+
       if (e.key === 'ArrowLeft' || e.key === 'a') {
         e.preventDefault();
         moveLeft();

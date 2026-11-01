@@ -5,7 +5,8 @@ import { virtualKernel } from '../../core/kernel';
 import { performanceService, type PerformanceSample } from '../../core/performanceService';
 import type { Process } from '../../core/types';
 import { useSystem } from '../../core/context';
-import { Activity, Cpu, HardDrive, Server, XCircle, Search, Gauge } from 'lucide-react';
+import { dialogService } from '../../core/dialog';
+import { Activity, Cpu, HardDrive, Server, XCircle, Search } from 'lucide-react';
 
 export const SystemMonitorApp: React.FC<AppProps> = () => {
   const { closeWindow } = useSystem();
@@ -122,15 +123,27 @@ export const SystemMonitorApp: React.FC<AppProps> = () => {
     ctx.fill();
   }, [memHistory, activeTab]);
 
-  const handleKill = () => {
+  const handleKill = async () => {
     if (!selectedPid) return;
     const target = processes.find((p) => p.pid === selectedPid);
     if (!target) return;
 
     if (target.pid <= 2) {
-      alert('Cannot terminate critical system process!');
+      dialogService.alert({
+        title: 'System Protection',
+        message: 'Cannot terminate critical kernel process (PID ' + target.pid + ').',
+        level: 'error',
+      });
       return;
     }
+
+    const confirmed = await dialogService.confirm({
+      title: 'End Process',
+      message: `Are you sure you want to terminate process "${target.name}" (PID ${target.pid})?`,
+      confirmText: 'End Process',
+      danger: true,
+    });
+    if (!confirmed) return;
 
     // Terminate process
     virtualKernel.kill(target.pid, 'SIGKILL');

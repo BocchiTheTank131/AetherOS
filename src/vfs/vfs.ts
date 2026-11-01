@@ -880,7 +880,13 @@ export class VirtualFileSystem {
 
   public mkdir(
     path: string,
-    options?: { recursive?: boolean; owner?: string; group?: string; permissions?: number }
+    options?: {
+      recursive?: boolean;
+      owner?: string;
+      group?: string;
+      permissions?: number;
+      context?: Partial<VFSUserContext> & { user?: string };
+    }
   ): void {
     const norm = this.normalizePath(path);
     if (norm === '/') return;
@@ -893,19 +899,19 @@ export class VirtualFileSystem {
     const parts = norm.split('/').filter(Boolean);
     const parentPath = parts.length === 1 ? '/' : '/' + parts.slice(0, -1).join('/');
 
-    if (!this.checkAccess(parentPath, 'w')) {
-      throw new Error(`EACCES: permission denied, mkdir '${path}'`);
-    }
-
     const parent = this.nodes.get(parentPath);
     if (!parent) {
       if (options?.recursive) {
-        this.mkdir(parentPath, { recursive: true, owner: options.owner });
+        this.mkdir(parentPath, { ...options });
       } else {
         throw new Error(`ENOENT: no such file or directory, mkdir '${path}'`);
       }
     } else if (parent.type !== 'dir') {
       throw new Error(`ENOTDIR: not a directory, mkdir '${path}'`);
+    }
+
+    if (!this.checkAccess(parentPath, 'w', options?.context)) {
+      throw new Error(`EACCES: permission denied, mkdir '${path}'`);
     }
 
     const name = parts[parts.length - 1];
@@ -1527,7 +1533,7 @@ export class VirtualFileSystem {
         this.notifyWatchers('/', 'modify');
         systemLogger.info('vfs', `Restored ${this.nodes.size} nodes from AetherFS 2.0 backup`);
         return true;
-      } catch (_applyErr) {
+      } catch {
         // Rollback on persistence error
         this.nodes = previousNodes;
         return false;

@@ -43,8 +43,25 @@ const DEFAULT_NOTES: NoteItem[] = [
 ];
 
 export const NotesApp: React.FC<AppProps> = () => {
-  const [notes, setNotes] = useState<NoteItem[]>([]);
-  const [selectedNoteId, setSelectedNoteId] = useState<string>('');
+  const [notes, setNotes] = useState<NoteItem[]>(() => {
+    try {
+      if (vfs.exists(STORAGE_PATH)) {
+        const raw = vfs.readFile(STORAGE_PATH);
+        return JSON.parse(raw);
+      }
+    } catch {}
+    return DEFAULT_NOTES;
+  });
+  const [selectedNoteId, setSelectedNoteId] = useState<string>(() => {
+    try {
+      if (vfs.exists(STORAGE_PATH)) {
+        const raw = vfs.readFile(STORAGE_PATH);
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed[0].id;
+      }
+    } catch {}
+    return 'note-1';
+  });
   const [search, setSearch] = useState('');
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingNotesRef = useRef<NoteItem[]>(notes);
@@ -64,18 +81,12 @@ export const NotesApp: React.FC<AppProps> = () => {
     } catch {}
   }, []);
 
-  // Load notes from VFS
+  // Ensure file is seeded on disk if missing
   useEffect(() => {
-    try {
-      if (vfs.exists(STORAGE_PATH)) {
-        const raw = vfs.readFile(STORAGE_PATH);
-        setNotes(JSON.parse(raw));
-      } else {
-        setNotes(DEFAULT_NOTES);
+    if (!vfs.exists(STORAGE_PATH)) {
+      try {
         vfs.writeFile(STORAGE_PATH, JSON.stringify(DEFAULT_NOTES, null, 2));
-      }
-    } catch {
-      setNotes(DEFAULT_NOTES);
+      } catch {}
     }
   }, []);
 
@@ -86,22 +97,25 @@ export const NotesApp: React.FC<AppProps> = () => {
   }, [flushSave]);
 
   // Save changes to VFS
-  const saveNotes = (updated: NoteItem[], immediate = false) => {
-    setNotes(updated);
-    pendingNotesRef.current = updated;
-    if (immediate) {
-      flushSave(updated);
-    } else {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-      saveTimeoutRef.current = setTimeout(() => {
+  const saveNotes = useCallback(
+    (updated: NoteItem[], immediate = false) => {
+      setNotes(updated);
+      pendingNotesRef.current = updated;
+      if (immediate) {
         flushSave(updated);
-      }, 400);
-    }
-  };
+      } else {
+        if (saveTimeoutRef.current) {
+          clearTimeout(saveTimeoutRef.current);
+        }
+        saveTimeoutRef.current = setTimeout(() => {
+          flushSave(updated);
+        }, 400);
+      }
+    },
+    [flushSave]
+  );
 
-  const handleAddNote = () => {
+  const handleAddNote = useCallback(() => {
     const newNote: NoteItem = {
       id: `note-${Date.now()}`,
       title: 'New Note',
@@ -110,23 +124,38 @@ export const NotesApp: React.FC<AppProps> = () => {
       completed: false,
       updatedAt: Date.now(),
     };
-    const next = [newNote, ...notes];
-    saveNotes(next, true);
+    setNotes((prev) => {
+      const next = [newNote, ...prev];
+      saveNotes(next, true);
+      return next;
+    });
     setSelectedNoteId(newNote.id);
-  };
+  }, [saveNotes]);
 
-  const handleDelete = (id: string) => {
-    const next = notes.filter((n) => n.id !== id);
-    saveNotes(next, true);
-    if (selectedNoteId === id) {
-      setSelectedNoteId(next[0]?.id || '');
-    }
-  };
+  const handleDelete = useCallback(
+    (id: string) => {
+      setNotes((prev) => {
+        const next = prev.filter((n) => n.id !== id);
+        saveNotes(next, true);
+        if (selectedNoteId === id) {
+          setSelectedNoteId(next[0]?.id || '');
+        }
+        return next;
+      });
+    },
+    [saveNotes, selectedNoteId]
+  );
 
-  const handleToggleComplete = (id: string) => {
-    const next = notes.map((n) => (n.id === id ? { ...n, completed: !n.completed } : n));
-    saveNotes(next, true);
-  };
+  const handleToggleComplete = useCallback(
+    (id: string) => {
+      setNotes((prev) => {
+        const next = prev.map((n) => (n.id === id ? { ...n, completed: !n.completed } : n));
+        saveNotes(next, true);
+        return next;
+      });
+    },
+    [saveNotes]
+  );
 
   const selectedNote = notes.find((n) => n.id === selectedNoteId) || notes[0];
 

@@ -1,10 +1,11 @@
-// AetherOS - Software Center (aetherpkg GUI Frontend)
-import React, { useState, useEffect } from 'react';
+// AetherOS - Software Center 2.0 (aetherpkg GUI Frontend)
+import React, { useState, useEffect, useRef } from 'react';
 import type { AppProps } from '../types';
 import { packageManager } from '../../pkg/packageManager';
 import type { AetherPackage } from '../../pkg/types';
 import { useSystem } from '../../core/context';
 import { systemEventBus } from '../../core/eventBus';
+import { dialogService } from '../../core/dialog';
 import {
   Package,
   Search,
@@ -16,6 +17,10 @@ import {
   Mic,
   Bomb,
   Grid,
+  Upload,
+  CheckCircle2,
+  AlertTriangle,
+  Loader2,
 } from 'lucide-react';
 
 export const SoftwareCenterApp: React.FC<AppProps> = () => {
@@ -25,6 +30,14 @@ export const SoftwareCenterApp: React.FC<AppProps> = () => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'explore' | 'installed'>('explore');
   const [busyPackageId, setBusyPackageId] = useState<string | null>(null);
+  const [installModal, setInstallModal] = useState<{
+    visible: boolean;
+    stage: string;
+    isError?: boolean;
+    errorMsg?: string;
+  } | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadPackages = () => {
     setPackages(packageManager.getAll());
@@ -34,13 +47,15 @@ export const SoftwareCenterApp: React.FC<AppProps> = () => {
     loadPackages();
     const unsub1 = systemEventBus.on('package:installed', () => loadPackages());
     const unsub2 = systemEventBus.on('package:removed', () => loadPackages());
+    const unsub3 = systemEventBus.on('package:updated', () => loadPackages());
     return () => {
       unsub1();
       unsub2();
+      unsub3();
     };
   }, []);
 
-  const handleInstall = (pkg: AetherPackage) => {
+  const handleInstall = async (pkg: AetherPackage) => {
     setBusyPackageId(pkg.id);
     const success = packageManager.install(pkg.id);
     loadPackages();
@@ -60,22 +75,117 @@ export const SoftwareCenterApp: React.FC<AppProps> = () => {
     }
   };
 
-  const handleRemove = (pkg: AetherPackage) => {
-    if (!confirm(`Are you sure you want to deactivate ${pkg.name}?`)) return;
+  const handleRemove = async (pkg: AetherPackage) => {
+    const isCore = [
+      'terminal',
+      'file-manager',
+      'code-studio',
+      'text-editor',
+      'settings',
+      'software-center',
+    ].includes(pkg.appId);
+
+    if (isCore) {
+      dialogService.alert({
+        title: 'Core Package Protected',
+        message: `Cannot uninstall core system package: ${pkg.name}`,
+        level: 'warning',
+      });
+      return;
+    }
+
+    const purge = await dialogService.confirm({
+      title: 'Uninstall Package',
+      message: `Do you want to completely purge user data and settings for "${pkg.name}"?\n\nSelect "Purge Data" to erase all associated app storage, or "Keep Data" to retain your files.`,
+      confirmText: 'Purge Data',
+      cancelText: 'Keep Data',
+      danger: true,
+    });
+
     setBusyPackageId(pkg.id);
-    const success = packageManager.remove(pkg.id);
+    const res = await packageManager.uninstallPackage(pkg.id, { purgeData: purge });
     loadPackages();
     setBusyPackageId(null);
-    if (success) {
+
+    if (res.success) {
       addNotification({
         title: 'Software Center',
-        message: `${pkg.name} has been deactivated.`,
+        message: `${pkg.name} has been uninstalled.`,
         level: 'info',
+      });
+    } else {
+      addNotification({
+        title: 'Software Center',
+        message: `Failed to uninstall ${pkg.name}: ${res.error}`,
+        level: 'error',
       });
     }
   };
 
+  // Upload and Install .aepkg archive from Host File Dialog
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setInstallModal({
+      visible: true,
+      stage: 'Reading archive from device...',
+    });
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const buffer = reader.result as ArrayBuffer;
+        const bytes = new Uint8Array(buffer);
+
+        const res = await packageManager.installArchive(bytes, {
+          source: 'local',
+          onProgress: (stage) => {
+            setInstallModal({
+              visible: true,
+              stage,
+            });
+          },
+        });
+
+        if (res.success) {
+          setInstallModal({
+            visible: true,
+            stage: `Successfully installed ${res.packageId} (v${res.version})!`,
+          });
+          loadPackages();
+          setTimeout(() => setInstallModal(null), 1800);
+          addNotification({
+            title: 'Package Installed',
+            message: `${res.packageId} is now ready to use.`,
+            level: 'success',
+          });
+        } else {
+          setInstallModal({
+            visible: true,
+            stage: 'Installation failed',
+            isError: true,
+            errorMsg: res.error,
+          });
+        }
+      } catch (err) {
+        setInstallModal({
+          visible: true,
+          stage: 'Installation failed',
+          isError: true,
+          errorMsg: (err as Error).message,
+        });
+      } finally {
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
   const getPackageIcon = (iconName: string) => {
+    if (iconName && (iconName.startsWith('data:') || iconName.includes('/'))) {
+      return <img src={iconName} className="w-8 h-8 object-contain rounded" alt="" />;
+    }
     switch (iconName) {
       case 'Bomb':
         return <Bomb className="w-8 h-8 text-amber-400" />;
@@ -110,7 +220,15 @@ export const SoftwareCenterApp: React.FC<AppProps> = () => {
   });
 
   return (
-    <div className="flex flex-col h-full bg-[#111827] text-gray-200 select-none overflow-hidden">
+    <div className="flex flex-col h-full bg-[#111827] text-gray-200 select-none overflow-hidden relative">
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileUpload}
+        accept=".aepkg,application/zip"
+        className="hidden"
+      />
+
       {/* Header Bar */}
       <div className="flex items-center justify-between p-3 bg-[#1f2937] border-b border-gray-700/60">
         <div className="flex items-center gap-3">
@@ -137,6 +255,15 @@ export const SoftwareCenterApp: React.FC<AppProps> = () => {
               Installed ({packages.filter((p) => p.installed).length})
             </button>
           </div>
+
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-1.5 px-2.5 py-1 bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded-lg text-xs text-cyan-300 font-medium transition-colors"
+            title="Install package from local .aepkg archive file"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            <span>Install .aepkg File</span>
+          </button>
         </div>
 
         {/* Search */}
@@ -192,9 +319,16 @@ export const SoftwareCenterApp: React.FC<AppProps> = () => {
                         </span>
                       </div>
                     </div>
-                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-gray-800 text-gray-300 border border-gray-700">
-                      {pkg.category}
-                    </span>
+                    <div className="flex flex-col items-end gap-1">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-gray-800 text-gray-300 border border-gray-700">
+                        {pkg.category}
+                      </span>
+                      {pkg.isExternal && (
+                        <span className="px-1.5 py-0.2 text-[9px] rounded font-medium bg-cyan-950 text-cyan-400 border border-cyan-800/60">
+                          External App
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <p className="text-xs text-gray-300 leading-relaxed mb-3">
@@ -202,8 +336,10 @@ export const SoftwareCenterApp: React.FC<AppProps> = () => {
                   </p>
 
                   <div className="flex items-center gap-1.5 text-[11px] text-gray-400 mb-3">
-                    <Shield className="w-3.5 h-3.5 text-cyan-400" />
-                    <span>Permissions: {pkg.permissions.join(', ')}</span>
+                    <Shield className="w-3.5 h-3.5 text-cyan-400 flex-shrink-0" />
+                    <span className="truncate">
+                      Permissions: {pkg.permissions.length > 0 ? pkg.permissions.join(', ') : 'None requested'}
+                    </span>
                   </div>
                 </div>
 
@@ -215,7 +351,7 @@ export const SoftwareCenterApp: React.FC<AppProps> = () => {
                       className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-lg text-xs font-semibold border border-red-500/30 transition-colors"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
-                      <span>{isBusy ? 'Removing...' : 'Uninstall'}</span>
+                      <span>{isBusy ? 'Processing...' : 'Uninstall'}</span>
                     </button>
                   ) : (
                     <button
@@ -233,6 +369,42 @@ export const SoftwareCenterApp: React.FC<AppProps> = () => {
           })}
         </div>
       </div>
+
+      {/* Real Installation Progress Modal */}
+      {installModal && (
+        <div className="absolute inset-0 bg-black/75 flex items-center justify-center z-50 p-4">
+          <div className="bg-[#1f2937] border border-gray-700 rounded-xl p-5 max-w-sm w-full shadow-2xl flex flex-col items-center text-center">
+            {installModal.isError ? (
+              <AlertTriangle className="w-10 h-10 text-red-400 mb-2" />
+            ) : installModal.stage.includes('Successfully') ? (
+              <CheckCircle2 className="w-10 h-10 text-emerald-400 mb-2" />
+            ) : (
+              <Loader2 className="w-10 h-10 text-cyan-400 animate-spin mb-2" />
+            )}
+
+            <h3 className="font-bold text-white text-sm mb-1">
+              {installModal.isError ? 'Installation Failed' : 'Package Installation'}
+            </h3>
+
+            <p className="text-xs text-gray-300 mb-3">{installModal.stage}</p>
+
+            {installModal.errorMsg && (
+              <p className="text-[11px] font-mono text-red-300 bg-red-950/60 p-2 rounded border border-red-800/40 text-left w-full mb-3 overflow-auto max-h-24">
+                {installModal.errorMsg}
+              </p>
+            )}
+
+            {installModal.isError && (
+              <button
+                onClick={() => setInstallModal(null)}
+                className="px-4 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs text-white"
+              >
+                Close
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -89,8 +89,15 @@ export interface SystemEvents {
   'process:terminated': { pid: number; exitCode: number };
   'process:updated': { process: Process };
   'filesystem:changed': { path: string; operation: 'create' | 'modify' | 'delete' | 'move' };
-  'package:installed': { packageId: string };
+  'package:installed': { packageId: string; version?: string };
+  'package:updated': { packageId: string; version: string };
   'package:removed': { packageId: string };
+  'app:registered': { appId: string };
+  'app:unregistered': { appId: string };
+  'permission:changed': { appId: string; scope: string; state: string };
+  'app:close_requested': { appId: string };
+  'window:open_requested': { appId: string; props?: Record<string, unknown> };
+  'notification:show': { appId: string; title?: unknown; body?: unknown };
   'theme:changed': { theme: SystemTheme };
   'notification:created': { notification: SystemNotification };
   'user:switched': { user: UserAccount };

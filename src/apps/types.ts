@@ -13,7 +13,7 @@ export interface AppProps {
 export interface AppDefinition {
   id: string;
   name: string;
-  icon: string; // Lucide icon name
+  icon: string; // Lucide icon name or image path
   category: 'System' | 'Accessories' | 'Development' | 'Media' | 'Internet' | 'Games' | 'Utilities';
   description: string;
   component: ComponentType<AppProps>;
@@ -23,4 +23,8 @@ export interface AppDefinition {
   minHeight?: number;
   singleton?: boolean;
   executable?: string;
+  isExternal?: boolean;
+  version?: string;
+  author?: string;
+  packageId?: string;
 }

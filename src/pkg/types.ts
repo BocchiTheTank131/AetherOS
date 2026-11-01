@@ -6,10 +6,13 @@ export interface AetherPackage {
   version: string;
   description: string;
   author: string;
-  category: 'Accessories' | 'Development' | 'Games' | 'Media' | 'Utilities';
-  icon: string; // Lucide icon identifier
+  category: 'Accessories' | 'Development' | 'Games' | 'Media' | 'Utilities' | 'System' | 'Internet';
+  icon: string; // Lucide icon identifier or image/path
   sizeKb: number;
   permissions: string[];
   installed: boolean;
   appId: string;
+  isExternal?: boolean;
+  installDir?: string;
+  source?: 'built-in' | 'repository' | 'local';
 }

@@ -12,7 +12,18 @@ interface WeatherData {
   forecast: Array<{ day: string; temp: number; icon: string }>;
 }
 
+const CITIES: Record<string, { lat: number; lon: number }> = {
+  'San Francisco, CA': { lat: 37.77, lon: -122.42 },
+  'New York, NY': { lat: 40.71, lon: -74.01 },
+  'London, UK': { lat: 51.51, lon: -0.13 },
+  'Tokyo, Japan': { lat: 35.68, lon: 139.69 },
+  'Paris, France': { lat: 48.85, lon: 2.35 },
+  'Sydney, Australia': { lat: -33.87, lon: 151.21 },
+};
+
 export const WeatherApp: React.FC<AppProps> = () => {
+  const [selectedCity, setSelectedCity] = useState('San Francisco, CA');
+  const [isLoading, setIsLoading] = useState(false);
   const [data, setData] = useState<WeatherData>({
     city: 'San Francisco, CA',
     temp: 18,
@@ -30,17 +41,20 @@ export const WeatherApp: React.FC<AppProps> = () => {
 
   useEffect(() => {
     const controller = new AbortController();
-    // Attempt to fetch real weather from Open-Meteo
+    const coords = CITIES[selectedCity] || CITIES['San Francisco, CA'];
+
     async function fetchWeather() {
+      setIsLoading(true);
       try {
         const res = await fetch(
-          'https://api.open-meteo.com/v1/forecast?latitude=37.77&longitude=-122.42&current=temperature_2m,relative_humidity_2m,wind_speed_10m',
+          `https://api.open-meteo.com/v1/forecast?latitude=${coords.lat}&longitude=${coords.lon}&current=temperature_2m,relative_humidity_2m,wind_speed_10m`,
           { signal: controller.signal }
         );
         if (res.ok) {
           const json = await res.json();
           setData((prev) => ({
             ...prev,
+            city: selectedCity,
             temp: Math.round(json.current.temperature_2m),
             humidity: Math.round(json.current.relative_humidity_2m),
             windSpeed: Math.round(json.current.wind_speed_10m),
@@ -48,24 +62,43 @@ export const WeatherApp: React.FC<AppProps> = () => {
         }
       } catch {
         // Safe offline fallback
+      } finally {
+        setIsLoading(false);
       }
     }
     fetchWeather();
     return () => controller.abort();
-  }, []);
+  }, [selectedCity]);
 
   return (
     <div className="flex flex-col h-full bg-gradient-to-b from-[#1e293b] to-[#0f172a] text-white p-5 select-none justify-between">
       {/* City & Temp */}
       <div>
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between mb-2">
           <span className="text-xs text-cyan-400 font-semibold uppercase tracking-wider">
             Live Meteorology
           </span>
-          <span className="text-xs text-gray-400">Open-Meteo Station</span>
+          <select
+            value={selectedCity}
+            onChange={(e) => setSelectedCity(e.target.value)}
+            className="bg-[#1e293b] border border-gray-700 text-xs text-gray-200 rounded px-2 py-1 outline-none cursor-pointer"
+          >
+            {Object.keys(CITIES).map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
         </div>
-        <h2 className="text-xl font-bold mt-1 text-white">{data.city}</h2>
-        <p className="text-xs text-gray-400">{data.condition}</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-bold text-white">{data.city}</h2>
+            <p className="text-xs text-gray-400">
+              {isLoading ? 'Updating station data...' : data.condition}
+            </p>
+          </div>
+          <span className="text-[10px] text-gray-500 font-mono">Open-Meteo</span>
+        </div>
 
         <div className="flex items-center gap-4 my-4">
           <div className="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-400">

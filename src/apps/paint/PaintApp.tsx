@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import type { AppProps } from '../types';
 import { vfs } from '../../vfs/vfs';
 import { useSystem } from '../../core/context';
+import { dialogService } from '../../core/dialog';
 import {
   Paintbrush,
   Eraser,
@@ -103,7 +104,11 @@ export const PaintApp: React.FC<AppProps> = () => {
         level: 'success',
       });
     } catch (err) {
-      alert(`Save error: ${(err as Error).message}`);
+      dialogService.alert({
+        title: 'Save Failed',
+        message: `Failed to save artwork: ${(err as Error).message}`,
+        level: 'error',
+      });
     }
   };
 

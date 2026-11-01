@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useSystem } from '../../core/context';
 import { appRegistry } from '../../apps/appRegistry';
 import type { AppDefinition } from '../../apps/types';
+import { dialogService } from '../../core/dialog';
 import {
   Search,
   Lock,
@@ -47,8 +48,16 @@ export const AppLauncher: React.FC = () => {
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [selectedIndex, setSelectedIndex] = useState<number>(-1);
+  const [, setRegistryVersion] = useState<number>(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Re-render when dynamic packages are installed or removed
+  useEffect(() => {
+    return appRegistry.subscribe(() => {
+      setRegistryVersion((v) => v + 1);
+    });
+  }, []);
 
   useEffect(() => {
     if (appLauncherOpen) {
@@ -82,54 +91,61 @@ export const AppLauncher: React.FC = () => {
 
   if (!appLauncherOpen) return null;
 
-  const getAppIcon = (iconName: string) => {
-    const cls = 'w-7 h-7 text-cyan-400 group-hover:scale-110 transition-transform';
+  const getAppIcon = (iconName: string, customCls?: string, size?: number) => {
+    const cls = customCls || 'w-7 h-7 text-cyan-400 group-hover:scale-110 transition-transform';
+    const props = {
+      className: cls,
+      ...(size ? { size, style: { width: size, height: size, minWidth: size, minHeight: size } } : {}),
+    };
     switch (iconName) {
       case 'Terminal':
-        return <Terminal className={cls} />;
+        return <Terminal {...props} />;
       case 'Folder':
-        return <Folder className={cls} />;
+        return <Folder {...props} />;
       case 'FileText':
-        return <FileText className={cls} />;
+        return <FileText {...props} />;
       case 'Code2':
-        return <Code2 className={cls} />;
+        return <Code2 {...props} />;
       case 'Globe':
-        return <Globe className={cls} />;
+        return <Globe {...props} />;
       case 'Settings':
-        return <Settings className={cls} />;
+        return <Settings {...props} />;
       case 'Activity':
-        return <Activity className={cls} />;
+        return <Activity {...props} />;
       case 'Package':
-        return <Package className={cls} />;
+        return <Package {...props} />;
       case 'Calculator':
-        return <Calculator className={cls} />;
+        return <Calculator {...props} />;
       case 'PlayCircle':
-        return <PlayCircle className={cls} />;
+        return <PlayCircle {...props} />;
       case 'Image':
-        return <ImageIcon className={cls} />;
+        return <ImageIcon {...props} />;
       case 'StickyNote':
-        return <StickyNote className={cls} />;
+        return <StickyNote {...props} />;
       case 'BookOpen':
-        return <BookOpen className={cls} />;
+        return <BookOpen {...props} />;
       case 'ScrollText':
-        return <ScrollText className={cls} />;
+        return <ScrollText {...props} />;
       case 'Bomb':
-        return <Bomb className={cls} />;
+        return <Bomb {...props} />;
       case 'Grid':
-        return <Grid className={cls} />;
+        return <Grid {...props} />;
       case 'Palette':
-        return <Palette className={cls} />;
+        return <Palette {...props} />;
       case 'CloudRain':
-        return <CloudRain className={cls} />;
+        return <CloudRain {...props} />;
       case 'Mic':
-        return <Mic className={cls} />;
+        return <Mic {...props} />;
       default:
-        return <Activity className={cls} />;
+        if (iconName && (iconName.startsWith('data:') || iconName.includes('/'))) {
+          return <img src={iconName} className={cls} style={size ? { width: size, height: size } : undefined} alt="" />;
+        }
+        return <Package {...props} />;
     }
   };
 
   const allApps = appRegistry.getAll();
-  const categories = ['All', 'System', 'Accessories', 'Development', 'Media', 'Internet', 'Games'];
+  const categories = ['All', 'System', 'Accessories', 'Development', 'Media', 'Internet', 'Games', 'Utilities'];
 
   const recentAppDefs = recentApps
     .map((id) => appRegistry.get(id))
@@ -154,11 +170,19 @@ export const AppLauncher: React.FC = () => {
     setAppLauncherOpen(false);
   };
 
+  const isLight = theme.mode === 'light';
+
   return (
     <div
       ref={containerRef}
-      className={`fixed z-[9995] select-none rounded-2xl border border-gray-700/70 shadow-2xl overflow-hidden flex flex-col ${
-        theme.blur ? 'glass-panel' : 'bg-[#141926]'
+      className={`fixed z-[9995] select-none rounded-2xl border shadow-2xl overflow-hidden flex flex-col ${
+        isLight
+          ? theme.blur
+            ? 'glass-panel-light text-slate-900 border-slate-300'
+            : 'bg-white text-slate-900 border-slate-300'
+          : theme.blur
+          ? 'glass-panel text-white border-gray-700/70'
+          : 'bg-[#141926] text-white border-gray-700/70'
       } ${
         theme.dockPosition === 'top'
           ? 'top-12 left-4 w-[600px] h-[520px]'
@@ -168,8 +192,10 @@ export const AppLauncher: React.FC = () => {
       }`}
     >
       {/* Search Input Bar */}
-      <div className="p-3 border-b border-gray-700/60 bg-[#161c2b]/70">
-        <div className="flex items-center gap-2.5 bg-[#0f1420] border border-gray-700 rounded-xl px-3 py-2">
+      <div className={`p-3 border-b ${isLight ? 'bg-slate-100 border-slate-200' : 'bg-[#161c2b]/70 border-gray-700/60'}`}>
+        <div className={`flex items-center gap-2.5 border rounded-xl px-3 py-2 ${
+          isLight ? 'bg-white border-slate-300' : 'bg-[#0f1420] border-gray-700'
+        }`}>
           <Search className="w-4 h-4 text-cyan-400" />
           <input
             ref={searchInputRef}
@@ -195,7 +221,9 @@ export const AppLauncher: React.FC = () => {
               }
             }}
             placeholder="Type to search apps, files, commands..."
-            className="w-full bg-transparent text-white text-xs outline-none placeholder-gray-400 font-sans"
+            className={`w-full bg-transparent text-xs outline-none font-sans ${
+              isLight ? 'text-slate-900 placeholder-slate-400' : 'text-white placeholder-gray-400'
+            }`}
           />
         </div>
       </div>
@@ -203,14 +231,16 @@ export const AppLauncher: React.FC = () => {
       {/* Main Split: Categories Sidebar + App Grid */}
       <div className="flex-1 flex overflow-hidden">
         {/* Categories Sidebar */}
-        <div className="w-36 bg-[#111622]/80 border-r border-gray-800 p-2 space-y-1">
+        <div className={`w-36 border-r p-2 space-y-1 ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#111622]/80 border-gray-800'}`}>
           {categories.map((cat) => (
             <button
               key={cat}
               onClick={() => setSelectedCategory(cat)}
               className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                 selectedCategory === cat
-                  ? 'bg-cyan-500/20 text-cyan-300 font-semibold'
+                  ? 'bg-cyan-500/20 text-cyan-500 font-semibold'
+                  : isLight
+                  ? 'text-slate-600 hover:text-black hover:bg-slate-200'
                   : 'text-gray-400 hover:text-white hover:bg-gray-800/60'
               }`}
             >
@@ -223,7 +253,7 @@ export const AppLauncher: React.FC = () => {
         <div className="flex-1 p-3 overflow-y-auto">
           {/* Recent Applications Row */}
           {!search && selectedCategory === 'All' && recentAppDefs.length > 0 && (
-            <div className="mb-3 pb-2 border-b border-gray-800">
+            <div className={`mb-3 pb-2 border-b ${isLight ? 'border-slate-200' : 'border-gray-800'}`}>
               <div className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">
                 <Clock className="w-3.5 h-3.5 text-cyan-400" />
                 <span>Recent Applications</span>
@@ -233,9 +263,15 @@ export const AppLauncher: React.FC = () => {
                   <button
                     key={app.id}
                     onClick={() => handleLaunch(app)}
-                    className="flex-shrink-0 flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-gray-800/80 hover:bg-cyan-500/20 border border-gray-700/60 transition-colors text-xs text-gray-200"
+                    className={`flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-colors text-xs ${
+                      isLight
+                        ? 'bg-slate-100 hover:bg-cyan-50 border-slate-300 text-slate-800'
+                        : 'bg-gray-800/80 hover:bg-cyan-500/20 border-gray-700/60 text-gray-200'
+                    }`}
                   >
-                    <div className="w-4 h-4">{getAppIcon(app.icon)}</div>
+                    <div className="w-3.5 h-3.5 flex items-center justify-center flex-shrink-0">
+                      {getAppIcon(app.icon, 'w-3.5 h-3.5 text-cyan-400', 14)}
+                    </div>
                     <span className="truncate max-w-[85px]">{app.name}</span>
                   </button>
                 ))}
@@ -244,7 +280,7 @@ export const AppLauncher: React.FC = () => {
           )}
 
           {filteredApps.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-gray-500 text-xs">
+            <div className="h-full flex flex-col items-center justify-center text-gray-400 text-xs">
               No matching applications found
             </div>
           ) : (
@@ -258,16 +294,26 @@ export const AppLauncher: React.FC = () => {
                     className={`flex flex-col items-center text-center p-3 rounded-xl transition-all group border ${
                       isSelected
                         ? 'border-cyan-400 bg-cyan-500/20 shadow-md ring-1 ring-cyan-400/50'
+                        : isLight
+                        ? 'border-transparent hover:bg-slate-100 hover:border-slate-200'
                         : 'border-transparent hover:bg-gray-800/60 hover:border-gray-700/60'
                     }`}
                   >
-                    <div className="p-2.5 bg-gray-800/80 rounded-xl mb-2 group-hover:bg-cyan-500/20 transition-colors shadow">
+                    <div className={`p-2.5 rounded-xl mb-2 transition-colors shadow ${
+                      isLight
+                        ? 'bg-slate-100 group-hover:bg-cyan-50'
+                        : 'bg-gray-800/80 group-hover:bg-cyan-500/20'
+                    }`}>
                       {getAppIcon(app.icon)}
                     </div>
-                    <span className="text-xs font-semibold text-gray-200 group-hover:text-cyan-300 truncate max-w-[120px]">
+                    <span className={`text-xs font-semibold truncate max-w-[120px] ${
+                      isLight ? 'text-slate-800 group-hover:text-cyan-600' : 'text-gray-200 group-hover:text-cyan-300'
+                    }`}>
                       {app.name}
                     </span>
-                    <span className="text-[10px] text-gray-400 truncate max-w-[120px] mt-0.5">
+                    <span className={`text-[10px] truncate max-w-[120px] mt-0.5 ${
+                      isLight ? 'text-slate-500' : 'text-gray-400'
+                    }`}>
                       {app.description}
                     </span>
                   </button>
@@ -279,45 +325,63 @@ export const AppLauncher: React.FC = () => {
       </div>
 
       {/* Bottom User Bar & Power Controls */}
-      <div className="flex items-center justify-between p-3 bg-[#111622] border-t border-gray-800 text-xs text-gray-300">
+      <div className={`flex items-center justify-between p-3 border-t text-xs ${
+        isLight ? 'bg-slate-100 border-slate-200 text-slate-700' : 'bg-[#111622] border-gray-800 text-gray-300'
+      }`}>
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-full bg-cyan-500/20 border border-cyan-400 flex items-center justify-center text-cyan-300 font-bold">
+          <div className="w-8 h-8 rounded-full bg-cyan-500/20 border border-cyan-400 flex items-center justify-center text-cyan-400 font-bold">
             <User className="w-4 h-4" />
           </div>
           <div>
-            <span className="font-semibold text-white block text-xs">{user.displayName}</span>
-            <span className="text-[10px] text-gray-400">@{user.username}</span>
+            <span className={`font-semibold block text-xs ${isLight ? 'text-slate-900' : 'text-white'}`}>{user.displayName}</span>
+            <span className={`text-[10px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>@{user.username}</span>
           </div>
         </div>
 
-        {/* Power Actions */}
+        {/* Power Actions with Safety Confirmations */}
         <div className="flex items-center gap-1.5">
           <button
             onClick={() => {
               setIsLocked(true);
               setAppLauncherOpen(false);
             }}
-            className="p-2 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white"
+            className={`p-2 rounded-lg transition-colors ${
+              isLight ? 'hover:bg-slate-200 text-slate-600 hover:text-black' : 'hover:bg-gray-800 text-gray-400 hover:text-white'
+            }`}
             title="Lock Session"
           >
             <Lock className="w-4 h-4" />
           </button>
           <button
-            onClick={() => {
-              rebootSystem();
+            onClick={async () => {
               setAppLauncherOpen(false);
+              const ok = await dialogService.confirm({
+                title: 'Restart AetherOS',
+                message: 'Are you sure you want to reboot AetherOS? Any unsaved work should be saved first.',
+                confirmText: 'Restart',
+                danger: true,
+              });
+              if (ok) rebootSystem();
             }}
-            className="p-2 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white"
+            className={`p-2 rounded-lg transition-colors ${
+              isLight ? 'hover:bg-slate-200 text-slate-600 hover:text-black' : 'hover:bg-gray-800 text-gray-400 hover:text-white'
+            }`}
             title="Restart AetherOS"
           >
             <RotateCcw className="w-4 h-4" />
           </button>
           <button
-            onClick={() => {
-              shutdownSystem();
+            onClick={async () => {
               setAppLauncherOpen(false);
+              const ok = await dialogService.confirm({
+                title: 'Power Off System',
+                message: 'Are you sure you want to shut down AetherOS?',
+                confirmText: 'Shut Down',
+                danger: true,
+              });
+              if (ok) shutdownSystem();
             }}
-            className="p-2 rounded-lg hover:bg-red-500/20 text-gray-400 hover:text-red-400"
+            className="p-2 rounded-lg hover:bg-red-500/20 text-gray-400 hover:text-red-400 transition-colors"
             title="Shut Down"
           >
             <Power className="w-4 h-4" />

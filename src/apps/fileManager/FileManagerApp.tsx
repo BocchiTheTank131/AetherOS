@@ -5,6 +5,7 @@ import { vfs } from '../../vfs/vfs';
 import type { VFSEntry, VFSNode } from '../../vfs/types';
 import { getAppForFile } from '../../vfs/mime';
 import { useSystem } from '../../core/context';
+import { dialogService } from '../../core/dialog';
 import {
   Folder,
   File,
@@ -63,8 +64,11 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
     y: number;
     entry: VFSEntry;
   } | null>(null);
+  const [isEditingPath, setIsEditingPath] = useState(false);
+  const [pathInput, setPathInput] = useState(currentPath);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pathInputRef = useRef<HTMLInputElement>(null);
 
   // Load directory entries
   const loadDirectory = useCallback(
@@ -85,11 +89,50 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
 
   useEffect(() => {
     loadDirectory(currentPath);
+    setPathInput(currentPath);
     const unsub = vfs.watch(currentPath, () => {
       loadDirectory(currentPath);
     });
     return () => unsub();
   }, [currentPath, loadDirectory]);
+
+  useEffect(() => {
+    if (isEditingPath && pathInputRef.current) {
+      pathInputRef.current.focus();
+      pathInputRef.current.select();
+    }
+  }, [isEditingPath]);
+
+  const handlePathSubmit = (path: string) => {
+    setIsEditingPath(false);
+    const target = vfs.resolve(currentPath, path.trim());
+    try {
+      if (vfs.exists(target)) {
+        const stat = vfs.stat(target);
+        if (stat.isDirectory()) {
+          navigateTo(target);
+        } else {
+          dialogService.alert({
+            title: 'Not a Directory',
+            message: `${target} is a regular file, not a directory.`,
+            level: 'warning',
+          });
+        }
+      } else {
+        dialogService.alert({
+          title: 'Path Not Found',
+          message: `No such directory: ${target}`,
+          level: 'error',
+        });
+      }
+    } catch (err) {
+      dialogService.alert({
+        title: 'Navigation Error',
+        message: (err as Error).message,
+        level: 'error',
+      });
+    }
+  };
 
   const navigateTo = (newPath: string) => {
     const resolved = vfs.normalizePath(newPath);
@@ -154,31 +197,55 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
     }
   };
 
-  const handleCreateFolder = () => {
-    const name = prompt('Folder name:', 'New Folder');
+  const handleCreateFolder = async () => {
+    const name = await dialogService.prompt({
+      title: 'New Folder',
+      message: 'Enter name for new directory:',
+      defaultValue: 'New Folder',
+      validate: (v) => (!v.trim() ? 'Folder name cannot be empty' : null),
+    });
     if (!name) return;
     try {
       vfs.mkdir(vfs.resolve(currentPath, name));
       loadDirectory(currentPath);
     } catch (err) {
-      alert((err as Error).message);
+      dialogService.alert({
+        title: 'Error Creating Folder',
+        message: (err as Error).message,
+        level: 'error',
+      });
     }
   };
 
-  const handleCreateFile = () => {
-    const name = prompt('File name:', 'untitled.txt');
+  const handleCreateFile = async () => {
+    const name = await dialogService.prompt({
+      title: 'New File',
+      message: 'Enter filename for new document:',
+      defaultValue: 'untitled.txt',
+      validate: (v) => (!v.trim() ? 'Filename cannot be empty' : null),
+    });
     if (!name) return;
     try {
       vfs.writeFile(vfs.resolve(currentPath, name), '');
       loadDirectory(currentPath);
     } catch (err) {
-      alert((err as Error).message);
+      dialogService.alert({
+        title: 'Error Creating File',
+        message: (err as Error).message,
+        level: 'error',
+      });
     }
   };
 
-  const handleDeleteSelected = useCallback(() => {
+  const handleDeleteSelected = useCallback(async () => {
     if (selectedPaths.size === 0) return;
-    if (!confirm(`Delete ${selectedPaths.size} item(s)?`)) return;
+    const confirmed = await dialogService.confirm({
+      title: 'Delete Items',
+      message: `Are you sure you want to delete ${selectedPaths.size} item(s)?`,
+      confirmText: 'Delete',
+      danger: true,
+    });
+    if (!confirmed) return;
 
     const isInTrash = currentPath.startsWith('/home/aether/.trash');
     for (const p of selectedPaths) {
@@ -204,8 +271,14 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
     loadDirectory(currentPath);
   }, [selectedPaths, currentPath, loadDirectory]);
 
-  const handleEmptyTrash = () => {
-    if (confirm('Permanently delete all items in Trash?')) {
+  const handleEmptyTrash = async () => {
+    const confirmed = await dialogService.confirm({
+      title: 'Empty Trash',
+      message: 'Permanently delete all items currently in Trash? This cannot be undone.',
+      confirmText: 'Empty Trash',
+      danger: true,
+    });
+    if (confirmed) {
       vfs.emptyTrash();
       setSelectedPaths(new Set());
       loadDirectory(currentPath);
@@ -217,7 +290,11 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
       try {
         vfs.restoreFromTrash(p);
       } catch (err) {
-        alert('Restore error: ' + (err as Error).message);
+        dialogService.alert({
+          title: 'Restore Error',
+          message: (err as Error).message,
+          level: 'error',
+        });
       }
     }
     setSelectedPaths(new Set());
@@ -229,7 +306,11 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
     const path = Array.from(selectedPaths)[0];
     const node = vfs.getNode(path);
     if (!node || node.type === 'dir') {
-      alert('Can only export individual files to your computer.');
+      dialogService.alert({
+        title: 'Export Restriction',
+        message: 'Can only export individual files to your computer.',
+        level: 'warning',
+      });
       return;
     }
 
@@ -259,7 +340,11 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (err) {
-      alert('Export failed: ' + (err as Error).message);
+      dialogService.alert({
+        title: 'Export Failed',
+        message: (err as Error).message,
+        level: 'error',
+      });
     }
   };
 
@@ -288,19 +373,32 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
       }
       loadDirectory(currentPath);
     } catch (err) {
-      alert((err as Error).message);
+      dialogService.alert({
+        title: 'Paste Failed',
+        message: (err as Error).message,
+        level: 'error',
+      });
     }
   }, [clipboard, currentPath, loadDirectory]);
 
-  const handleRename = (entry: VFSEntry) => {
-    const newName = prompt('Enter new name:', entry.name);
+  const handleRename = async (entry: VFSEntry) => {
+    const newName = await dialogService.prompt({
+      title: 'Rename',
+      message: `Enter new name for "${entry.name}":`,
+      defaultValue: entry.name,
+      validate: (v) => (!v.trim() ? 'Name cannot be empty' : null),
+    });
     if (newName && newName !== entry.name) {
       try {
         const dest = vfs.resolve(currentPath, newName);
         vfs.rename(entry.path, dest);
         loadDirectory(currentPath);
       } catch (err) {
-        alert((err as Error).message);
+        dialogService.alert({
+          title: 'Rename Failed',
+          message: (err as Error).message,
+          level: 'error',
+        });
       }
     }
   };
@@ -319,7 +417,11 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
       const activeTag = (document.activeElement?.tagName || '').toLowerCase();
       if (activeTag === 'input' || activeTag === 'textarea') return;
 
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
+        e.preventDefault();
+        setIsEditingPath(true);
+        setPathInput(currentPath);
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
         e.preventDefault();
         handleCopy();
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'x') {
@@ -335,7 +437,7 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isFocused, handleCopy, handleCut, handlePaste, handleDeleteSelected]);
+  }, [isFocused, currentPath, handleCopy, handleCut, handlePaste, handleDeleteSelected]);
 
   // Upload file from host browser
   const handleHostUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -468,26 +570,69 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
           </button>
         </div>
 
-        {/* Breadcrumb Path Bar */}
-        <div className="flex-1 flex items-center bg-[#111827] border border-gray-700 rounded px-2.5 py-1 text-xs font-mono overflow-x-auto">
-          <button onClick={() => navigateTo('/')} className="hover:text-cyan-400 font-semibold px-1">
-            /
-          </button>
-          {breadcrumbs.map((seg, idx) => {
-            const segPath = '/' + breadcrumbs.slice(0, idx + 1).join('/');
-            return (
-              <React.Fragment key={segPath}>
-                <span className="text-gray-500">/</span>
-                <button
-                  onClick={() => navigateTo(segPath)}
-                  className="hover:text-cyan-400 px-1 truncate max-w-[120px]"
-                >
-                  {seg}
-                </button>
-              </React.Fragment>
-            );
-          })}
-        </div>
+        {/* Breadcrumb / Address Bar */}
+        {isEditingPath ? (
+          <div className="flex-1 flex items-center bg-[#111827] border border-cyan-500 rounded px-2.5 py-1 text-xs font-mono">
+            <input
+              ref={pathInputRef}
+              type="text"
+              value={pathInput}
+              onChange={(e) => setPathInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handlePathSubmit(pathInput);
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setIsEditingPath(false);
+                  setPathInput(currentPath);
+                }
+              }}
+              onBlur={() => {
+                setTimeout(() => setIsEditingPath(false), 200);
+              }}
+              className="w-full bg-transparent text-white outline-none font-mono"
+              placeholder="/path/to/folder"
+            />
+          </div>
+        ) : (
+          <div
+            onClick={() => {
+              setIsEditingPath(true);
+              setPathInput(currentPath);
+            }}
+            className="flex-1 flex items-center bg-[#111827] border border-gray-700 hover:border-gray-500 rounded px-2.5 py-1 text-xs font-mono overflow-x-auto cursor-text group transition-colors"
+            title="Click or press Ctrl+L to edit path"
+          >
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                navigateTo('/');
+              }}
+              className="hover:text-cyan-400 font-semibold px-1 rounded hover:bg-gray-800"
+            >
+              /
+            </button>
+            {breadcrumbs.map((seg, idx) => {
+              const segPath = '/' + breadcrumbs.slice(0, idx + 1).join('/');
+              return (
+                <React.Fragment key={segPath}>
+                  <span className="text-gray-500">/</span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigateTo(segPath);
+                    }}
+                    className="hover:text-cyan-400 px-1 truncate max-w-[120px] rounded hover:bg-gray-800"
+                  >
+                    {seg}
+                  </button>
+                </React.Fragment>
+              );
+            })}
+            <div className="flex-1 min-w-[20px]" />
+          </div>
+        )}
 
         {/* Search */}
         <div className="relative w-44">

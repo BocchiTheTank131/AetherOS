@@ -373,10 +373,10 @@ describe('AetherOS v1.2.0: Real Computing', () => {
     });
 
     it('enforces centralized version consistency across AETHER_VERSION', () => {
-      expect(AETHER_VERSION.version).toBe('1.2.0');
-      expect(AETHER_VERSION.codename).toBe('Real Computing');
-      expect(vfs.readFile('/proc/version')).toContain('1.2.0');
-      expect(vfs.readFile('/etc/os-release')).toContain('VERSION_ID="1.2.0"');
+      expect(AETHER_VERSION.version).toBe('1.3.0');
+      expect(AETHER_VERSION.codename).toBe('Application Ecosystem');
+      expect(vfs.readFile('/proc/version')).toContain('1.3.0');
+      expect(vfs.readFile('/etc/os-release')).toContain('VERSION_ID="1.3.0"');
     });
   });
 });

@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { AppProps } from '../types';
 import { vfs } from '../../vfs/vfs';
+import { dialogService } from '../../core/dialog';
 import { Save, FilePlus, Search, FileText, X } from 'lucide-react';
 
 interface EditorTab {
@@ -68,11 +69,16 @@ export const TextEditorApp: React.FC<AppProps> = ({ initialProps, setTitle, isFo
     }
   }, [activeTab?.fileName, isDirty, setTitle, activeTab]);
 
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback(async () => {
     if (!activeTab) return;
     let path = activeTab.filePath;
     if (!path) {
-      const input = prompt('Save file to path:', `/home/aether/Documents/${activeTab.fileName}`);
+      const input = await dialogService.prompt({
+        title: 'Save As',
+        message: 'Enter destination path:',
+        defaultValue: `/home/aether/Documents/${activeTab.fileName}`,
+        validate: (v) => (!v.trim() ? 'Path cannot be empty' : null),
+      });
       if (!input) return;
       path = vfs.resolve('/home/aether', input);
     }
@@ -88,17 +94,25 @@ export const TextEditorApp: React.FC<AppProps> = ({ initialProps, setTitle, isFo
         )
       );
     } catch (err) {
-      alert(`Save error: ${(err as Error).message}`);
+      dialogService.alert({
+        title: 'Save Error',
+        message: (err as Error).message,
+        level: 'error',
+      });
     }
   }, [activeTab, activeTabId]);
 
-  const closeTab = (id: string, e: React.MouseEvent) => {
+  const closeTab = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     const targetTab = tabs.find((t) => t.id === id);
     if (targetTab && targetTab.content !== targetTab.savedContent) {
-      const confirmDiscard = window.confirm(
-        `"${targetTab.fileName}" has unsaved changes. Discard changes and close?`
-      );
+      const confirmDiscard = await dialogService.confirm({
+        title: 'Unsaved Changes',
+        message: `"${targetTab.fileName}" has unsaved modifications. Discard changes and close tab?`,
+        confirmText: 'Discard & Close',
+        cancelText: 'Keep Editing',
+        danger: true,
+      });
       if (!confirmDiscard) return;
     }
 

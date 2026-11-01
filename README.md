@@ -12,15 +12,15 @@
 
 **A high-fidelity, Linux-inspired virtual operating environment engineered natively for modern web standards.**
 
-[![AetherOS Version](https://img.shields.io/badge/AetherOS-v1.2.0%20Real%20Computing-00f2fe?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/BocchiTheTank131/AetherOS)
+[![AetherOS Version](https://img.shields.io/badge/AetherOS-v1.3.0%20Application%20Ecosystem-00f2fe?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/BocchiTheTank131/AetherOS)
 [![React](https://img.shields.io/badge/React-19.3-61dafb?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-7.0-3178c6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-4.3-38bdf8?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![Vite](https://img.shields.io/badge/Vite-8.3-646cff?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
-[![Vitest](https://img.shields.io/badge/Tests-83%20Passed-34d399?style=for-the-badge&logo=vitest&logoColor=black)](https://vitest.dev/)
+[![Vitest](https://img.shields.io/badge/Tests-109%20Passed-34d399?style=for-the-badge&logo=vitest&logoColor=black)](https://vitest.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-amber?style=for-the-badge)](LICENSE)
 
-[Architecture](#-architectural-overview) • [What's New in v1.2.0](#-whats-new-in-v120-real-computing) • [Subsystems](#-subsystem-deep-dive) • [Applications](#-native-application-suite) • [Shell CLI](#-shell-command-reference-50-utilities) • [Quickstart](#-getting-started) • [Contributing](#-developer-guides)
+[Architecture](#-architectural-overview) • [What's New in v1.3.0](#-whats-new-in-v130-application-ecosystem) • [Subsystems](#-subsystem-deep-dive) • [Applications](#-native-application-suite) • [Shell CLI](#-shell-command-reference-50-utilities) • [Quickstart](#-getting-started) • [Contributing](#-developer-guides)
 
 </div>
 
@@ -30,44 +30,50 @@
 
 Rather than emulating hardware CPU instructions through slow x86 or ARM virtualization, **AetherOS** implements genuine operating system paradigms directly on modern web standards:
 
+- **Extensible Application Platform (`AetherAppPlatform`)**: Opaque-origin sandboxed `<iframe>` execution (`sandbox="allow-scripts"` without `allow-same-origin`), isolated `MessageChannel` RPC, full Aether App SDK (`window.aether`), granular capability permissions (`/var/lib/aetherpkg/permissions.json`), and private app storage quotas.
+- **Genuine Package Management Subsystem (`.aepkg`)**: Binary-safe compressed Zip archives via `fflate`, SHA-256 cryptographic verification (`integrity.json`), semver resolution, atomic staging (`/opt/aether/apps/`), version rollback, and uninstallation with data purge.
 - **Preemptive Virtual Kernel (`AetherCore`)**: PID process allocation starting at PID 100, POSIX signal handlers (`SIGTERM`, `SIGKILL`, `SIGSTOP`, `SIGCONT`), and measured resource telemetry based on active execution and browser JS heap limits.
-- **POSIX-Compliant Filesystem (`AetherFS 2.0`)**: Complete Linux directory tree (`/bin`, `/etc`, `/home/aether`, `/proc`, `/dev`, `/var`) persisted in browser **IndexedDB v2** with binary-safe byte arrays (`Uint8Array`), POSIX virtual access control (`r/w/x`), relative symlinks, and SHA-256 verified backup and restore.
+- **POSIX-Compliant Filesystem (`AetherFS 2.0`)**: Complete Linux directory tree (`/bin`, `/etc`, `/home/aether`, `/proc`, `/dev`, `/var`, `/opt`) persisted in browser **IndexedDB v2** with binary-safe byte arrays (`Uint8Array`), POSIX virtual access control (`r/w/x`), relative symlinks, and SHA-256 verified backup and restore.
 - **Secure Aether Runtime**: Isolated Web Worker execution sandbox for running untrusted user JavaScript, featuring process tracking, console streaming, timeout enforcement (exit code 124), cancellation, and a guest `aether.fs` VFS bridge.
 - **Authentic Command Shell (`aesh`)**: Lexer tokenizer, full POSIX scripting AST (`if/then/elif/else/fi`, `for/do/done`, `while`, `case/esac`, functions, positional parameters `$0..$9`, `$#`, `$@`), pipelines (`|`), input/output redirections (`>`, `>>`, `<`, `2>`), conditionals (`&&`, `||`, `;`), job control (`&`, `jobs`, `fg`, `bg`, `wait`), and 50+ built-in utilities.
-- **Composited Desktop Environment (`AetherWM`)**: Draggable windows with 8-direction resizing, visual snap guides, memory of window coordinates, 4 virtual workspaces, customizable dock (bottom/top/left), app launcher, command palette, and notification drawer.
-- **Native Applications & Packages**: Full-featured IDE with live sandbox preview and runtime execution, file manager with host file export, terminal emulator, audio synthesizer, games, and package manager (`aetherpkg`).
+- **Composited Desktop Environment (`AetherWM`)**: Draggable windows with 8-direction resizing, visual snap guides, memory of window coordinates, 4 virtual workspaces, session persistence and restoration, customizable dock (bottom/top/left), app launcher, command palette, and notification drawer.
+- **Developer Suite & Code Studio**: Built-in IDE with app project templates ("Hello Aether", "CLI Tool"), live sandboxed preview, manifest validation, one-click `.aepkg` archive build, host file export, and direct OS installation.
 
 ---
 
-## 🚀 What's New in v1.2.0: Real Computing
+## 🚀 What's New in v1.3.0: Application Ecosystem
 
-AetherOS v1.2.0 transforms AetherOS from a simulation into a capable, reliable, and authentic web-native computing environment:
+AetherOS v1.3.0 transforms AetherOS from a predominantly bundled desktop into a **genuinely extensible application platform**:
 
-- 🛡️ **Secure Aether Runtime**:
-  - Sandboxed execution via dedicated Web Workers with locked-down ambient capabilities (`fetch`, `importScripts`, `indexedDB` restricted).
-  - Virtual Kernel PID allocation and process table tracking for every runtime task.
-  - Streaming stdout and stderr output capturing console logs and error stacks.
-  - Hard execution timeouts (exit code 124) and interactive cancellation (Ctrl+C).
-  - Guest `globalThis.aether.fs` bridge enabling user scripts to read, write, and inspect virtual files.
-- 💾 **AetherFS 2.0**:
-  - Native binary safety: storage of binary files using `Uint8Array` byte buffers with exact byte sizing.
-  - POSIX Virtual Access Control: permission bitmask checks (`checkAccess`, `chmod`, `chown`, directory traversal execute bit validation).
-  - Symbolic Link enhancements: distinction between link nodes and targets via `lstat`, with support for relative symlinks.
-  - Versioned Backups & Restores: full filesystem backup export and restoration with SHA-256 integrity checksum verification.
-  - Transactional durability: IndexedDB schema v2 with batch persistence and safe queueing.
-- 📜 **Advanced aesh POSIX Scripting & Job Control**:
-  - Scripting AST parser & executor supporting `if/then/elif/else/fi`, `for ... in ...; do ... done`, `while`, and `case ... in ... esac`.
-  - User-defined shell functions with positional parameter binding (`$0`, `$1..$9`, `$#`, `$@`, `$*`, `$$`, `$?`).
-  - Conditional evaluation builtins: `test` and `[` with support for `-f`, `-d`, `-e`, `-s`, `-z`, `-n`, `=`, `!=`, `-eq`, `-lt`, etc.
-  - Job control: run background tasks with `&`, list background jobs with `jobs`, resume or bring to foreground with `fg` and `bg`, and synchronize with `wait`.
-  - Executable shell scripts (`.sh`) and shebang handling (`#!/bin/aesh`, `#!/bin/node`, `#!/bin/js`).
-- 📊 **Honest System Telemetry**:
-  - Transparent network probing: replaced fabricated ICMP packets with honest HTTP reachability diagnostics in `ping`.
-  - Transparent memory reporting: `free`, `SystemMonitorApp`, and `virtualKernel` clearly identify whether metrics originate from host browser JS heap limits or virtual allocations.
-  - Measured virtual CPU activity: eliminated arbitrary randomizers in favor of state-driven execution accounting.
-- 💻 **Code Studio & Terminal Integration**:
-  - "Run in Runtime" button in Code Studio executes scripts directly in the isolated sandbox with live streaming log panels.
-  - `js` and `node` shell built-ins execute JavaScript files or one-liners via the secure runtime.
+- 📦 **Genuine `.aepkg` Package Subsystem**:
+  - Binary-safe Zip archive packaging using `fflate` with defensive extraction constraints (path traversal prevention, compression ratio checks).
+  - Cryptographic SHA-256 integrity manifest generation and verification (`integrity.json`).
+  - Semver-compatible dependency and constraint evaluation (`compareSemver`, `satisfiesSemver`).
+  - Safe rollback snapshots stored in `/var/lib/aetherpkg/history/<pkgId>.json`.
+  - Atomic installation to `/opt/aether/apps/<pkgId>/<version>/` with dynamic system registration without OS reboot.
+- 🛡️ **Fail-Closed Application Sandbox & RPC Host**:
+  - Sandboxed `<iframe>` hosting (`sandbox="allow-scripts"` strictly without `allow-same-origin`) using Blob URLs.
+  - Zero access to host DOM, React context, browser storage, or privileged APIs.
+  - Dedicated bidirectional `MessageChannel` RPC bridge authenticated with per-session UUID tokens.
+  - Comprehensive `window.aether` App SDK: `app`, `window`, `fs`, `storage`, `notifications`, `clipboard`, `permissions`, `system`, and live theme CSS variables (`--aether-bg`, `--aether-fg`, `--aether-accent`).
+- 🔐 **Granular Permission Manager & App Storage**:
+  - 13 distinct permission scopes classified into low-risk (auto-granted), prompt-required, and privileged.
+  - Settings UI tab "App Permissions" allowing users to inspect and toggle individual app privileges.
+  - Isolated app-private storage (`/home/aether/.local/share/aether/apps/<appId>/storage.json`) with path traversal guards and 5MB quota enforcement.
+- 🛠️ **Developer Platform & Code Studio**:
+  - "New Project" modal with built-in templates ("Hello Aether" windowed app, CLI utility).
+  - Real-time sandboxed live preview in Code Studio.
+  - "Build .aepkg" action with host download and one-click "Install to OS".
+  - Developer CLI (`aether create`, `validate`, `build`, `run`, `stop`, `inspect`).
+- 🛒 **Software Center & Package Management**:
+  - Truthful multi-step installation progress modal (Verifying, Staging, Registering, Completed).
+  - Host file upload to install `.aepkg` packages directly from user's local disk.
+  - Uninstallation confirmation dialog with optional data purge.
+- 🌐 **PWA & Session Restoration**:
+  - Progressive Web App manifest (`public/manifest.json`) and offline service worker (`public/sw.js`).
+  - Desktop session persistence (`/home/aether/.config/aetheros/session.json`) with automatic window state restoration on boot.
+- 🎨 **Desktop Polish**:
+  - Fixed Recent Applications icon sizing in App Launcher to ensure clean, crisp 14px badges without text overlap.
 
 ---
 

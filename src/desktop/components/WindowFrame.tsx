@@ -1,8 +1,9 @@
 // AetherOS - Window Frame Component with Draggable Titlebar & 8-Direction Resizing
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import type { WindowInstance } from '../types';
 import { useSystem } from '../../core/context';
 import { appRegistry } from '../../apps/appRegistry';
+import { AppErrorBoundary } from './AppErrorBoundary';
 import {
   Minus,
   Square,
@@ -45,6 +46,9 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({ window: win }) => {
     theme,
   } = useSystem();
 
+  const handleClose = useCallback(() => closeWindow(win.id), [win.id, closeWindow]);
+  const handleSetTitle = useCallback((t: string) => updateWindowTitle(win.id, t), [win.id, updateWindowTitle]);
+
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [resizingDir, setResizingDir] = useState<string | null>(null);
@@ -63,48 +67,51 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({ window: win }) => {
 
   // Window Icons Map
   const getAppIcon = (iconName: string) => {
-    const iconClass = 'w-3.5 h-3.5 text-cyan-400';
+    const props = { className: 'w-3.5 h-3.5 text-cyan-400', size: 14 };
     switch (iconName) {
       case 'Terminal':
-        return <Terminal className={iconClass} />;
+        return <Terminal {...props} />;
       case 'Folder':
-        return <Folder className={iconClass} />;
+        return <Folder {...props} />;
       case 'FileText':
-        return <FileText className={iconClass} />;
+        return <FileText {...props} />;
       case 'Code2':
-        return <Code2 className={iconClass} />;
+        return <Code2 {...props} />;
       case 'Globe':
-        return <Globe className={iconClass} />;
+        return <Globe {...props} />;
       case 'Settings':
-        return <Settings className={iconClass} />;
+        return <Settings {...props} />;
       case 'Activity':
-        return <Activity className={iconClass} />;
+        return <Activity {...props} />;
       case 'Package':
-        return <Package className={iconClass} />;
+        return <Package {...props} />;
       case 'Calculator':
-        return <Calculator className={iconClass} />;
+        return <Calculator {...props} />;
       case 'PlayCircle':
-        return <PlayCircle className={iconClass} />;
+        return <PlayCircle {...props} />;
       case 'Image':
-        return <ImageIcon className={iconClass} />;
+        return <ImageIcon {...props} />;
       case 'StickyNote':
-        return <StickyNote className={iconClass} />;
+        return <StickyNote {...props} />;
       case 'BookOpen':
-        return <BookOpen className={iconClass} />;
+        return <BookOpen {...props} />;
       case 'ScrollText':
-        return <ScrollText className={iconClass} />;
+        return <ScrollText {...props} />;
       case 'Bomb':
-        return <Bomb className={iconClass} />;
+        return <Bomb {...props} />;
       case 'Grid':
-        return <Grid className={iconClass} />;
+        return <Grid {...props} />;
       case 'Palette':
-        return <Palette className={iconClass} />;
+        return <Palette {...props} />;
       case 'CloudRain':
-        return <CloudRain className={iconClass} />;
+        return <CloudRain {...props} />;
       case 'Mic':
-        return <Mic className={iconClass} />;
+        return <Mic {...props} />;
       default:
-        return <Activity className={iconClass} />;
+        if (iconName && (iconName.startsWith('data:') || iconName.includes('/'))) {
+          return <img src={iconName} className="w-3.5 h-3.5 object-contain" alt="" />;
+        }
+        return <Package {...props} />;
     }
   };
 
@@ -286,8 +293,15 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({ window: win }) => {
     };
   }
 
+  const isLight = theme.mode === 'light';
+
   return (
     <>
+      {/* Global dragging & resizing overlay to prevent iframe pointer capture drop */}
+      {(isDragging || resizingDir) && (
+        <div className="fixed inset-0 z-[99999] cursor-move select-none" />
+      )}
+
       {snapPreview && (
         <div
           style={{
@@ -306,9 +320,15 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({ window: win }) => {
         style={style}
         onMouseDown={() => focusWindow(win.id)}
         className={`flex flex-col rounded-xl overflow-hidden shadow-2xl transition-[box-shadow,border-color] duration-150 ${
-          theme.blur ? 'glass-panel' : 'bg-[#161b26]'
+          isLight
+            ? (theme.blur ? 'glass-panel-light text-slate-900' : 'bg-white text-slate-900')
+            : (theme.blur ? 'glass-panel text-white' : 'bg-[#161b26] text-white')
         } border ${
-          win.isFocused ? 'border-cyan-500/50 shadow-cyan-500/10' : 'border-gray-700/60 shadow-black/50'
+          win.isFocused
+            ? 'border-cyan-500/60 shadow-cyan-500/10'
+            : isLight
+            ? 'border-slate-300/80 shadow-md'
+            : 'border-gray-700/60 shadow-black/50'
         }`}
       >
       {/* Window Titlebar */}
@@ -316,14 +336,16 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({ window: win }) => {
         onMouseDown={handleTitlebarMouseDown}
         onDoubleClick={() => maximizeWindow(win.id)}
         className={`h-9 px-3 flex items-center justify-between select-none cursor-move border-b ${
-          win.isFocused ? 'bg-[#1f293d]/80 border-gray-700/80' : 'bg-[#161f2e]/60 border-gray-800'
+          isLight
+            ? (win.isFocused ? 'bg-slate-200/90 border-slate-300 text-slate-800' : 'bg-slate-100/70 border-slate-200 text-slate-500')
+            : (win.isFocused ? 'bg-[#1f293d]/80 border-gray-700/80 text-gray-200' : 'bg-[#161f2e]/60 border-gray-800 text-gray-400')
         }`}
       >
         {/* Left: Icon & Title */}
         <div className="flex items-center gap-2 truncate">
           {getAppIcon(win.icon)}
-          <span className="text-xs font-semibold text-gray-200 truncate">{win.title}</span>
-          <span className="text-[10px] text-gray-400 font-mono">[{win.pid}]</span>
+          <span className={`text-xs font-semibold truncate ${isLight ? 'text-slate-800' : 'text-gray-200'}`}>{win.title}</span>
+          <span className={`text-[10px] font-mono ${isLight ? 'text-slate-400' : 'text-gray-400'}`}>[{win.pid}]</span>
         </div>
 
         {/* Right: Window Controls */}
@@ -353,16 +375,18 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({ window: win }) => {
       </div>
 
       {/* Window Client Body */}
-      <div className="flex-1 overflow-hidden relative bg-[#0f141f]">
+      <div className={`flex-1 overflow-hidden relative ${isLight ? 'bg-slate-50 text-slate-900' : 'bg-[#0f141f] text-gray-200'}`}>
         {AppComponent ? (
-          <AppComponent
-            windowId={win.id}
-            pid={win.pid}
-            initialProps={win.props}
-            isFocused={win.isFocused}
-            onClose={() => closeWindow(win.id)}
-            setTitle={(t) => updateWindowTitle(win.id, t)}
-          />
+          <AppErrorBoundary appId={win.appId} windowId={win.id} onClose={handleClose}>
+            <AppComponent
+              windowId={win.id}
+              pid={win.pid}
+              initialProps={win.props}
+              isFocused={win.isFocused}
+              onClose={handleClose}
+              setTitle={handleSetTitle}
+            />
+          </AppErrorBoundary>
         ) : (
           <div className="p-4 text-xs text-red-400">Application component not found.</div>
         )}

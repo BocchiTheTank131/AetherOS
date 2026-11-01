@@ -128,6 +128,8 @@ export const CalculatorApp: React.FC<AppProps> = ({ isFocused }) => {
         return;
       }
 
+      if (e.altKey || e.ctrlKey || e.metaKey) return;
+
       if (e.key >= '0' && e.key <= '9') handleDigit(e.key);
       else if (e.key === '.') handleDigit('.');
       else if (e.key === '+') handleOperator('+');

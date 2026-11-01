@@ -15,9 +15,17 @@ export const ImageViewerApp: React.FC<AppProps> = ({ initialProps, setTitle }) =
     let objectUrlToRevoke: string | null = null;
     if (vfs.exists(filePath)) {
       try {
+        const node = vfs.getNode(filePath);
         const content = vfs.readFile(filePath);
         if (content.startsWith('data:image')) {
           setImageSrc(content);
+        } else if (node?.binaryContent) {
+          const ext = filePath.split('.').pop()?.toLowerCase() || 'png';
+          const mime = node.mimeType || `image/${ext === 'jpg' ? 'jpeg' : ext}`;
+          const blob = new Blob([node.binaryContent as unknown as BlobPart], { type: mime });
+          const url = URL.createObjectURL(blob);
+          objectUrlToRevoke = url;
+          setImageSrc(url);
         } else if (filePath.endsWith('.svg')) {
           const blob = new Blob([content], { type: 'image/svg+xml' });
           const url = URL.createObjectURL(blob);

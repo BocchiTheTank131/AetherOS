@@ -15,12 +15,15 @@ export const CommandPalette: React.FC = () => {
   useEffect(() => {
     if (quickRunnerOpen) {
       inputRef.current?.focus();
+    } else {
       setQuery('');
       setSelectedIndex(0);
     }
   }, [quickRunnerOpen]);
 
   if (!quickRunnerOpen) return null;
+
+  const isLight = theme.mode === 'light';
 
   // Search Results aggregation
   const apps = appRegistry
@@ -87,12 +90,20 @@ export const CommandPalette: React.FC = () => {
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className={`w-full max-w-xl rounded-2xl border border-gray-700/80 shadow-2xl overflow-hidden flex flex-col ${
-          theme.blur ? 'glass-panel' : 'bg-[#161c28]'
+        className={`w-full max-w-xl rounded-2xl border shadow-2xl overflow-hidden flex flex-col ${
+          isLight
+            ? theme.blur
+              ? 'glass-panel-light text-slate-800 border-slate-300'
+              : 'bg-white text-slate-800 border-slate-300'
+            : theme.blur
+            ? 'glass-panel text-white border-gray-700/80'
+            : 'bg-[#161c28] text-white border-gray-700/80'
         } max-h-[460px]`}
       >
         {/* Search Input */}
-        <div className="flex items-center gap-3 p-3.5 border-b border-gray-700/60 bg-[#1e2536]/80">
+        <div className={`flex items-center gap-3 p-3.5 border-b ${
+          isLight ? 'bg-slate-100 border-slate-200' : 'bg-[#1e2536]/80 border-gray-700/60'
+        }`}>
           <Search className="w-5 h-5 text-cyan-400" />
           <input
             ref={inputRef}
@@ -104,9 +115,13 @@ export const CommandPalette: React.FC = () => {
             }}
             onKeyDown={handleKeyDown}
             placeholder="Type a command, file, or application name..."
-            className="w-full bg-transparent text-white text-sm outline-none placeholder-gray-400 font-sans"
+            className={`w-full bg-transparent text-sm outline-none font-sans ${
+              isLight ? 'text-slate-900 placeholder-slate-400' : 'text-white placeholder-gray-400'
+            }`}
           />
-          <kbd className="px-2 py-0.5 rounded bg-gray-800 text-[10px] text-gray-400 border border-gray-700 font-mono">
+          <kbd className={`px-2 py-0.5 rounded text-[10px] border font-mono ${
+            isLight ? 'bg-slate-200 text-slate-600 border-slate-300' : 'bg-gray-800 text-gray-400 border-gray-700'
+          }`}>
             ESC
           </kbd>
         </div>
@@ -114,7 +129,7 @@ export const CommandPalette: React.FC = () => {
         {/* Results List */}
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
           {allResults.length === 0 ? (
-            <div className="py-8 text-center text-gray-400 text-xs">
+            <div className={`py-8 text-center text-xs ${isLight ? 'text-slate-400' : 'text-gray-400'}`}>
               No matching applications, files, or commands
             </div>
           ) : (
@@ -129,12 +144,16 @@ export const CommandPalette: React.FC = () => {
                   }}
                   className={`flex items-center justify-between p-2.5 rounded-xl cursor-pointer transition-colors ${
                     isSelected
-                      ? 'bg-cyan-500/20 border border-cyan-500/40 text-cyan-200'
+                      ? 'bg-cyan-500/20 border border-cyan-500/40 text-cyan-400'
+                      : isLight
+                      ? 'hover:bg-slate-100 text-slate-700'
                       : 'hover:bg-gray-800/60 text-gray-300'
                   }`}
                 >
                   <div className="flex items-center gap-3 truncate">
-                    <div className="p-2 rounded-lg bg-gray-800 text-cyan-400">
+                    <div className={`p-2 rounded-lg text-cyan-400 ${
+                      isLight ? 'bg-slate-100' : 'bg-gray-800'
+                    }`}>
                       {item.type === 'app' ? (
                         <AppWindow className="w-4 h-4" />
                       ) : item.type === 'file' ? (
@@ -144,13 +163,13 @@ export const CommandPalette: React.FC = () => {
                       )}
                     </div>
                     <div className="truncate">
-                      <div className="font-semibold text-xs text-white">{item.title}</div>
-                      <div className="text-[11px] text-gray-400 truncate">{item.subtitle}</div>
+                      <div className={`font-semibold text-xs ${isLight ? 'text-slate-900' : 'text-white'}`}>{item.title}</div>
+                      <div className={`text-[11px] truncate ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{item.subtitle}</div>
                     </div>
                   </div>
                   <ArrowRight
                     className={`w-4 h-4 transition-transform ${
-                      isSelected ? 'text-cyan-400 translate-x-0.5' : 'text-gray-600'
+                      isSelected ? 'text-cyan-400 translate-x-0.5' : isLight ? 'text-slate-300' : 'text-gray-600'
                     }`}
                   />
                 </div>

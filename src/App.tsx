@@ -10,6 +10,7 @@ import { AppLauncher } from './desktop/components/AppLauncher';
 import { CommandPalette } from './desktop/components/CommandPalette';
 import { NotificationCenter } from './desktop/components/NotificationCenter';
 import { QuickSettings } from './desktop/components/QuickSettings';
+import { DialogHost } from './desktop/components/DialogHost';
 import { Power } from 'lucide-react';
 
 const AetherOSDesktop: React.FC = () => {
@@ -74,6 +75,9 @@ const AetherOSDesktop: React.FC = () => {
 
       {/* Quick Settings System Tray */}
       <QuickSettings />
+
+      {/* System Modal Dialog Host */}
+      <DialogHost />
 
       {/* Lock Screen */}
       <LockScreen />

@@ -97,6 +97,9 @@ export const Taskbar: React.FC = () => {
       case 'Mic':
         return <Mic className="w-5 h-5 text-red-400" />;
       default:
+        if (iconName && (iconName.startsWith('data:') || iconName.includes('/'))) {
+          return <img src={iconName} className="w-5 h-5 object-contain" alt="" />;
+        }
         return <AppWindow className="w-5 h-5 text-cyan-300" />;
     }
   };
@@ -126,7 +129,13 @@ export const Taskbar: React.FC = () => {
     }
     const focusedWin = matchingWins.find((w) => w.isFocused);
     if (focusedWin) {
-      minimizeWindow(focusedWin.id);
+      if (matchingWins.length > 1) {
+        const curIdx = matchingWins.indexOf(focusedWin);
+        const next = matchingWins[(curIdx + 1) % matchingWins.length];
+        focusWindow(next.id);
+      } else {
+        minimizeWindow(focusedWin.id);
+      }
     } else {
       const target = matchingWins[matchingWins.length - 1];
       focusWindow(target.id);
@@ -139,6 +148,7 @@ export const Taskbar: React.FC = () => {
   };
 
   const unreadCount = notifications.filter((n) => !n.read).length;
+  const isLight = theme.mode === 'light';
 
   return (
     <div
@@ -149,8 +159,14 @@ export const Taskbar: React.FC = () => {
           ? 'left-0 inset-y-0 w-14 flex-col border-r py-3'
           : 'bottom-0 inset-x-0 h-11 border-t'
       } ${
-        theme.blur ? 'glass-panel' : 'bg-[#121622]'
-      } border-gray-700/60 px-3 shadow-2xl`}
+        isLight
+          ? theme.blur
+            ? 'glass-panel-light text-slate-800 border-slate-300/80 shadow-md'
+            : 'bg-white/95 text-slate-800 border-slate-300 shadow-md'
+          : theme.blur
+          ? 'glass-panel text-white border-gray-700/60 shadow-2xl'
+          : 'bg-[#121622] text-white border-gray-700/60 shadow-2xl'
+      } px-3`}
     >
       {/* Left: Start Menu Button & Workspace Switcher */}
       <div className={`flex items-center gap-2 ${theme.dockPosition === 'left' ? 'flex-col' : ''}`}>
@@ -165,6 +181,8 @@ export const Taskbar: React.FC = () => {
           className={`flex items-center justify-center p-1.5 rounded-xl transition-all duration-200 group ${
             appLauncherOpen
               ? 'bg-cyan-500/30 ring-2 ring-cyan-400 shadow-lg shadow-cyan-500/20'
+              : isLight
+              ? 'hover:bg-slate-200/80'
               : 'hover:bg-cyan-500/10'
           }`}
           title="Applications Menu (Super)"
@@ -176,7 +194,13 @@ export const Taskbar: React.FC = () => {
         </button>
 
         {/* Workspaces */}
-        <div className="flex items-center gap-1 bg-[#111624]/60 p-1 rounded-lg border border-gray-700/50">
+        <div
+          className={`flex items-center gap-1 p-1 rounded-lg border ${
+            isLight
+              ? 'bg-slate-100 border-slate-300 text-slate-700'
+              : 'bg-[#111624]/60 border-gray-700/50 text-gray-400'
+          }`}
+        >
           {[1, 2, 3, 4].map((ws) => (
             <button
               key={ws}
@@ -184,7 +208,9 @@ export const Taskbar: React.FC = () => {
               className={`w-5 h-5 rounded text-[11px] font-bold transition-colors ${
                 activeWorkspace === ws
                   ? 'bg-cyan-500 text-black shadow'
-                  : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
+                  : isLight
+                  ? 'hover:text-black hover:bg-slate-200'
+                  : 'hover:text-white hover:bg-gray-700/50'
               }`}
               title={`Workspace ${ws}`}
             >
@@ -213,7 +239,11 @@ export const Taskbar: React.FC = () => {
                 isFocused
                   ? 'bg-cyan-500/20 border border-cyan-500/50 shadow-md'
                   : isRunning
-                  ? 'bg-gray-800/80 hover:bg-gray-700/80'
+                  ? isLight
+                    ? 'bg-slate-200 hover:bg-slate-300'
+                    : 'bg-gray-800/80 hover:bg-gray-700/80'
+                  : isLight
+                  ? 'hover:bg-slate-200/60'
                   : 'hover:bg-gray-800/50'
               }`}
               title={app.name}
@@ -222,7 +252,7 @@ export const Taskbar: React.FC = () => {
               {isRunning && (
                 <span
                   className={`absolute bottom-0.5 w-1.5 h-1.5 rounded-full ${
-                    isFocused ? 'bg-cyan-400 ring-2 ring-cyan-400/30' : 'bg-gray-400'
+                    isFocused ? 'bg-cyan-400 ring-2 ring-cyan-400/30' : isLight ? 'bg-slate-500' : 'bg-gray-400'
                   }`}
                 />
               )}
@@ -234,10 +264,12 @@ export const Taskbar: React.FC = () => {
       {/* Right: System Tray & Clock */}
       <div className={`flex items-center gap-2 ${theme.dockPosition === 'left' ? 'flex-col' : ''}`}>
         {/* Network & Audio Status */}
-        <div className="flex items-center gap-1 text-gray-300">
+        <div className={`flex items-center gap-1 ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>
           <button
             onClick={handleToggleMute}
-            className="p-1.5 hover:bg-gray-700/60 rounded-lg text-gray-300 hover:text-white"
+            className={`p-1.5 rounded-lg transition-colors ${
+              isLight ? 'hover:bg-slate-200 text-slate-700' : 'hover:bg-gray-700/60 text-gray-300 hover:text-white'
+            }`}
             title="Volume Toggle"
           >
             {isMuted ? (
@@ -246,7 +278,7 @@ export const Taskbar: React.FC = () => {
               <Volume2 className="w-4 h-4" />
             )}
           </button>
-          <div className="p-1.5 text-gray-300" title="Connected (Online)">
+          <div className="p-1.5" title="Connected (Online)">
             <Wifi className="w-4 h-4 text-emerald-400" />
           </div>
         </div>
@@ -258,7 +290,9 @@ export const Taskbar: React.FC = () => {
             setQuickSettingsOpen(false);
             setAppLauncherOpen(false);
           }}
-          className="relative p-1.5 hover:bg-gray-700/60 rounded-lg text-gray-300 hover:text-white"
+          className={`relative p-1.5 rounded-lg transition-colors ${
+            isLight ? 'hover:bg-slate-200 text-slate-700' : 'hover:bg-gray-700/60 text-gray-300 hover:text-white'
+          }`}
           title="Notifications"
         >
           <Bell className="w-4 h-4" />
@@ -275,7 +309,11 @@ export const Taskbar: React.FC = () => {
             setNotificationCenterOpen(false);
           }}
           className={`p-1.5 rounded-lg transition-colors ${
-            quickSettingsOpen ? 'bg-cyan-500/20 text-cyan-400' : 'hover:bg-gray-700/60 text-gray-300'
+            quickSettingsOpen
+              ? 'bg-cyan-500/20 text-cyan-400'
+              : isLight
+              ? 'hover:bg-slate-200 text-slate-700'
+              : 'hover:bg-gray-700/60 text-gray-300'
           }`}
           title="Quick Settings"
         >
@@ -287,12 +325,14 @@ export const Taskbar: React.FC = () => {
           onClick={() => {
             setQuickSettingsOpen((prev) => !prev);
           }}
-          className="cursor-pointer px-2.5 py-1 rounded-lg hover:bg-gray-700/50 flex flex-col items-end text-right"
+          className={`cursor-pointer px-2.5 py-1 rounded-lg flex flex-col items-end text-right transition-colors ${
+            isLight ? 'hover:bg-slate-200' : 'hover:bg-gray-700/50'
+          }`}
         >
-          <span className="text-xs font-semibold text-white tracking-wide">
+          <span className={`text-xs font-semibold tracking-wide ${isLight ? 'text-slate-900' : 'text-white'}`}>
             {time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </span>
-          <span className="text-[10px] text-gray-400 font-medium">
+          <span className={`text-[10px] font-medium ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
             {time.toLocaleDateString([], { month: 'short', day: 'numeric' })}
           </span>
         </div>

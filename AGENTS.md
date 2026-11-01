@@ -25,7 +25,7 @@
 - **Styling:** Tailwind CSS 4 (`@tailwindcss/vite`), Lucide React icons
 - **Audio:** Web Audio API (procedural oscillator synthesizer)
 - **Storage:** Browser IndexedDB (primary persistence) with in-memory VFS caching
-- **Testing:** Vitest 5 (83 passed automated tests)
+- **Testing:** Vitest 5 (109 passed automated tests)
 - **Linter:** Oxlint
 
 ### Essential Commands
@@ -95,10 +95,30 @@ src/
 │       ├── devCommands.ts # base64, sha256sum, md5sum, jq, js, node
 │       └── pkgCommands.ts # aetherpkg CLI interface
 │
-├── pkg/                   # Package Management Subsystem
-│   ├── types.ts           # AetherPackage interface
+├── pkg/                   # Package Management Subsystem (.aepkg & repository)
+│   ├── types.ts           # AetherPackage & PackageRecord interfaces
 │   ├── repository.ts      # OFFICIAL_REPOSITORY package catalog
-│   └── packageManager.ts  # PackageManager: install, remove, query (/var/lib/aetherpkg/)
+│   ├── packageArchive.ts  # Binary-safe zip pack/unpack with path traversal guards
+│   ├── packageIntegrity.ts# SHA-256 integrity manifest generation & verification
+│   ├── packageValidator.ts# Archive structure, manifest, and security validation
+│   ├── packageResolver.ts # Semver comparison and dependency resolution
+│   ├── packageRollback.ts # Snapshot history and rollback orchestration
+│   ├── packageInstaller.ts# Atomic staging (/opt/aether/apps/) & registration
+│   └── packageManager.ts  # Unified package manager API
+│
+├── appPlatform/           # Dynamic Application Platform & Sandbox
+│   ├── AppManifest.ts     # Schema validation for third-party manifest.json
+│   ├── AppPermissions.ts  # 13 granular permission scopes and risk levels
+│   ├── PermissionManager.ts# Permission grants, persistence (/var/lib/aetherpkg/)
+│   ├── AppStorage.ts      # App-private storage (/home/aether/.local/share/aether/apps/)
+│   ├── AppProtocol.ts     # Typed RPC message envelope and rate limiting
+│   ├── DynamicAppRegistry.ts # Dynamic app registry (/var/lib/aetherpkg/installed_v2.json)
+│   ├── FileAssociations.ts# File extensions and MIME associations
+│   ├── AppHost.tsx        # Sandboxed iframe host (allow-scripts without allow-same-origin)
+│   └── sdk/               # Guest App SDK (window.aether bridge)
+│
+├── session/               # Desktop Session Management
+│   └── SessionManager.ts  # Workspace & window state persistence (/home/aether/.config/aetheros/session.json)
 │
 ├── desktop/               # Desktop Environment & Compositor
 │   ├── types.ts           # WindowInstance, WindowDisplayState, Workspace interfaces
@@ -260,6 +280,15 @@ Never attach a global `window.addEventListener('keydown', ...)` inside an applic
 ### ⚠️ Invariant 8: Centralized Versioning
 - Never hardcode OS version strings in UI components, terminal banners, or CLI outputs.
 - Always import and reference `AETHER_VERSION` from `src/core/version.ts`.
+
+### ⚠️ Invariant 9: Third-Party Application Sandboxing (`AppHost`)
+- Third-party installed apps run in `src/appPlatform/AppHost.tsx` via Blob URLs inside an `<iframe>` with `sandbox="allow-scripts"` and **NEVER** `allow-same-origin`.
+- RPC communication is strictly mediated across an explicit `MessageChannel` port with authenticated session tokens and rate limits.
+- Third-party apps must never be granted raw access to `vfs`, `virtualKernel`, or host browser global state.
+- Filesystem access must strictly pass through `PermissionManager` checks.
+
+### ⚠️ Invariant 10: App Launcher & Dock Icon Constraining
+- All Lucide icon components or image elements displayed in constrained areas (e.g. Recent Applications row, Dock, Window titlebar) must specify explicit `size` props or constraints alongside CSS classes (e.g. `size={14}` and `w-3.5 h-3.5`) to prevent presentation overflow or text collisions.
 
 ---
 

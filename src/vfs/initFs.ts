@@ -125,13 +125,18 @@ echo "Script complete."
   addDir('/home/aether/.config/aetheros', 'aether', 0o700);
   addDir('/home/aether/.config/aesh', 'aether', 0o700);
   addDir('/home/aether/.local', 'aether', 0o700);
+  addDir('/home/aether/.local/share', 'aether', 0o700);
+  addDir('/home/aether/.local/share/aether', 'aether', 0o700);
+  addDir('/home/aether/.local/share/aether/apps', 'aether', 0o700);
   addDir('/home/aether/.cache', 'aether', 0o700);
   addDir('/home/aether/.trash', 'aether', 0o700);
 
   addDir('/lib');
   addDir('/media');
   addDir('/mnt');
-  addDir('/opt');
+  addDir('/opt', 'aether', 0o775);
+  addDir('/opt/aether', 'aether', 0o775);
+  addDir('/opt/aether/apps', 'aether', 0o775);
   addDir('/proc');
   addDir('/root', 'root', 0o700);
   addDir('/run');
@@ -145,6 +150,8 @@ echo "Script complete."
   addDir('/usr/local');
   addDir('/usr/share');
   addDir('/var');
+  addDir('/var/lib', 'aether', 0o775);
+  addDir('/var/lib/aetherpkg', 'aether', 0o775);
   addDir('/var/log');
   addDir('/var/tmp', 'root', 0o777);
 

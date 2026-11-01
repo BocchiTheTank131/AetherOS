@@ -3,9 +3,11 @@ import React, { useState } from 'react';
 import type { AppProps } from '../types';
 import { useSystem } from '../../core/context';
 import { vfs } from '../../vfs/vfs';
-import { virtualKernel } from '../../core/kernel';
 import { AETHER_VERSION } from '../../core/version';
 import { audioService } from '../../core/audio';
+import { dialogService } from '../../core/dialog';
+import { permissionManager } from '../../appPlatform/PermissionManager';
+import { PERMISSION_METADATA, type PermissionScope } from '../../appPlatform/AppPermissions';
 import {
   Palette,
   Monitor,
@@ -20,6 +22,7 @@ import {
   VolumeX,
   Play,
   Image as ImageIcon,
+  Shield,
 } from 'lucide-react';
 
 const WALLPAPERS = [
@@ -57,12 +60,13 @@ const ACCENT_COLORS = [
 export const SettingsApp: React.FC<AppProps> = () => {
   const { theme, setTheme, user, setUser, rebootSystem } = useSystem();
   const [activeCategory, setActiveCategory] = useState<
-    'appearance' | 'dock' | 'sound' | 'storage' | 'users' | 'about'
+    'appearance' | 'dock' | 'sound' | 'storage' | 'permissions' | 'users' | 'about'
   >('appearance');
   const [displayNameInput, setDisplayNameInput] = useState(user.displayName);
   const [customWpUrl, setCustomWpUrl] = useState('');
   const [isMuted, setIsMuted] = useState(audioService.isSoundMuted());
   const [volume, setVolumeState] = useState(Math.round(audioService.getVolume() * 100));
+  const [, setForceUpdate] = useState(0);
 
   const handleExportBackup = () => {
     const data = vfs.exportSnapshot();
@@ -84,23 +88,37 @@ export const SettingsApp: React.FC<AppProps> = () => {
       try {
         const text = reader.result as string;
         await vfs.importSnapshot(text);
-        alert('System restored from backup! Restarting session...');
+        await dialogService.alert({
+          title: 'Backup Restored',
+          message: 'System restored successfully from backup! Restarting session now...',
+          level: 'success',
+        });
         rebootSystem();
       } catch (err) {
-        alert(`Failed to restore backup: ${(err as Error).message}`);
+        dialogService.alert({
+          title: 'Restore Failed',
+          message: `Failed to restore backup: ${(err as Error).message}`,
+          level: 'error',
+        });
       }
     };
     reader.readAsText(file);
   };
 
   const handleFactoryReset = async () => {
-    if (
-      confirm(
-        'WARNING: Factory Reset will erase all files, configurations, and settings in AetherOS. Continue?'
-      )
-    ) {
+    const confirmed = await dialogService.confirm({
+      title: 'Factory Reset AetherOS',
+      message: 'WARNING: Factory Reset will erase all files, user accounts, and configurations in AetherOS. Continue?',
+      confirmText: 'Reset Everything',
+      danger: true,
+    });
+    if (confirmed) {
       await vfs.resetFileSystem();
-      alert('AetherOS reset complete. Rebooting system now.');
+      await dialogService.alert({
+        title: 'Reset Complete',
+        message: 'AetherOS reset complete. System will reboot now.',
+        level: 'info',
+      });
       rebootSystem();
     }
   };
@@ -200,6 +218,18 @@ export const SettingsApp: React.FC<AppProps> = () => {
         >
           <HardDrive className="w-4 h-4 text-amber-400" />
           <span>Storage & Backup</span>
+        </button>
+
+        <button
+          onClick={() => setActiveCategory('permissions')}
+          className={`flex items-center gap-2.5 px-3 py-2 text-xs rounded-lg transition-colors ${
+            activeCategory === 'permissions'
+              ? 'bg-cyan-500/20 text-cyan-300 font-semibold'
+              : 'text-gray-300 hover:bg-gray-800'
+          }`}
+        >
+          <Shield className="w-4 h-4 text-emerald-400" />
+          <span>App Permissions</span>
         </button>
 
         <button
@@ -499,6 +529,96 @@ export const SettingsApp: React.FC<AppProps> = () => {
                 <span>Erase All Data & Reset</span>
               </button>
             </div>
+          </div>
+        )}
+
+        {/* APPLICATION PERMISSIONS */}
+        {activeCategory === 'permissions' && (
+          <div className="space-y-6 max-w-xl">
+            <div>
+              <h2 className="text-lg font-bold text-white mb-1">Application Permissions</h2>
+              <p className="text-xs text-gray-400">
+                Inspect and control granular capabilities granted to installed applications.
+              </p>
+            </div>
+
+            {permissionManager.getAllRecords().length === 0 ? (
+              <div className="bg-[#1e293b] p-6 rounded-xl border border-gray-700/60 text-center text-xs text-gray-400">
+                No installed applications have requested permissions yet.
+              </div>
+            ) : (
+              permissionManager.getAllRecords().map((rec) => (
+                <div key={rec.appId} className="bg-[#1e293b] p-4 rounded-xl border border-gray-700/60 space-y-3">
+                  <div className="flex items-center justify-between pb-2 border-b border-gray-700/60">
+                    <div>
+                      <h3 className="font-semibold text-white text-sm">{rec.appId}</h3>
+                      <p className="text-[11px] text-gray-400">
+                        Updated: {new Date(rec.updatedAt).toLocaleString()}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        permissionManager.resetPermissions(rec.appId);
+                        setForceUpdate((v) => v + 1);
+                      }}
+                      className="px-2.5 py-1 text-[11px] rounded bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 transition-colors"
+                    >
+                      Reset Defaults
+                    </button>
+                  </div>
+
+                  <div className="space-y-2">
+                    {rec.requestedScopes.map((scope) => {
+                      const meta = PERMISSION_METADATA[scope as PermissionScope];
+                      const isGranted = permissionManager.hasPermission(rec.appId, scope as PermissionScope);
+                      return (
+                        <div
+                          key={scope}
+                          className="flex items-center justify-between p-2.5 rounded-lg bg-gray-900/60 border border-gray-800 text-xs"
+                        >
+                          <div className="pr-4">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-white">{meta?.name || scope}</span>
+                              <span
+                                className={`px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase ${
+                                  meta?.risk === 'high'
+                                    ? 'bg-red-950 text-red-400 border border-red-800/40'
+                                    : meta?.risk === 'medium'
+                                    ? 'bg-amber-950 text-amber-400 border border-amber-800/40'
+                                    : 'bg-emerald-950 text-emerald-400 border border-emerald-800/40'
+                                }`}
+                              >
+                                {meta?.risk || 'low'}
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-gray-400 mt-0.5">
+                              {meta?.description || scope}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => {
+                              if (isGranted) {
+                                permissionManager.denyPermission(rec.appId, scope as PermissionScope);
+                              } else {
+                                permissionManager.grantPermission(rec.appId, scope as PermissionScope, 'always');
+                              }
+                              setForceUpdate((v) => v + 1);
+                            }}
+                            className={`px-3 py-1 rounded text-xs font-semibold transition-colors ${
+                              isGranted
+                                ? 'bg-emerald-600/80 hover:bg-emerald-500 text-white'
+                                : 'bg-red-600/80 hover:bg-red-500 text-white'
+                            }`}
+                          >
+                            {isGranted ? 'Allowed' : 'Denied'}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         )}
 

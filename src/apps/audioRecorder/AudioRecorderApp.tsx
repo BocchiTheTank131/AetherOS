@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import type { AppProps } from '../types';
 import { vfs } from '../../vfs/vfs';
 import { useSystem } from '../../core/context';
+import { dialogService } from '../../core/dialog';
 import { Mic, Square, Play, Pause, Save } from 'lucide-react';
 
 export const AudioRecorderApp: React.FC<AppProps> = () => {
@@ -13,6 +14,7 @@ export const AudioRecorderApp: React.FC<AppProps> = () => {
   const [isPlaying, setIsPlaying] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
   const recordedBlobUrlRef = useRef<string | null>(null);
@@ -32,9 +34,18 @@ export const AudioRecorderApp: React.FC<AppProps> = () => {
   }, [isRecording]);
 
   useEffect(() => {
+    const player = audioPlayerRef.current;
     return () => {
-      if (recordedBlobUrlRef.current) {
-        URL.revokeObjectURL(recordedBlobUrlRef.current);
+      const url = recordedBlobUrlRef.current;
+      if (url) {
+        URL.revokeObjectURL(url);
+      }
+      const stream = mediaStreamRef.current;
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop());
+      }
+      if (player) {
+        player.pause();
       }
     };
   }, []);
@@ -50,6 +61,7 @@ export const AudioRecorderApp: React.FC<AppProps> = () => {
     try {
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaStreamRef.current = stream;
         const mediaRecorder = new MediaRecorder(stream);
         mediaRecorderRef.current = mediaRecorder;
 
@@ -119,7 +131,11 @@ export const AudioRecorderApp: React.FC<AppProps> = () => {
         });
       }
     } catch (err) {
-      alert(`Save error: ${(err as Error).message}`);
+      dialogService.alert({
+        title: 'Save Failed',
+        message: `Failed to save voice memo: ${(err as Error).message}`,
+        level: 'error',
+      });
     }
   };
 
