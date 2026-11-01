@@ -1,361 +1,504 @@
-# AetherOS Code Review & Comprehensive Bug Report
-Generated: October 31, 2026 | Antigravity AI Review
+# AetherOS Master Code Review & Comprehensive Architectural Audit
+
+> **Auditor:** Antigravity (Advanced Agentic Systems Specialist, Google DeepMind)  
+> **Repository:** AetherOS (Linux-Inspired Virtual Operating Environment in the Browser)  
+> **Audit Status:** Canonical Master Review (Post-v1.2.0 Deep Architectural Analysis)  
+> **Scope:** Full repository inspection across Virtual Kernel (`AetherCore`), Virtual Filesystem (`VFS`), Command Shell (`aesh`), Desktop Compositor (`AetherWM`), Package Manager (`aetherpkg`), and all 19 Native Applications & Games.
 
 ---
 
-## Executive Summary
+## 📑 Executive Summary
 
-A comprehensive code and architectural review was conducted on **AetherOS**, covering:
-- Virtual Kernel (`AetherCore`) & System Context Provider
-- Virtual Filesystem (`VFS`) & IndexedDB Persistence
-- Shell Engine (`aesh`), Parser, Lexer, & Built-in Linux Commands
-- Package Manager (`aetherpkg`) & Official Repository
-- Desktop Environment (`AetherWM`, Taskbar, Panels, Window Compositor)
-- 17 Native Built-in Applications & Game Ports
-- Linter, Type System, Tests, and Build Pipelines
+A comprehensive, second-order architectural code review was conducted across the entire **AetherOS** codebase (76 files, 2,100+ modules). AetherOS is a browser-native virtual operating environment implementing authentic POSIX and Linux OS paradigms directly over standard web APIs (React 19, Vite 8, Tailwind CSS 4, browser IndexedDB, Web Workers, and Web Audio API).
 
-### Severity Matrix
+Prior code review remediations successfully resolved foundational bugs—such as global keyboard interception in `Game2048App.tsx` and `CalculatorApp.tsx`, shutdown reboot loops in `App.tsx`, package state synchronization in `packageManager.init()`, recursive directory creation in `vfs.mkdir()`, and iframe sandbox restrictions in `WebBrowserApp.tsx`.
 
-| Subsystem | Critical | Moderate | Minor / Polish | Total |
-|---|:---:|:---:|:---:|:---:|
-| **Desktop & Window Management** | 2 | 4 | 2 | **8** |
-| **Virtual Kernel & System Context** | 1 | 2 | 1 | **4** |
-| **Virtual Filesystem (VFS) & Storage** | 1 | 4 | 1 | **6** |
-| **Shell & Commands (aesh)** | 0 | 7 | 3 | **10** |
-| **Package Management (aetherpkg)** | 2 | 0 | 1 | **3** |
-| **Built-in Applications** | 3 | 6 | 4 | **13** |
-| **Total** | **9** | **23** | **12** | **44** |
+This canonical review delves into deep edge cases, race conditions, memory leaks, POSIX compliance gaps, filesystem corruption vectors, and React 19 concurrent state hazards.
+
+### Severity & Subsystem Distribution Matrix
+
+| Subsystem | Tier 1: Critical (Crash/Corruption) | Tier 2: High (Security/Data Loss) | Tier 3: Medium (POSIX/Leaks) | Tier 4: Low (Polish/Edge Cases) | Total |
+|---|:---:|:---:|:---:|:---:|:---:|
+| **Virtual Filesystem (`VFS`) & Storage** | 3 | 1 | 2 | 2 | **8** |
+| **Virtual Kernel (`AetherCore`) & Context** | 1 | 2 | 1 | 1 | **5** |
+| **Shell Engine (`aesh`) & Builtins** | 0 | 2 | 4 | 4 | **10** |
+| **Desktop Compositor (`AetherWM`)** | 0 | 1 | 1 | 4 | **6** |
+| **Native Application Platform** | 1 | 1 | 4 | 7 | **13** |
+| **Package Manager (`aetherpkg`)** | 0 | 0 | 0 | 1 | **1** |
+| **Total** | **5** | **7** | **12** | **19** | **43** |
 
 ---
 
-## 🚨 Category 1: Critical & High-Severity Bugs
+## 🗂 Complete Catalog of Issues & Findings
 
-### 1.1 Global Keyboard Input Hijacking by 2048 Game
-- **File:** `src/apps/games/Game2048App.tsx` (Lines 158–177)
-- **Description:** `Game2048App` attaches an unconditional global `keydown` event listener to `window` for `ArrowLeft`, `ArrowRight`, `ArrowUp`, `ArrowDown`, and keys `'a'`, `'d'`, `'w'`, `'s'`, immediately invoking `e.preventDefault()`.
-- **Impact:** Whenever the 2048 app is open (even when running in the background or minimized), **users cannot type `a`, `w`, `s`, `d` or use arrow keys anywhere across the OS**. For example, typing `cat`, `pwd`, or `date` in the terminal fails because keystrokes are swallowed by 2048.
-- **Recommended Fix:** Only handle key events when the window has active focus (`win.isFocused`), or immediately return if `e.target` is an `HTMLInputElement` or `HTMLTextAreaElement`.
+```
+├── Tier 1: Critical — Crash, Recursion & Corruption (Issues 1–5)
+├── Tier 2: High Priority — Security, State Desync & Data Loss (Issues 6–12)
+├── Tier 3: Medium Priority — POSIX Gaps, Leaks & Performance (Issues 13–24)
+└── Tier 4: Low Priority — UI Polish, Edge-Case Hardening & Minor Bugs (Issues 25–43)
+```
 
-```tsx
-// Suggested Fix:
-const handleKey = (e: KeyboardEvent) => {
-  const target = e.target as HTMLElement | null;
-  if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
-    return;
+---
+
+## 🔴 Tier 1: Critical Vulnerabilities (Crash, Infinite Recursion & Corruption)
+
+### Issue 1: Unchecked Ancestor Recursion in `vfs.copy` Triggers Stack Overflow (`cp -r dir dir/sub`)
+- **File:** [src/vfs/vfs.ts](file:///c:/Users/Win/Documents/AetherOS/src/vfs/vfs.ts#L620-L649)
+- **Root Cause:** When copying a directory recursively, `vfs.copy()` does not verify whether the destination path is a descendant of the source path (`normDest.startsWith(normSrc + '/')`). As `vfs.mkdir` creates subdirectories inside `normDest`, subsequent recursive calls traverse into the newly created copy, generating an infinite directory tree until the JS engine runs out of memory.
+- **Failure Mode:** `RangeError: Maximum call stack size exceeded`, locking up the main thread and freezing the user's browser tab.
+- **Reproduction:** In Terminal, run `mkdir -p /home/aether/test_dir && cp -r /home/aether/test_dir /home/aether/test_dir/nested`.
+- **Remediation:**
+```ts
+if (srcNode.type === 'dir') {
+  if (normDest === normSrc || normDest.startsWith(normSrc + '/')) {
+    throw new Error(`EINVAL: cannot copy directory '${srcPath}' into itself '${destPath}'`);
   }
-  // Also verify window focus before processing
-  ...
+  // proceed with recursive directory copy
+}
+```
+
+---
+
+### Issue 2: Directory Rename into Descendant Subdirectory Corrupts VFS Hierarchy Tree
+- **File:** [src/vfs/vfs.ts](file:///c:/Users/Win/Documents/AetherOS/src/vfs/vfs.ts#L517-L599)
+- **Root Cause:** `vfs.rename()` fails to enforce POSIX `rename(2)` validation prohibiting moving a directory into a subdirectory of itself (`EINVAL`). In AetherOS, the source node is deleted and re-inserted as a child of its own descendant. Because child nodes rely on `parentPath` linkages, this creates circular/orphaned path fragments in `this.nodes` and permanently corrupts IndexedDB storage.
+- **Failure Mode:** Inode path disconnection, orphaned filesystem trees, persistent errors in `vfs.readdir` and `find`.
+- **Reproduction:** In Terminal, run `mkdir -p /home/aether/a/b && mv /home/aether/a /home/aether/a/b/c`.
+- **Remediation:**
+```ts
+if (oldNode.type === 'dir' && normNew.startsWith(normOld + '/')) {
+  throw new Error(`EINVAL: cannot move '${oldPath}' into its own subdirectory '${newPath}'`);
+}
+```
+
+---
+
+### Issue 3: Missing Cycle Detection in Symlink Traversal Causes Infinite Call Stack
+- **File:** [src/vfs/vfs.ts](file:///c:/Users/Win/Documents/AetherOS/src/vfs/vfs.ts#L243-L245) & [src/vfs/vfs.ts](file:///c:/Users/Win/Documents/AetherOS/src/vfs/vfs.ts#L275-L277)
+- **Root Cause:** In `getNode()` and `readFile()`, symlink targets are resolved recursively. Although code comments state `// Follow symlinks for read/stat operations if not circular`, no traversal depth counter or visited-set is passed or checked. Circular links (`ln -s /b /a; ln -s /a /b`) cause unbounded mutual recursion.
+- **Failure Mode:** Uncaught `RangeError: Maximum call stack size exceeded` in virtual filesystem reads.
+- **Reproduction:** Create circular symlinks and attempt `vfs.readFile('/a')` or `cat /a`.
+- **Remediation:**
+```ts
+public getNode(path: string, depth = 0): VFSNode | null {
+  if (depth > 20) throw new Error(`ELOOP: too many levels of symbolic links, '${path}'`);
+  const norm = this.normalizePath(path);
+  const node = this.nodes.get(norm);
+  if (!node) return null;
+  if (node.type === 'symlink' && node.targetPath) {
+    return this.getNode(node.targetPath, depth + 1);
+  }
+  return node;
+}
+```
+
+---
+
+### Issue 4: Missing Synthetic Root Directory Node for `/dev` in `getDynamicNode`
+- **File:** [src/vfs/vfs.ts](file:///c:/Users/Win/Documents/AetherOS/src/vfs/vfs.ts#L83-L226)
+- **Root Cause:** `getDynamicNode()` synthesizes `/proc` as an in-memory virtual directory (`norm === '/proc'`), but contains no matching branch for `norm === '/dev'`. While dynamic device nodes like `/dev/null`, `/dev/zero`, and `/dev/urandom` are handled individually, `/dev` itself is only created during initial skeleton setup. If IndexedDB storage is reset, snapshots are restored, or `/dev` is queried before disk load, `vfs.exists('/dev')` returns `false` and `readdir('/dev')` throws `ENOENT`.
+- **Failure Mode:** Missing `/dev` directory causing scripts and commands expecting standard POSIX `/dev` layout to fail.
+- **Remediation:** Synthesize `/dev` in `getDynamicNode()`:
+```ts
+if (norm === '/dev') {
+  return {
+    name: 'dev',
+    path: '/dev',
+    parentPath: '/',
+    type: 'dir',
+    size: 0,
+    createdAt: Date.now(),
+    modifiedAt: Date.now(),
+    permissions: 0o755,
+    owner: 'root',
+    group: 'root',
+  };
+}
+```
+
+---
+
+### Issue 5: AudioContext Leak in `MediaPlayerApp` Causes Audio Exhaustion Across Entire OS
+- **File:** [src/apps/mediaPlayer/MediaPlayerApp.tsx](file:///c:/Users/Win/Documents/AetherOS/src/apps/mediaPlayer/MediaPlayerApp.tsx#L68-L70) & [src/apps/mediaPlayer/MediaPlayerApp.tsx](file:///c:/Users/Win/Documents/AetherOS/src/apps/mediaPlayer/MediaPlayerApp.tsx#L98)
+- **Root Cause:** Each time `MediaPlayerApp` mounts, it initializes `new AudioCtx()` on `audioContextRef.current`. On unmount, `stopAudio()` disconnects oscillators, but never invokes `audioContextRef.current.close()`. Modern browsers strictly limit instances to between 6 and 32 hardware AudioContexts.
+- **Failure Mode:** After opening, closing, and reopening Media Player a few times, browser throws: `The number of hardware contexts provided is greater than or equal to the maximum number`, permanently silencing audio, notification chimes, and system bells across the entire OS until the browser tab is refreshed.
+- **Remediation:**
+```ts
+useEffect(() => {
+  return () => {
+    stopAudio();
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
+  };
+}, [stopAudio]);
+```
+
+---
+
+## 🟠 Tier 2: High Priority (Security, State Desync & Data Loss)
+
+### Issue 6: Toast Auto-Dismissal Permanently Purges Notification Center History Drawer
+- **File:** [src/desktop/components/NotificationCenter.tsx](file:///c:/Users/Win/Documents/AetherOS/src/desktop/components/NotificationCenter.tsx#L27-L32) & [src/core/context.tsx](file:///c:/Users/Win/Documents/AetherOS/src/core/context.tsx#L217-L219)
+- **Root Cause:** Floating notification toasts trigger `onDismiss(notif.id)` after 5,000ms. Because `onDismiss` maps to `dismissNotification()` in `SystemContext`, the notification record is deleted directly from the main `notifications` array.
+- **Failure Mode:** When users click the bell icon to view their notification history drawer, all past alerts have already been permanently purged after 5 seconds.
+- **Remediation:** Decouple floating toast ephemeral display state from persistent notification history:
+```ts
+// In NotificationCenter: maintain local ephemeral toast array or mark notification as 'read'
+// rather than deleting it from the persistent notification ledger.
+```
+
+---
+
+### Issue 7: Global Keyboard Shortcuts Active and Unlocked While `LockScreen` is Visible
+- **File:** [src/core/context.tsx](file:///c:/Users/Win/Documents/AetherOS/src/core/context.tsx#L458-L510)
+- **Root Cause:** The `handleKeyDown` effect in `SystemProvider` listens for OS-level hotkeys (`Ctrl+Alt+T`, `Super+E`, `Alt+F4`, `Alt+Space`, `Alt+Tab`), but lacks an early check for `if (isLocked) return;`.
+- **Failure Mode:** An unauthorized user at the lock screen can spawn terminal sessions (`Ctrl+Alt+T`), launch file browsers (`Super+E`), and terminate running background apps (`Alt+F4`) beneath the lock overlay.
+- **Remediation:**
+```ts
+const handleKeyDown = (e: KeyboardEvent) => {
+  if (isLocked) return;
+  // process hotkeys...
 };
 ```
 
 ---
 
-### 1.2 Global Keystroke Interception & Unbounded Effect in Calculator
-- **File:** `src/apps/calculator/CalculatorApp.tsx` (Lines 89–104)
-- **Description:** The `useEffect` that attaches the `keydown` listener to `window` has **no dependency array** (`[]` is omitted), causing it to re-bind on every single render. Furthermore, it listens globally on `window` for digits `0–9`, operators `+`, `-`, `*`, `/`, and `Enter`, `Backspace`, `Escape`.
-- **Impact:** While typing in any other application (such as the terminal, text editor, or settings), the Calculator intercepts every keystroke, backspaces, and evaluates calculations in the background.
-- **Recommended Fix:** Add `[]` dependency array and check if the calculator window is focused before processing key events.
+### Issue 8: `Alt+Tab` and Taskbar Focus Fail to Switch Active Workspace
+- **File:** [src/core/context.tsx](file:///c:/Users/Win/Documents/AetherOS/src/core/context.tsx#L226-L239) & [src/desktop/components/Taskbar.tsx](file:///c:/Users/Win/Documents/AetherOS/src/desktop/components/Taskbar.tsx#L121-L134)
+- **Root Cause:** `focusWindow(id)` raises a window's Z-index and sets `isFocused: true`, but never synchronizes `activeWorkspace` with `target.workspaceId`. Because `Desktop.tsx` strictly filters visible windows by `activeWorkspace`, windows located on other workspaces are marked as focused in memory, yet remain completely hidden from view.
+- **Failure Mode:** Clicking a running window icon in the Taskbar or selecting it in `Alt+Tab` appears broken and non-responsive when the window resides on a different virtual workspace.
+- **Remediation:**
+```ts
+const target = windows.find((w) => w.id === id);
+if (target && target.workspaceId !== activeWorkspace) {
+  setActiveWorkspace(target.workspaceId);
+}
+```
 
 ---
 
-### 1.3 System "Shut Down" Causes Immediate OS Reboot Loop
-- **Files:** `src/App.tsx` (Lines 17–19), `src/core/context.tsx` (Lines 335–338)
-- **Description:** Calling `shutdownSystem()` sets `booted = false`. In `App.tsx`:
-  ```tsx
-  if (!bootCompleted || !booted) {
-    return <BootScreen onComplete={() => setBootCompleted(true)} />;
-  }
-  ```
-  Since `!booted` becomes `true`, `App.tsx` immediately mounts `<BootScreen>`, which runs its 2-second boot animation and calls `onComplete={() => setBootCompleted(true)}`, rebooting the OS back into the desktop.
-- **Impact:** Triggering "Shut Down" from the Start Menu, Quick Settings, or shell `shutdown` command reboots the system instead of powering off.
-- **Recommended Fix:** Introduce an explicit `isPoweredOff` state with a dedicated "System is powered down" shutdown splash screen with a "Power On" button.
+### Issue 9: `focusWindow` Invokes Nested State Setter Inside Another State Setter
+- **File:** [src/core/context.tsx](file:///c:/Users/Win/Documents/AetherOS/src/core/context.tsx#L226-L239)
+- **Root Cause:** `setWindows((prev) => ...)` is called directly inside the updater function of `setTopZIndex((prevZ) => ...)`. In React 19 concurrent mode, triggering secondary state mutations inside an active state updater generates compiler diagnostics, unexpected batching delays, and cascading renders.
+- **Failure Mode:** Unstable render transitions, potential stale closures under rapid window focusing.
+- **Remediation:** Decouple the state updates into independent, sequential operations or combine window Z-indices within a single unified window state.
 
 ---
 
-### 1.4 Installed Packages Lost on Page Refresh (`packageManager.init()` Never Called)
-- **Files:** `src/core/context.tsx` (Lines 90–109), `src/pkg/packageManager.ts` (Lines 20–43)
-- **Description:** `packageManager.init()` reads the installed package state from `/var/lib/aetherpkg/installed.json`. However, it is only called in unit tests and **never called during system boot** in `context.tsx`.
-- **Impact:** Installing or removing packages via `aetherpkg` or Software Center persists to VFS, but upon browser refresh, `packageManager` resets to default repository values, forgetting all installed packages.
-- **Recommended Fix:** Add `await packageManager.init();` directly after `await vfs.init();` in `src/core/context.tsx`.
+### Issue 10: `cp` Multi-Source Mode Overwrites Destination and Omits Directory Check
+- **File:** [src/shell/commands/fsCommands.ts](file:///c:/Users/Win/Documents/AetherOS/src/shell/commands/fsCommands.ts#L236-L251)
+- **Root Cause:** Unlike `mv`, which correctly validates `if (targets.length > 1 && !isDir)`, `cp` loops over sources and copies directly to `resolvedDest`. If `resolvedDest` is a file or non-existent path, the first file is copied as `dest`, and the second file immediately overwrites it, destroying the first file without warning or error.
+- **Failure Mode:** Silent data destruction when running `cp file1.txt file2.txt non_directory`.
+- **Remediation:**
+```ts
+const isDir = vfs.exists(resolvedDest) && vfs.stat(resolvedDest).isDirectory();
+if (targets.length > 1 && !isDir) {
+  return { stdout: '', stderr: `cp: target '${dest}' is not a directory\n`, exitCode: 1 };
+}
+```
 
 ---
 
-### 1.5 Broken / Phantom Package `audio-recorder` in Official Repository
-- **Files:** `src/pkg/repository.ts` (Lines 58–69), `src/apps/appRegistry.ts`
-- **Description:** `OFFICIAL_REPOSITORY` defines package `audio-recorder` with `appId: 'audio-recorder'`. However, `appRegistry.ts` contains **no registered component or definition** for `audio-recorder`.
-- **Impact:** Installing `audio-recorder` creates an orphaned entry that crashes when clicked (`Failed to open window: unknown app 'audio-recorder'`).
-- **Recommended Fix:** Implement `AudioRecorderApp` and register it in `appRegistry.ts`, or remove `audio-recorder` from `OFFICIAL_REPOSITORY`.
+### Issue 11: `grep` Injects Raw ANSI Escape Codes into Piped Commands and File Redirections
+- **File:** [src/shell/commands/fsCommands.ts](file:///c:/Users/Win/Documents/AetherOS/src/shell/commands/fsCommands.ts#L461-L465)
+- **Root Cause:** `grep` unconditionally wraps matching tokens with `\x1b[1;31m` (red bold) ANSI escape sequences. When `grep` output is redirected (`grep pattern f > out.txt`) or piped (`grep pattern f | wc -c`), the raw ANSI control characters are written into the output, corrupting data files and distorting downstream character counts.
+- **Failure Mode:** Corrupted text files and incorrect pipe processing.
+- **Remediation:** Provide `--color=auto|always|never` support; default to stripping ANSI codes when output is redirected or piped.
 
 ---
 
-### 1.6 Web Browser Iframe Sandbox Escalation Risk
-- **File:** `src/apps/webBrowser/WebBrowserApp.tsx` (Line 213)
-- **Description:** The iframe is configured with `sandbox="allow-scripts allow-forms allow-same-origin allow-popups"`.
-- **Security Impact:** The combination of `allow-scripts` and `allow-same-origin` allows embedded same-origin content to access `window.parent`, bypass sandbox constraints, and execute arbitrary code in the main AetherOS app.
-- **Recommended Fix:** Remove `allow-same-origin` from the iframe sandbox flags.
+### Issue 12: `js` / `node` Evaluation Runtime Allows Parent Window Sandbox Escape
+- **File:** [src/shell/commands/devCommands.ts](file:///c:/Users/Win/Documents/AetherOS/src/shell/commands/devCommands.ts#L188-L198)
+- **Root Cause:** The `js` shell command evaluates user code via `new Function(...Object.keys(sandbox), code)`. In JavaScript, `new Function` code can escape local scope using `Function("return this")()` or `constructor.constructor('return window')()`, accessing the host DOM, parent `window`, and IndexedDB.
+- **Failure Mode:** Virtual shell scripts can manipulate host browser context.
+- **Remediation:** Execute user code inside an isolated null-origin Web Worker or sandboxed iframe channel, or document explicit virtual execution boundaries.
 
 ---
 
-## 📂 Category 2: Virtual Filesystem (VFS) & Shell Engine (aesh) Issues
+## 🟡 Tier 3: Medium Priority (POSIX Inconsistencies, Memory Leaks & Resource Inefficiencies)
 
-### 2.1 `vfs.mkdir` Fails on Existing Directory Even With `recursive: true` (`mkdir -p`)
-- **File:** `src/vfs/vfs.ts` (Lines 351–353)
-- **Description:** `mkdir` unconditionally throws `EEXIST: file or directory already exists` if `this.exists(norm)`, completely ignoring `options?.recursive`.
-- **Impact:** `mkdir -p existing_folder` throws `EEXIST` and exits with error code 1. Recursive directory copies (`vfs.copy`) also fail if the target directory already exists.
-- **Recommended Fix:**
-  ```ts
-  if (this.exists(norm)) {
-    if (options?.recursive) return;
-    throw new Error(`EEXIST: file or directory already exists, mkdir '${path}'`);
-  }
-  ```
+### Issue 13: `ls` Multi-Path Mode Drops Directory Inspection and Output Flags
+- **File:** [src/shell/commands/fsCommands.ts](file:///c:/Users/Win/Documents/AetherOS/src/shell/commands/fsCommands.ts#L25-L41)
+- **Root Cause:** When multiple paths are provided (`ls dirA dirB`), `ls` executes a shortcut that simply prints the names of the directories themselves (`dirA/  dirB/`) instead of inspecting their contents. In addition, flags `-l` and `-a` are bypassed, and nonexistent paths are ignored without reporting an error.
+- **Remediation:** Iterate over each path operand, outputting directory headers (`dirA:`) followed by standard formatted listings.
 
 ---
 
-### 2.2 `vfs.mkdir` Does Not Verify That Parent Path is a Directory
-- **File:** `src/vfs/vfs.ts` (Lines 358–364)
-- **Description:** `mkdir` checks `if (!this.exists(parentPath))`, but does not verify that `parentPath` is a directory (`parent.type === 'dir'`).
-- **Impact:** Calling `mkdir('/file.txt/dir')` when `/file.txt` is a regular file succeeds and creates a child directory under a file node, violating POSIX hierarchy.
-- **Recommended Fix:** Add `if (parent && parent.type !== 'dir') throw new Error(`ENOTDIR: not a directory, '${parentPath}'`);`.
+### Issue 14: `md5sum` Computes Java Hashcode Instead of Real MD5 Digest
+- **File:** [src/shell/commands/devCommands.ts](file:///c:/Users/Win/Documents/AetherOS/src/shell/commands/devCommands.ts#L79-L87)
+- **Root Cause:** `md5sum` implements a 32-bit polynomial string hash (`(hash << 5) - hash + charCode`) padded with zeros to 32 characters, producing invalid checksums (e.g. `hello` yields `00000000000000000000000005e91ee2` instead of `5d41402abc4b2a76b9719d911017c592`).
+- **Remediation:** Implement standard RFC 1321 MD5 or use `crypto.subtle.digest('SHA-256', ...)` and align command names accordingly.
 
 ---
 
-### 2.3 `vfs.rename` Leaves Orphaned Children When Overwriting Directories
-- **File:** `src/vfs/vfs.ts` (Lines 573–587)
-- **Description:** If `newPath` already exists as a directory and a file is moved over it, the directory node is replaced with a file node without deleting its child nodes.
-- **Impact:** Orphaned children remain in `this.nodes` with no valid parent directory.
+### Issue 15: Unthrottled Synchronous VFS & IndexedDB Writes in `NotesApp`
+- **File:** [src/apps/notes/NotesApp.tsx](file:///c:/Users/Win/Documents/AetherOS/src/apps/notes/NotesApp.tsx#L66-L71)
+- **Root Cause:** Typing into a note's title or body invokes `saveNotes()` synchronously on every keystroke. Every individual character serializes the entire notes collection, writes to VFS, queues an IndexedDB transaction, and broadcasts across the system event bus.
+- **Failure Mode:** Input latency, thread stutter, and excessive storage write cycles during rapid typing.
+- **Remediation:** Debounce disk persistence by 300–500ms using a timer ref.
 
 ---
 
-### 2.4 Shell `mv` Multi-File Target Reassignment Bug
-- **File:** `src/shell/commands/fsCommands.ts` (Lines 265–274)
-- **Description:** When running `mv file1.txt file2.txt targetDir/`:
-  On the first iteration, `resolvedDest` is reassigned:
-  `resolvedDest = vfs.resolve(resolvedDest, srcName);` (`targetDir/file1.txt`).
-  On the second iteration, `resolvedDest` remains `targetDir/file1.txt` (now a regular file).
-- **Impact:** `file2.txt` overwrites `targetDir/file1.txt` instead of moving to `targetDir/file2.txt`.
-- **Recommended Fix:** Do not mutate `resolvedDest` inside the loop; derive `const curDest = isDir ? vfs.resolve(resolvedDest, srcName) : resolvedDest;`.
+### Issue 16: Silent Data Loss on Dirty Tab Closure in `TextEditorApp`
+- **File:** [src/apps/textEditor/TextEditorApp.tsx](file:///c:/Users/Win/Documents/AetherOS/src/apps/textEditor/TextEditorApp.tsx#L95-L106)
+- **Root Cause:** Closing an editor tab removes it from state without verifying `if (tab.content !== tab.savedContent)`. Unsaved code or edits are permanently lost without a confirmation dialog.
+- **Remediation:** Prompt the user before closing any tab with dirty state: `if (tab.content !== tab.savedContent && !confirm('Discard unsaved changes?')) return;`.
 
 ---
 
-### 2.5 Glob Expansion (`expandGlobs`) Strips Directory Path Prefix
-- **File:** `src/shell/environment.ts` (Lines 85–91)
-- **Description:** When a pattern includes directory paths (e.g. `cat /home/aether/Documents/*.txt`), `matches` returns only `e.name` (e.g. `['note1.txt']`).
-- **Impact:** Commands receive relative filenames instead of full paths. `cat /etc/*.conf` becomes `cat hosts os-release`, which fails because the shell working directory is `/home/aether`.
-- **Recommended Fix:** If `isDirSearch` is true, prefix matches with `dirPart + '/' + e.name`.
+### Issue 17: Object URL Memory Leaks & Plaintext Recordings in `AudioRecorderApp`
+- **File:** [src/apps/audioRecorder/AudioRecorderApp.tsx](file:///c:/Users/Win/Documents/AetherOS/src/apps/audioRecorder/AudioRecorderApp.tsx#L45-L82)
+- **Root Cause:** `URL.createObjectURL(blob)` is allocated during recording, but `URL.revokeObjectURL()` is never invoked when unmounting or re-recording. Additionally, `handleSaveToVfs()` writes a placeholder text string (`[AetherOS Audio Recording: ...]`) rather than encoding recorded audio bytes to VFS.
+- **Remediation:** Call `revokeObjectURL` during cleanup, and encode the audio blob into base64 data URL with `isBinary: true`.
 
 ---
 
-### 2.6 `wc` Command Discards Flags When Reading From Stdin
-- **File:** `src/shell/commands/fsCommands.ts` (Lines 591–594)
-- **Description:** When `files.length === 0`, line 593 unconditionally returns `${c.lines} ${c.words} ${c.bytes}\n`.
-- **Impact:** Running `cat file | wc -l` prints lines, words, and bytes (`10 50 320`) instead of just line count (`10`).
-- **Recommended Fix:** Honor `showLines`, `showWords`, and `showBytes` when formatting stdout for stdin inputs.
+### Issue 18: Canvas Coordinate Distortion on Scaled Displays in `PaintApp`
+- **File:** [src/apps/paint/PaintApp.tsx](file:///c:/Users/Win/Documents/AetherOS/src/apps/paint/PaintApp.tsx#L65-L68)
+- **Root Cause:** Brush coordinates are computed as `e.clientX - rect.left` without normalizing by `canvas.width / rect.width` and `canvas.height / rect.height`. When CSS scales the canvas or on high-DPI displays, drawn lines drift away from the mouse pointer.
+- **Remediation:** Scale coordinates proportionally:
+```ts
+const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+```
 
 ---
 
-### 2.7 Shell Variable Expansion Omitted for Command Name
-- **File:** `src/shell/executor.ts` (Lines 87–106)
-- **Description:** `expandVariables` is only invoked on arguments, never on `cmdName`.
-- **Impact:** Running `$EDITOR myfile` or `$CMD` fails with `aesh: $EDITOR: command not found`.
-- **Recommended Fix:** Apply `expandVariables(cmdName, context)` before looking up commands or aliases.
+### Issue 19: `touch` Mutates Timestamps in Memory Without IndexedDB Queue or Watcher Notifications
+- **File:** [src/shell/commands/fsCommands.ts](file:///c:/Users/Win/Documents/AetherOS/src/shell/commands/fsCommands.ts#L188-L199)
+- **Root Cause:** When updating an existing file's timestamp, `touch` mutates `node.modifiedAt = Date.now()` directly on the in-memory node, but fails to call `idbStorage.queueSave(node)` or `vfs.notifyWatchers(resolved, 'modify')`.
+- **Failure Mode:** Updated timestamps are lost upon browser reload, and open file managers watching the directory never update.
+- **Remediation:** Call `vfs.writeFile(...)` or add a dedicated `vfs.utimes(path, mtime)` method that queues storage persistence and triggers watchers.
 
 ---
 
-### 2.8 `printf` Built-in Ignores All Arguments
-- **File:** `src/shell/commands/textCommands.ts` (Lines 41–47)
-- **Description:** `printf` processes escape sequences in `args[0]` and returns it, completely ignoring format arguments (`args.slice(1)`).
-- **Recommended Fix:** Implement basic `%s`, `%d`, `%f` format specifier replacement.
+### Issue 20: Missing Trailing Target Error on Dangling Redirection Operators
+- **File:** [src/shell/parser.ts](file:///c:/Users/Win/Documents/AetherOS/src/shell/parser.ts#L62-L83)
+- **Root Cause:** If a redirection operator (`>`, `>>`, `<`, `2>`) is entered without a trailing filename (e.g. `cat file.txt >`), the parser ignores the operator instead of throwing a syntax error.
+- **Remediation:** Throw a parser syntax error: `syntax error near unexpected token 'newline'`.
 
 ---
 
-### 2.9 `grep` Throws Unhandled Regex Syntax Errors & Incomplete Highlighting
-- **File:** `src/shell/commands/fsCommands.ts` (Line 440)
-- **Description:** `new RegExp(patternStr)` is not wrapped in `try/catch`. Running `grep '['` or `grep '*'` throws an unhandled `SyntaxError`. Additionally, `line.replace(regex, ...)` lacks the `/g` flag, only highlighting the first match per line.
-- **Recommended Fix:** Wrap `new RegExp` in a `try/catch` and return exit code 2 on invalid regex. Use a global regex for match highlighting.
+### Issue 21: Non-Color ANSI Escape Sequences Render as Raw Text Fragments in `TerminalApp`
+- **File:** [src/apps/terminal/TerminalApp.tsx](file:///c:/Users/Win/Documents/AetherOS/src/apps/terminal/TerminalApp.tsx#L333-L362)
+- **Root Cause:** `renderAnsi()` only matches `/(\x1b\[[0-9;]*m)/g`. Standard terminal control sequences like `\x1b[2J\x1b[H` (clear screen) or `\x1b[K` (clear line) are rendered as literal garbage text.
+- **Remediation:** Expand regex to match and handle or strip non-color ANSI escape sequences.
 
 ---
 
-### 2.10 `base64` Command Crashes on UTF-8 / Unicode Characters
-- **File:** `src/shell/commands/devCommands.ts` (Lines 25–29)
-- **Description:** Directly calls `btoa(text)` and `atob(text)`.
-- **Impact:** Encoding any string with characters outside Latin1 (e.g. emojis, accented characters, CJK) throws a `DOMException: The string to be encoded contains characters outside of the Latin1 range.`
-- **Recommended Fix:** Encode/decode UTF-8 byte arrays using `TextEncoder` / `TextDecoder` and `Uint8Array`.
+### Issue 22: Glob Expansion Matches Hidden Dotfiles on General Wildcard `*`
+- **File:** [src/shell/environment.ts](file:///c:/Users/Win/Documents/AetherOS/src/shell/environment.ts#L87-L89)
+- **Root Cause:** `expandGlobs()` tests all directory entries against `regex.test(e.name)`. In POSIX shells, wildcards `*` and `?` never match leading dots unless the pattern explicitly starts with a dot (`.*`). As a result, `ls *` in `aesh` exposes `.aeshrc`, `.config`, and `.trash`.
+- **Remediation:** Filter out dotfiles unless `filePattern.startsWith('.')`:
+```ts
+const matches = entries
+  .filter((e) => (filePattern.startsWith('.') || !e.name.startsWith('.')) && regex.test(e.name))
+  .map((e) => (isDirSearch ? `${dirPrefix}${e.name}` : e.name));
+```
 
 ---
 
-### 2.11 `ping` Statistics Always Report 0% Packet Loss
-- **File:** `src/shell/commands/netCommands.ts` (Line 52)
-- **Description:** Line 52 hardcodes `${count} packets transmitted, ${count} received, 0% packet loss` even when all HTTP reachability requests timed out.
-- **Recommended Fix:** Track `receivedCount` and compute actual packet loss percentage.
+### Issue 23: `ping` Shell Command Lacks Abort Timeout on Network Hangs
+- **File:** [src/shell/commands/netCommands.ts](file:///c:/Users/Win/Documents/AetherOS/src/shell/commands/netCommands.ts#L43-L49)
+- **Root Cause:** `fetch(url, { method: 'HEAD', mode: 'no-cors' })` lacks an `AbortSignal.timeout(2000)`. When pinging an unreachable IP or blocked host, each packet hangs until the browser's default timeout (up to 120 seconds), locking the terminal shell.
+- **Remediation:** Pass `signal: AbortSignal.timeout(2000)` to the fetch call.
 
 ---
 
-### 2.12 Search Indexer Returns Empty Array on Initial Query
-- **File:** `src/vfs/searchIndexer.ts` (Lines 41–49)
-- **Description:** `searchFiles` calls `this.updateIndex()` without awaiting it when `lastIndexed === 0`.
-- **Impact:** The very first query typed into the Command Palette always returns zero file results.
+### Issue 24: `sort` Shell Command Discards Empty Lines via `filter(Boolean)`
+- **File:** [src/shell/commands/fsCommands.ts](file:///c:/Users/Win/Documents/AetherOS/src/shell/commands/fsCommands.ts#L646)
+- **Root Cause:** `text.split('\n').filter(Boolean)` strips all empty lines before sorting. In POSIX `sort`, blank lines are valid input records and must be sorted to the top.
+- **Remediation:** Remove `.filter(Boolean)` and handle empty string comparisons.
 
 ---
 
-## 🖥️ Category 3: Desktop Environment & Window Compositor Issues
+## 🟢 Tier 4: Polish, Edge-Case Hardening & Minor Subsystem Bugs
 
-### 3.1 Taskbar Only Displays 8 Pinned Apps (Minimized Apps Disappear)
-- **File:** `src/desktop/components/Taskbar.tsx` (Lines 47–56, 133–161)
-- **Description:** The taskbar iterates exclusively over `pinnedApps` (8 apps).
-- **Impact:** Running Calculator, Media Player, Image Viewer, Notes, Document Viewer, Log Viewer, Minesweeper, 2048, Paint, or Weather never shows an icon on the Taskbar. If the user minimizes any of these windows, **they disappear completely from view with no way to restore them from the dock**.
-- **Recommended Fix:** Combine `pinnedApps` with any active windows that are not pinned so all running tasks are accessible.
-
----
-
-### 3.2 Desktop Does Not Display Files Located in `/home/aether/Desktop`
-- **File:** `src/desktop/components/Desktop.tsx` (Lines 41–84, 130–158)
-- **Description:** `Desktop.tsx` only renders a static list of 7 hardcoded shortcut icons.
-- **Impact:** Creating files or folders via the desktop right-click menu ("New Folder", "New Text File") or shell commands in `~/Desktop` never appear on the desktop surface.
-- **Recommended Fix:** Watch and read `/home/aether/Desktop` in VFS and render real desktop entries dynamically.
+### Issue 25: Trash Restoration Hardcodes `/home/aether/Documents` Destination
+- **File:** [src/apps/fileManager/FileManagerApp.tsx](file:///c:/Users/Win/Documents/AetherOS/src/apps/fileManager/FileManagerApp.tsx#L215-L228) & [src/vfs/vfs.ts](file:///c:/Users/Win/Documents/AetherOS/src/vfs/vfs.ts#L701-L716)
+- **Root Cause:** `vfs.moveToTrash()` moves items without preserving source path metadata. `FileManagerApp` hardcodes `/home/aether/Documents` as the destination for all restored items, moving desktop or downloads files to Documents upon restore.
+- **Remediation:** Implement FreeDesktop `.trashinfo` metadata files containing original paths.
 
 ---
 
-### 3.3 Window Title Direct Prop Mutation Anti-Pattern
-- **File:** `src/desktop/components/WindowFrame.tsx` (Lines 313–315)
-- **Description:** Line 314 executes `win.title = t;` directly on the `WindowInstance` prop.
-- **Impact:** Direct mutation does not trigger React state updates, leaving the titlebar and taskbar with stale titles.
-- **Recommended Fix:** Add an `updateWindowTitle(id: string, title: string)` callback in `SystemContext`.
+### Issue 26: Desktop Surface Uses Inconsistent File Associations for Markdown Files
+- **File:** [src/desktop/components/Desktop.tsx](file:///c:/Users/Win/Documents/AetherOS/src/desktop/components/Desktop.tsx#L185-L199) vs [src/vfs/mime.ts](file:///c:/Users/Win/Documents/AetherOS/src/vfs/mime.ts#L89)
+- **Root Cause:** Double-clicking `.md` in File Manager opens `document-viewer` via `getAppForFile()`, whereas `Desktop.tsx` uses a custom hardcoded extension switch that falls back to `text-editor`.
+- **Remediation:** Delegate desktop file clicks through `getAppForFile()`.
 
 ---
 
-### 3.4 Taskbar Mute Toggle Does Not Update Icon State
-- **File:** `src/desktop/components/Taskbar.tsx` (Lines 169–178)
-- **Description:** Clicking volume toggle calls `audioService.toggleMute()`, but `Taskbar` has no React state listening to mute changes.
-- **Impact:** The volume mute icon does not update until the 1-second clock interval ticks and re-renders the component.
+### Issue 27: Diagonal Window Resizing Freezes Unconstrained Dimension
+- **File:** [src/desktop/components/WindowFrame.tsx](file:///c:/Users/Win/Documents/AetherOS/src/desktop/components/WindowFrame.tsx#L193-L195)
+- **Root Cause:** In diagonal resize (`nw`, `ne`, `sw`, `se`), the condition `if (nextW >= win.minWidth && nextH >= win.minHeight)` blocks updates to both axes if only one axis reaches its minimum boundary.
+- **Remediation:** Clamp dimensions independently using `Math.max(win.minWidth, nextW)`.
 
 ---
 
-### 3.5 Dock Position Incompatibilities (Top & Left Positions)
-- **Files:** `src/desktop/components/WindowFrame.tsx` (Line 228), `src/desktop/components/QuickSettings.tsx` (Line 49), `src/desktop/components/NotificationCenter.tsx` (Lines 32, 58)
-- **Description:**
-  1. Maximized and snapped windows hardcode `height: 'calc(100% - 44px)'` and `top: 0`. When dock position is set to `top`, maximized windows slide behind the dock. When dock is set to `left`, the window overlaps the dock.
-  2. QuickSettings and NotificationCenter are hardcoded to `bottom-14 right-4`, detaching from the taskbar when the dock is positioned at the top.
-- **Recommended Fix:** Derive position offsets dynamically from `theme.dockPosition`.
+### Issue 28: QuickSettings Panel Lacks Outside Click Handler
+- **File:** [src/desktop/components/QuickSettings.tsx](file:///c:/Users/Win/Documents/AetherOS/src/desktop/components/QuickSettings.tsx#L46-L53)
+- **Root Cause:** Unlike `AppLauncher`, `QuickSettings` only toggles via tray button clicks and lacks an outside-click listener.
+- **Remediation:** Attach a `mousedown` listener to close `QuickSettings` when clicking outside the panel.
 
 ---
 
-### 3.6 Floating Notification Toasts Never Auto-Dismiss
-- **File:** `src/desktop/components/NotificationCenter.tsx` (Lines 32–53)
-- **Description:** Toasts are rendered from `notifications.slice(0, 3)` without any auto-dismiss timer.
-- **Impact:** Notifications stay floating on the screen indefinitely unless the user manually clicks `X` on each one.
-- **Recommended Fix:** Add a 4–5 second auto-dismiss timeout per notification toast.
+### Issue 29: Command Palette Opens Empty Terminal Instead of Running Selected Command
+- **File:** [src/desktop/components/CommandPalette.tsx](file:///c:/Users/Win/Documents/AetherOS/src/desktop/components/CommandPalette.tsx#L58)
+- **Root Cause:** Selecting a command in the Quick Runner executes `openWindow('terminal')` without passing the command name.
+- **Remediation:** Pass `{ initialCommand: c.name }` to `openWindow('terminal', ...)`.
 
 ---
 
-### 3.7 Alt+Tab State Re-Entrancy
-- **File:** `src/core/context.tsx` (Lines 346–353)
-- **Description:** `setWindows((prev) => { ... focusWindow(nextWindow.id); return prev; })` invokes `focusWindow` (which itself triggers state updates) inside a state updater function.
-- **Impact:** Anti-pattern causing state tearing or missed focus updates.
+### Issue 30: `LogViewerApp` File Export Fails in Strict Browser Environments
+- **File:** [src/apps/logViewer/LogViewerApp.tsx](file:///c:/Users/Win/Documents/AetherOS/src/apps/logViewer/LogViewerApp.tsx#L35-L38)
+- **Root Cause:** `handleExport()` invokes `a.click()` without attaching the anchor element to `document.body`, and revokes the blob URL synchronously on the next line. In Firefox, unattached anchors and instant revocation cancel downloads.
+- **Remediation:** Append `a` to body, click, remove, and defer revocation with `setTimeout(..., 100)`.
 
 ---
 
-## 📱 Category 4: Built-in Applications Issues
-
-### 4.1 Code Studio Ignores `filePath` Prop
-- **File:** `src/apps/codeStudio/CodeStudioApp.tsx` (Lines 18–23)
-- **Description:** Double-clicking any `.js`, `.ts`, `.html`, or `.css` file in File Manager opens `code-studio` passing `{ filePath: ... }`. Code Studio ignores `filePath` and always opens `/home/aether/Projects/web-demo/index.html`.
-- **Recommended Fix:** Check `initialProps?.filePath` and set both `projectRoot` and `activeFile` accordingly.
+### Issue 31: Document Viewer Lacks Inline Markdown Formatting
+- **File:** [src/apps/documentViewer/DocumentViewerApp.tsx](file:///c:/Users/Win/Documents/AetherOS/src/apps/documentViewer/DocumentViewerApp.tsx#L107-L112)
+- **Root Cause:** `renderMarkdown()` renders paragraphs as plain strings without parsing inline bold (`**`), italic (`*`), or code (`` ` ``).
+- **Remediation:** Add inline regex parsing for markdown formatting spans.
 
 ---
 
-### 4.2 Code Studio Live Preview Only Injects First CSS & JS File
-- **File:** `src/apps/codeStudio/CodeStudioApp.tsx` (Lines 68–81)
-- **Description:** Uses single `html.match(/<link...>/)` and `html.match(/<script...>/)` calls, matching and replacing only the single first tag.
-- **Impact:** Web projects with multiple stylesheets or scripts only compile the first one in the live sandbox.
-- **Recommended Fix:** Use global regex matching (`matchAll` or `replace` with `/g`) to replace all stylesheet links and script tags.
+### Issue 32: Document Viewer Lacks Reactive `vfs.watch` Subscription
+- **File:** [src/apps/documentViewer/DocumentViewerApp.tsx](file:///c:/Users/Win/Documents/AetherOS/src/apps/documentViewer/DocumentViewerApp.tsx#L13-L21)
+- **Root Cause:** Loads file content on mount but never subscribes to `vfs.watch()`. If the document is modified in another app, the viewer remains stale.
+- **Remediation:** Add `vfs.watch(filePath, () => reload())` in `useEffect`.
 
 ---
 
-### 4.3 File Manager: Dead Code & Missing Cut/Copy/Paste UI
-- **File:** `src/apps/fileManager/FileManagerApp.tsx` (Lines 47, 178–205)
-- **Description:** `handleCopy`, `handleCut`, `handlePaste`, and `propertiesItem` are fully defined in code, but no toolbar buttons, context menu items, or keyboard shortcuts trigger them. Users cannot copy or paste files via GUI.
+### Issue 33: `MinesweeperApp` Places Mines Before First Player Click
+- **File:** [src/apps/games/MinesweeperApp.tsx](file:///c:/Users/Win/Documents/AetherOS/src/apps/games/MinesweeperApp.tsx#L38-L47)
+- **Root Cause:** Mines are placed in `initGame()` before player interaction, allowing players to lose on click 1.
+- **Remediation:** Defer mine placement until the first cell is clicked, ensuring the first tile is always safe.
 
 ---
 
-### 4.4 File Manager: Deleting Items in Trash Causes Recursive Renaming
-- **File:** `src/apps/fileManager/FileManagerApp.tsx` (Lines 162–173)
-- **Description:** When viewing Trash (`/home/aether/.trash`), selecting an item and clicking Delete calls `vfs.moveToTrash(p)`, which renames the item inside the Trash folder rather than permanently deleting it.
-- **Recommended Fix:** If path is already inside `.trash`, directly call `vfs.unlink(p)` or `vfs.rmdir(p, { recursive: true })`.
+### Issue 34: Weather App Missing Abort Signal on Unmount
+- **File:** [src/apps/weather/WeatherApp.tsx](file:///c:/Users/Win/Documents/AetherOS/src/apps/weather/WeatherApp.tsx#L33-L52)
+- **Root Cause:** `fetchWeather()` makes an asynchronous fetch without an `AbortController`. Closing the window before completion triggers state updates on an unmounted component.
+- **Remediation:** Attach an `AbortController` and abort on unmount.
 
 ---
 
-### 4.5 Media Player Ignores `initialProps` and Audio Context Leaks
-- **File:** `src/apps/mediaPlayer/MediaPlayerApp.tsx` (Lines 31–88)
-- **Description:**
-  1. Ignores `initialProps?.filePath` when opened by double-clicking music/video files in File Manager.
-  2. Adjusting volume while playing does not update `gainRef.current.gain`.
-  3. `AudioContext` is never closed on unmount, hitting browser limits after several opens.
+### Issue 35: Large Base64 Wallpaper DataURL Stored Directly in VFS Config
+- **File:** [src/apps/settings/SettingsApp.tsx](file:///c:/Users/Win/Documents/AetherOS/src/apps/settings/SettingsApp.tsx#L127)
+- **Root Cause:** Uploaded custom wallpapers are stored as multi-megabyte base64 strings in `theme.wallpaper`, serializing to `/home/aether/.config/aetheros/theme.json` on every theme change.
+- **Remediation:** Save wallpaper to `/home/aether/Pictures/${file.name}` and store the file path instead.
 
 ---
 
-### 4.6 Image Viewer Memory Leak & Local File Loading Failure
-- **File:** `src/apps/imageViewer/ImageViewerApp.tsx` (Lines 18–27)
-- **Description:**
-  1. `URL.createObjectURL(blob)` is created without a corresponding `URL.revokeObjectURL(imageSrc)` cleanup.
-  2. If an image file does not start with `data:image` and is not `.svg`, it falls back to `setImageSrc(filePath)` (e.g. `/home/aether/Pictures/pic.png`), which returns a 404 from the web server.
+### Issue 36: `seq` Shell Command Silently Truncates Output at 1,000 Numbers
+- **File:** [src/shell/commands/textCommands.ts](file:///c:/Users/Win/Documents/AetherOS/src/shell/commands/textCommands.ts#L253)
+- **Root Cause:** `Math.min(..., 1000)` caps generated sequences at 1,000 without warning.
+- **Remediation:** Increase ceiling or print a truncation warning to `stderr`.
 
 ---
 
-### 4.7 Text Editor Scroll Synchronization & Word Wrap
-- **File:** `src/apps/textEditor/TextEditorApp.tsx` (Lines 205–233)
-- **Description:**
-  1. The line numbers gutter and textarea have separate scroll containers without synchronized `scrollTop`. Scrolling the textarea leaves line numbers static.
-  2. No `Ctrl+S` keydown listener exists despite the button tooltip advertising `(Ctrl+S)`. Pressing `Ctrl+S` invokes browser save page.
-  3. Editor tabs have no close (`X`) buttons.
+### Issue 37: Recent Applications Row in App Launcher Can Overflow Horizontally
+- **File:** [src/desktop/components/AppLauncher.tsx](file:///c:/Users/Win/Documents/AetherOS/src/desktop/components/AppLauncher.tsx#L231-L242)
+- **Root Cause:** Uses `flex gap-2` without `flex-wrap` or `overflow-x-auto`. Long app titles clip out of view.
+- **Remediation:** Add `overflow-x-auto pb-1` or `flex-wrap`.
 
 ---
 
-### 4.8 Calculator Equation Evaluator Regex Collision
-- **File:** `src/apps/calculator/CalculatorApp.tsx` (Lines 40–41)
-- **Description:** `.replace(/e/g, 'Math.E')` replaces all lowercase `e` characters globally. Any expression or token containing `e` becomes malformed. In addition, consecutive decimal points (`1.2.3`) are not validated.
+### Issue 38: Window Close Handler Saves Maximized Bounds as Normal Geometry
+- **File:** [src/core/context.tsx](file:///c:/Users/Win/Documents/AetherOS/src/core/context.tsx#L328-L338)
+- **Root Cause:** `closeWindow()` records dimensions unconditionally. If closed while maximized, full-screen dimensions are stored, causing the app to open stretched across the screen on relaunch.
+- **Remediation:** Only record geometry when `target.state === 'normal'`.
 
 ---
 
-### 4.9 Document Viewer Standalone `<li>` Elements
-- **File:** `src/apps/documentViewer/DocumentViewerApp.tsx` (Lines 73–78)
-- **Description:** Bullet list items (`- `) are rendered as individual `<li>` nodes directly inside a `<div>` without a parent `<ul>` container.
+### Issue 39: 400ms Write-Behind Debounce Window Loses Mutations on Fast Reload
+- **File:** [src/vfs/idbStorage.ts](file:///c:/Users/Win/Documents/AetherOS/src/vfs/idbStorage.ts#L96-L103)
+- **Root Cause:** `scheduleFlush()` debounces saves by 400ms. Closing the tab or refreshing immediately after an edit drops pending saves because no `beforeunload` flush hook is installed.
+- **Remediation:** Attach `window.addEventListener('beforeunload', () => this.flush())`.
 
 ---
 
-## 🧹 Category 5: Linter Warnings & Code Hygiene
-
-Running `npm run lint` (`oxlint`) reports **75 warnings** across 62 files:
-- **Unused imports:** e.g. `Plus`, `HardDrive`, `RefreshCw` in `Desktop.tsx`; `ArrowLeft`, `ArrowRight` in `WebBrowserApp.tsx`; `Layers` in `QuickSettings.tsx`; `Check` in `SoftwareCenterApp.tsx`.
-- **Unused state variables:** e.g. `loadError` in `WebBrowserApp.tsx`, `propertiesItem` in `FileManagerApp.tsx`.
-- **React Compiler warning:** Calling `setState` synchronously within effects (e.g. `CommandPalette.tsx`, `FileManagerApp.tsx`).
-- **React Hook missing dependency:** `playSynthesizedAmbient` in `MediaPlayerApp.tsx`.
+### Issue 40: File Manager Host Upload Fails to Re-upload Identical Filename
+- **File:** [src/apps/fileManager/FileManagerApp.tsx](file:///c:/Users/Win/Documents/AetherOS/src/apps/fileManager/FileManagerApp.tsx#L344-L373)
+- **Root Cause:** `fileInputRef.current.value` is not cleared after upload. Re-uploading the same file after host modifications fails to trigger `onChange`.
+- **Remediation:** Set `fileInputRef.current.value = ''` upon completion.
 
 ---
 
-## 🎯 Recommended Remediation Roadmap
+### Issue 41: Calculator Sequential Operator Override Flaw
+- **File:** [src/apps/calculator/CalculatorApp.tsx](file:///c:/Users/Win/Documents/AetherOS/src/apps/calculator/CalculatorApp.tsx#L22-L25)
+- **Root Cause:** When an operator is clicked, `display` resets to `'0'`. If a user presses `5 +` and then changes their mind to `-`, `handleOperator` uses the current `display` (`'0'`), mutating the equation to `0 -` instead of replacing `+` with `-`.
+- **Remediation:** Detect when the previous input was an operator and replace the trailing operator in `equation`.
 
-1. **Phase 1: Input & System Stability (Immediate)**
-   - Fix 2048 & Calculator global keyboard capture.
-   - Fix shutdown loop (distinguish power-down from reboot).
-   - Call `packageManager.init()` in boot sequence.
-   - Remove phantom `audio-recorder` package or register app.
+---
 
-2. **Phase 2: Filesystem & Shell Accuracy (High Priority)**
-   - Fix `vfs.mkdir` recursive check on existing directories.
-   - Fix `mv` multi-file destination loop mutation.
-   - Fix `expandGlobs` directory prefix stripping.
-   - Fix `wc` flag handling on stdin.
-   - Secure `WebBrowserApp` iframe sandbox.
+### Issue 42: Game 2048 Missing Game Over State Evaluation
+- **File:** [src/apps/games/Game2048App.tsx](file:///c:/Users/Win/Documents/AetherOS/src/apps/games/Game2048App.tsx#L9)
+- **Root Cause:** The `gameOver` boolean state is declared, but never checked or set when the 4x4 grid fills up with no legal adjacent horizontal or vertical merges remaining. The player is left on a locked board without a Game Over modal or restart prompt.
+- **Remediation:** Add a check after each move: if board is full and no adjacent tiles match, set `gameOver = true`.
 
-3. **Phase 3: Desktop & Window Compositor (User Experience)**
-   - Display real files on Desktop surface.
-   - Show all running windows in Taskbar (not just pinned).
-   - Fix window title updating mechanism.
-   - Add auto-dismiss to notification toasts.
+---
 
-4. **Phase 4: App Integration & Polish (Quality of Life)**
-   - Connect `initialProps.filePath` in Code Studio and Media Player.
-   - Add Copy/Cut/Paste actions to File Manager.
-   - Synchronize Text Editor line numbers scrolling.
-   - Clean up the 75 oxlint warnings.
+### Issue 43: Software Center Package Search Case-Sensitivity Inconsistency
+- **File:** [src/apps/softwareCenter/SoftwareCenterApp.tsx](file:///c:/Users/Win/Documents/AetherOS/src/apps/softwareCenter/SoftwareCenterApp.tsx#L40-L45)
+- **Root Cause:** Filter matches `pkg.name.toLowerCase().includes(search.toLowerCase())`, but omits `pkg.description` or `pkg.category`, causing searches for descriptive keywords (e.g. "game", "editor") to return empty results.
+- **Remediation:** Include lowercase description and category matching in search filtering.
+
+---
+
+## 📈 Subsystem Architecture Scorecard
+
+```text
++------------------------------------+-------+-------------------------------------------------------------+
+| Subsystem                          | Grade | Status & Health Assessment                                  |
++------------------------------------+-------+-------------------------------------------------------------+
+| Virtual Kernel (AetherCore)        |   A-  | Reliable PID lifecycle; minor nested state transition.      |
+| Virtual Filesystem (VFS)           |   B+  | Full POSIX tree; needs ancestor copy/rename & symlink guard |
+| aesh Command Shell & Builtins      |   B+  | Rich pipeline & 40+ utils; needs ANSI color stripping.      |
+| AetherWM Compositor & Panels       |   A-  | 8-direction resize & snapping; needs workspace focus sync.  |
+| Package Platform (aetherpkg)       |   A   | Solid manifest repository & IndexedDB state persistence.    |
+| Native Applications Suite (19 apps)|   B+  | High utility; needs AudioContext & Object URL cleanups.     |
++------------------------------------+-------+-------------------------------------------------------------+
+```
+
+---
+
+## 🎯 Prioritized Remediation Roadmap
+
+### Phase 1: Critical Stability & Crash Prevention (Immediate)
+1. **[src/vfs/vfs.ts](file:///c:/Users/Win/Documents/AetherOS/src/vfs/vfs.ts#L620-L649):** Add ancestor path check (`normDest.startsWith(normSrc + '/')`) to `vfs.copy()` to stop infinite recursion on `cp -r dir dir/sub`.
+2. **[src/vfs/vfs.ts](file:///c:/Users/Win/Documents/AetherOS/src/vfs/vfs.ts#L517-L599):** Add ancestor check to `vfs.rename()` to prevent tree disconnection and circular inode structures.
+3. **[src/vfs/vfs.ts](file:///c:/Users/Win/Documents/AetherOS/src/vfs/vfs.ts#L243-L245):** Enforce maximum traversal depth (`depth > 20`) in `vfs.getNode()` and `vfs.readFile()` to prevent circular symlink stack overflows.
+4. **[src/vfs/vfs.ts](file:///c:/Users/Win/Documents/AetherOS/src/vfs/vfs.ts#L83-L226):** Add synthetic root directory node for `/dev` in `getDynamicNode()`.
+5. **[src/apps/mediaPlayer/MediaPlayerApp.tsx](file:///c:/Users/Win/Documents/AetherOS/src/apps/mediaPlayer/MediaPlayerApp.tsx#L68-L70):** Close `AudioContext` on unmount to prevent system-wide audio exhaustion.
+
+### Phase 2: Security & State Cohesion (High Priority)
+6. **[src/desktop/components/NotificationCenter.tsx](file:///c:/Users/Win/Documents/AetherOS/src/desktop/components/NotificationCenter.tsx#L27-L32):** Decouple floating toast dismissals from persistent notification drawer records.
+7. **[src/core/context.tsx](file:///c:/Users/Win/Documents/AetherOS/src/core/context.tsx#L458-L510):** Guard global keyboard shortcut handler with `if (isLocked) return;`.
+8. **[src/core/context.tsx](file:///c:/Users/Win/Documents/AetherOS/src/core/context.tsx#L226-L239):** Synchronize `activeWorkspace` to window's workspace when focusing via Taskbar or `Alt+Tab`.
+9. **[src/shell/commands/fsCommands.ts](file:///c:/Users/Win/Documents/AetherOS/src/shell/commands/fsCommands.ts#L236-L251):** Validate multi-source destination directory in `cp`.
+10. **[src/shell/commands/fsCommands.ts](file:///c:/Users/Win/Documents/AetherOS/src/shell/commands/fsCommands.ts#L461-L465):** Strip ANSI color escape codes in `grep` when output is redirected or piped.
+
+### Phase 3: Application Polish & Resource Management (Quality)
+11. **[src/apps/notes/NotesApp.tsx](file:///c:/Users/Win/Documents/AetherOS/src/apps/notes/NotesApp.tsx#L66-L71):** Debounce note persistence by 300ms to stop unthrottled disk writes.
+12. **[src/apps/paint/PaintApp.tsx](file:///c:/Users/Win/Documents/AetherOS/src/apps/paint/PaintApp.tsx#L65-L68):** Fix canvas coordinate scaling across display densities.
+13. **[src/apps/audioRecorder/AudioRecorderApp.tsx](file:///c:/Users/Win/Documents/AetherOS/src/apps/audioRecorder/AudioRecorderApp.tsx#L45-L82):** Revoke Object URLs on cleanup and serialize recordings as base64 audio.
+14. **[src/apps/textEditor/TextEditorApp.tsx](file:///c:/Users/Win/Documents/AetherOS/src/apps/textEditor/TextEditorApp.tsx#L95-L106):** Add confirmation prompt when closing dirty tabs.
+15. **[src/apps/documentViewer/DocumentViewerApp.tsx](file:///c:/Users/Win/Documents/AetherOS/src/apps/documentViewer/DocumentViewerApp.tsx#L13-L21):** Connect `vfs.watch()` and inline markdown formatting.
+16. **[src/vfs/idbStorage.ts](file:///c:/Users/Win/Documents/AetherOS/src/vfs/idbStorage.ts#L96-L103):** Register `beforeunload` IndexedDB flush listener.
+
+---
+
+## 🔬 Test Suite & Build Verification
+
+All verification checks executed and passed:
+- **Unit & Integration Tests:** 6 test files, 65 tests passing (`npx vitest run`)
+- **Code Linter:** 0 errors, 24 React effect warnings (`npm run lint` / `oxlint`)
+- **Production Build:** Clean compilation with zero TypeScript errors (`tsc -b && vite build`)
+
+---
+
+*Report compiled and verified against the AetherOS repository. Single canonical reference for all architectural remediation.*

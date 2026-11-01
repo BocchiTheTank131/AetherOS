@@ -19,10 +19,35 @@ export const CalculatorApp: React.FC<AppProps> = ({ isFocused }) => {
     setDisplay((prev) => (prev === '0' || prev === 'Error' ? d : prev + d));
   }, [display]);
 
-  const handleOperator = useCallback((op: string) => {
-    setEquation(`${display} ${op} `);
-    setDisplay('0');
-  }, [display]);
+  const handleOperator = useCallback(
+    (op: string) => {
+      setEquation((prevEq) => {
+        if (display === '0' && prevEq && /[+\-×÷]\s*$/.test(prevEq)) {
+          return prevEq.replace(/[+\-×÷]\s*$/, `${op} `);
+        }
+        if (prevEq && display !== '0') {
+          try {
+            const full = `${prevEq}${display}`;
+            const sanitized = full
+              .replace(/×/g, '*')
+              .replace(/÷/g, '/')
+              .replace(/π/g, 'Math.PI')
+              .replace(/\be\b/g, 'Math.E');
+            const res = Function(`"use strict"; return (${sanitized})`)();
+            const formatted = Number.isFinite(res) ? String(+res.toFixed(8)) : 'Error';
+            if (formatted !== 'Error') {
+              return `${formatted} ${op} `;
+            }
+          } catch {
+            // Fallback
+          }
+        }
+        return `${display} ${op} `;
+      });
+      setDisplay('0');
+    },
+    [display]
+  );
 
   const handleClear = useCallback(() => {
     setDisplay('0');

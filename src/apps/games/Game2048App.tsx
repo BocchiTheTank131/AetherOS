@@ -40,6 +40,17 @@ export const Game2048App: React.FC<AppProps> = ({ isFocused }) => {
     initGame();
   }, []);
 
+  const checkGameOver = (b: number[][]): boolean => {
+    for (let r = 0; r < SIZE; r++) {
+      for (let c = 0; c < SIZE; c++) {
+        if (b[r][c] === 0) return false;
+        if (c < SIZE - 1 && b[r][c] === b[r][c + 1]) return false;
+        if (r < SIZE - 1 && b[r][c] === b[r + 1][c]) return false;
+      }
+    }
+    return true;
+  };
+
   const slide = (row: number[]): { newRow: number[]; gained: number } => {
     let arr = row.filter((x) => x !== 0);
     let gained = 0;
@@ -55,6 +66,7 @@ export const Game2048App: React.FC<AppProps> = ({ isFocused }) => {
   };
 
   const moveLeft = useCallback(() => {
+    if (gameOver) return;
     let changed = false;
     let gainedTotal = 0;
     const next = board.map((row) => {
@@ -67,15 +79,19 @@ export const Game2048App: React.FC<AppProps> = ({ isFocused }) => {
     if (changed) {
       const spawned = spawnTile(next);
       setBoard(spawned);
+      if (checkGameOver(spawned)) {
+        setGameOver(true);
+      }
       setScore((s) => {
         const nextScore = s + gainedTotal;
         setBestScore((b) => Math.max(b, nextScore));
         return nextScore;
       });
     }
-  }, [board]);
+  }, [board, gameOver]);
 
   const moveRight = useCallback(() => {
+    if (gameOver) return;
     let changed = false;
     let gainedTotal = 0;
     const next = board.map((row) => {
@@ -90,15 +106,19 @@ export const Game2048App: React.FC<AppProps> = ({ isFocused }) => {
     if (changed) {
       const spawned = spawnTile(next);
       setBoard(spawned);
+      if (checkGameOver(spawned)) {
+        setGameOver(true);
+      }
       setScore((s) => {
         const nextScore = s + gainedTotal;
         setBestScore((b) => Math.max(b, nextScore));
         return nextScore;
       });
     }
-  }, [board]);
+  }, [board, gameOver]);
 
   const moveUp = useCallback(() => {
+    if (gameOver) return;
     let changed = false;
     let gainedTotal = 0;
     const next = Array(SIZE)
@@ -118,15 +138,19 @@ export const Game2048App: React.FC<AppProps> = ({ isFocused }) => {
     if (changed) {
       const spawned = spawnTile(next);
       setBoard(spawned);
+      if (checkGameOver(spawned)) {
+        setGameOver(true);
+      }
       setScore((s) => {
         const nextScore = s + gainedTotal;
         setBestScore((b) => Math.max(b, nextScore));
         return nextScore;
       });
     }
-  }, [board]);
+  }, [board, gameOver]);
 
   const moveDown = useCallback(() => {
+    if (gameOver) return;
     let changed = false;
     let gainedTotal = 0;
     const next = Array(SIZE)
@@ -147,17 +171,20 @@ export const Game2048App: React.FC<AppProps> = ({ isFocused }) => {
     if (changed) {
       const spawned = spawnTile(next);
       setBoard(spawned);
+      if (checkGameOver(spawned)) {
+        setGameOver(true);
+      }
       setScore((s) => {
         const nextScore = s + gainedTotal;
         setBestScore((b) => Math.max(b, nextScore));
         return nextScore;
       });
     }
-  }, [board]);
+  }, [board, gameOver]);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (!isFocused) return;
+      if (!isFocused || gameOver) return;
       const target = e.target as HTMLElement | null;
       if (
         target &&
@@ -183,7 +210,7 @@ export const Game2048App: React.FC<AppProps> = ({ isFocused }) => {
 
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [isFocused, moveLeft, moveRight, moveUp, moveDown]);
+  }, [isFocused, gameOver, moveLeft, moveRight, moveUp, moveDown]);
 
   const getTileColor = (val: number): string => {
     switch (val) {

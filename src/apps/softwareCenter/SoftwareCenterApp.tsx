@@ -87,7 +87,8 @@ export const SoftwareCenterApp: React.FC<AppProps> = () => {
       return (
         p.name.toLowerCase().includes(q) ||
         p.description.toLowerCase().includes(q) ||
-        p.id.toLowerCase().includes(q)
+        p.id.toLowerCase().includes(q) ||
+        p.category.toLowerCase().includes(q)
       );
     }
     return true;

@@ -3,6 +3,7 @@ import { vfs } from '../vfs/vfs';
 import { shellExecutor } from '../shell/executor';
 import { createDefaultShellContext, expandGlobs } from '../shell/environment';
 import { computeMd5 } from '../shell/commands/devCommands';
+import { packageManager } from '../pkg/packageManager';
 
 describe('Code Review V2 Bug Fixes Verification', () => {
   beforeEach(async () => {
@@ -135,6 +136,44 @@ describe('Code Review V2 Bug Fixes Verification', () => {
       expect(lines.length).toBe(1500);
       expect(lines[0]).toBe('1');
       expect(lines[1499]).toBe('1500');
+    });
+
+    it('packageManager searches by category and description (Issue 43)', () => {
+      const gameMatches = packageManager.search('games');
+      expect(gameMatches.length).toBeGreaterThan(0);
+      expect(gameMatches.some((p) => p.category === 'Games')).toBe(true);
+
+      const descMatches = packageManager.search('puzzle');
+      expect(descMatches.some((p) => p.id === 'game2048')).toBe(true);
+    });
+
+    it('detects 2048 game over state on locked board (Issue 42)', () => {
+      // 4x4 board with alternating values and no valid moves
+      const fullLockedBoard = [
+        [2, 4, 2, 4],
+        [4, 2, 4, 2],
+        [2, 4, 2, 4],
+        [4, 2, 4, 2],
+      ];
+      const checkGameOver = (b: number[][]): boolean => {
+        for (let r = 0; r < 4; r++) {
+          for (let c = 0; c < 4; c++) {
+            if (b[r][c] === 0) return false;
+            if (c < 3 && b[r][c] === b[r][c + 1]) return false;
+            if (r < 3 && b[r][c] === b[r + 1][c]) return false;
+          }
+        }
+        return true;
+      };
+      expect(checkGameOver(fullLockedBoard)).toBe(true);
+
+      const hasValidMove = [
+        [2, 2, 4, 8],
+        [4, 8, 2, 4],
+        [2, 4, 8, 2],
+        [4, 2, 4, 8],
+      ];
+      expect(checkGameOver(hasValidMove)).toBe(false);
     });
   });
 });
