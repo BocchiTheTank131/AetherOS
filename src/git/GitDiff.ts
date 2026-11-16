@@ -31,12 +31,7 @@ export function computeLineDiff(
   if (oldText === newText) {
     return {
       filepath,
-      lines: oldLines.map((content, idx) => ({
-        type: 'context',
-        oldLineNumber: idx + 1,
-        newLineNumber: idx + 1,
-        content,
-      })),
+      lines: [],
       additions: 0,
       deletions: 0,
       patch: '',
@@ -47,10 +42,12 @@ export function computeLineDiff(
   const m = oldLines.length;
   const n = newLines.length;
 
-  // Optimize for memory: if files are large, limit matrix or simple diff
-  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  // shortcut: use a full replacement hunk above the LCS budget, switch to a bounded Myers diff if minimal large hunks are required.
+  const bounded = m * n <= 2_000_000;
+  const dp = bounded ? Array.from({ length: m + 1 }, () => new Uint32Array(n + 1)) : [];
+  const score = (i: number, j: number) => bounded ? dp[i][j] : 0;
 
-  for (let i = 1; i <= m; i++) {
+  for (let i = 1; bounded && i <= m; i++) {
     for (let j = 1; j <= n; j++) {
       if (oldLines[i - 1] === newLines[j - 1]) {
         dp[i][j] = dp[i - 1][j - 1] + 1;
@@ -61,7 +58,6 @@ export function computeLineDiff(
   }
 
   // Backtrack to find diff
-  const lines: DiffLine[] = [];
   let i = m;
   let j = n;
   const rawDiff: DiffLine[] = [];
@@ -76,14 +72,14 @@ export function computeLineDiff(
       });
       i--;
       j--;
-    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+    } else if (j > 0 && (i === 0 || score(i, j - 1) >= score(i - 1, j))) {
       rawDiff.push({
         type: 'add',
         newLineNumber: j,
         content: newLines[j - 1],
       });
       j--;
-    } else if (i > 0 && (j === 0 || dp[i][j - 1] < dp[i - 1][j])) {
+    } else if (i > 0 && (j === 0 || score(i, j - 1) < score(i - 1, j))) {
       rawDiff.push({
         type: 'delete',
         oldLineNumber: i,
@@ -93,8 +89,7 @@ export function computeLineDiff(
     }
   }
 
-  rawDiff.reverse();
-  lines.push(...rawDiff);
+  const lines = rawDiff.reverse();
 
   let additions = 0;
   let deletions = 0;

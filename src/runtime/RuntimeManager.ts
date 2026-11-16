@@ -15,6 +15,7 @@ export class RuntimeManager {
     }
 
     const session = new RuntimeSession({
+      ppid: options?.ppid,
       commandName: options?.commandName || 'js-runtime',
       args: options?.args,
       permissions: options?.permissions || createDefaultPermissions(),
@@ -42,12 +43,15 @@ export class RuntimeManager {
       args?: string[];
       permissions?: RuntimePermissions;
       timeoutMs?: number;
+      signal?: AbortSignal;
+      ppid?: number;
       onStdout?: (chunk: string) => void;
       onStderr?: (chunk: string) => void;
     }
   ): Promise<RuntimeExecutionResult> {
     const session = this.createSession({
       commandName: options?.commandName,
+      ppid: options?.ppid,
       args: options?.args,
       permissions: options?.permissions,
       limits: options?.timeoutMs ? { ...this.limits, timeoutMs: options.timeoutMs } : this.limits,
@@ -55,7 +59,13 @@ export class RuntimeManager {
       onStderr: options?.onStderr,
     });
 
+    const cancel = () => session.cancel(Number(options?.signal?.reason) || 130);
+    options?.signal?.addEventListener('abort', cancel, { once: true });
     try {
+      if (options?.signal?.aborted) {
+        cancel();
+        return { exitCode: Number(options.signal.reason) || 130, stdout: '', stderr: '^C\n', durationMs: 0 };
+      }
       const result = await session.execute(code, {
         args: options?.args,
         onStdout: options?.onStdout,
@@ -63,6 +73,7 @@ export class RuntimeManager {
       });
       return result;
     } finally {
+      options?.signal?.removeEventListener('abort', cancel);
       this.activeSessions.delete(session.id);
       this.pidToSession.delete(session.pid);
     }

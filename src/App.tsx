@@ -21,16 +21,7 @@ const AetherOSDesktop: React.FC = () => {
   const finishBoot = useCallback(() => setBootCompleted(true), []);
 
   useEffect(() => {
-    const unsubRestart = systemEventBus.on('system:restart', () => {
-      setBootCompleted(false);
-    });
-    const unsubShutdown = systemEventBus.on('system:shutdown', () => {
-      setBootCompleted(false);
-    });
-    return () => {
-      unsubRestart();
-      unsubShutdown();
-    };
+    return systemEventBus.on('system:stopping', () => setBootCompleted(false));
   }, []);
 
   if (isPoweredOff) {

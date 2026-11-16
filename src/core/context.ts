@@ -16,6 +16,7 @@ export interface SystemContextValue {
   clearNotifications: () => void;
   windows: WindowInstance[];
   openWindow: (appId: string, props?: Record<string, unknown>) => string;
+  registerCloseGuard: (id: string, guard: () => boolean | Promise<boolean>) => () => void;
   closeWindow: (id: string) => void;
   focusWindow: (id: string) => void;
   minimizeWindow: (id: string) => void;
@@ -23,6 +24,7 @@ export interface SystemContextValue {
   snapWindow: (id: string, side: 'left' | 'right' | 'top') => void;
   updateWindowPosition: (id: string, x: number, y: number) => void;
   updateWindowSize: (id: string, width: number, height: number, x?: number, y?: number) => void;
+  updateWindowMinimum: (id: string, width: number, height: number) => void;
   updateWindowTitle: (id: string, title: string) => void;
   recentApps: string[];
   activeWorkspace: number;

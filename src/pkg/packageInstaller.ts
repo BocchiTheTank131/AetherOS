@@ -91,6 +91,15 @@ export class PackageInstaller {
         }
       }
 
+      const visited = new Set<string>();
+      const queue = Object.keys(manifest.dependencies ?? {});
+      for (const id of queue) {
+        if (id === pkgId) throw new Error(`Dependency cycle involving ${pkgId}`);
+        if (visited.has(id)) continue;
+        visited.add(id);
+        queue.push(...Object.keys(dynamicAppRegistry.get(id)?.manifest.dependencies ?? {}));
+      }
+
       const existing = dynamicAppRegistry.get(pkgId);
       for (const dependent of dynamicAppRegistry.getAll()) {
         const range = dependent.manifest.dependencies?.[pkgId];

@@ -22,21 +22,31 @@ import { systemLogger } from '../core/logger';
 import { systemEventBus } from '../core/eventBus';
 import { AlertTriangle, RefreshCw, Trash2 } from 'lucide-react';
 
+export interface PreviewMessage {
+  level: string;
+  message: string;
+  source?: string;
+  line?: number;
+  col?: number;
+}
+
 interface AppHostProps extends AppProps {
   appId?: string;
   previewRecord?: InstalledAppRecord;
+  onPreviewOutput?: (message: PreviewMessage) => void;
 }
 
 export const AppHost: React.FC<AppHostProps> = ({
-  windowId: _winId,
+  windowId,
   initialProps,
   isFocused,
   onClose,
   setTitle,
   appId: propAppId,
   previewRecord,
+  onPreviewOutput,
 }) => {
-  const { theme, addNotification } = useSystem();
+  const { theme, addNotification, updateWindowMinimum } = useSystem();
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const tokenRef = useRef('');
@@ -44,8 +54,7 @@ export const AppHost: React.FC<AppHostProps> = ({
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const channelRef = useRef<{ port1: MessagePort } | null>(null);
   const currentUrl = useRef<string | null>(null);
-  const requestCountRef = useRef<number>(0);
-  const rateLimitTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const rateLimit = useRef({ since: 0, count: 0 });
   const setTitleRef = useRef(setTitle);
 
   useEffect(() => {
@@ -61,16 +70,6 @@ export const AppHost: React.FC<AppHostProps> = ({
   const appRecord: InstalledAppRecord | undefined =
     previewRecord ||
     dynamicAppRegistry.get(effectiveAppId);
-
-  // Rate limiter counter reset every second
-  useEffect(() => {
-    rateLimitTimerRef.current = setInterval(() => {
-      requestCountRef.current = 0;
-    }, 1000);
-    return () => {
-      if (rateLimitTimerRef.current) clearInterval(rateLimitTimerRef.current);
-    };
-  }, []);
 
   // Prepare and bundle the guest HTML
   const loadApp = useCallback(() => {
@@ -122,7 +121,8 @@ export const AppHost: React.FC<AppHostProps> = ({
         const path = readAsset(src);
         if (!path) return match;
         const script = vfs.readFile(path).replace(/<\/script/gi, '<\\/script');
-        return `<script ${before}${after}>\n${script}\n</script>`;
+        const source = previewRecord ? '\n//# sourceURL=aether-preview:///' + encodeURI(path.slice(installDir.length + 1)) : '';
+        return `<script ${before}${after}>\n${script}${source}\n</script>`;
       });
       html = html.replace(/<link\s+[^>]*rel=["']stylesheet["'][^>]*href=["']([^"']+)["'][^>]*>/gi, (match, href) => {
         const path = readAsset(href);
@@ -131,7 +131,7 @@ export const AppHost: React.FC<AppHostProps> = ({
 
       const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' blob:; style-src 'unsafe-inline' blob:; img-src data: blob:; media-src data: blob:; font-src data: blob:; base-uri 'none'; form-action 'none';">`;
       const token = Array.from(crypto.getRandomValues(new Uint8Array(24)), (n) => n.toString(16).padStart(2, '0')).join('');
-      const sdk = `<script>(${SDK_CLIENT_SCRIPT})(${JSON.stringify(token)})</script>`;
+      const sdk = `<script>(${SDK_CLIENT_SCRIPT})(${JSON.stringify(token)}, ${Boolean(previewRecord)})</script>`;
       html = `<!DOCTYPE html>${csp}${sdk}${html.replace(/^\s*<!doctype[^>]*>/i, '')}`;
       const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
       channelRef.current?.port1.close();
@@ -189,8 +189,9 @@ export const AppHost: React.FC<AppHostProps> = ({
     }
 
     // 2. Enforce Rate Limiting
-    requestCountRef.current++;
-    if (requestCountRef.current > PROTOCOL_LIMITS.maxRequestsPerSecond) {
+    const now = performance.now();
+    if (now - rateLimit.current.since >= 1000) rateLimit.current = { since: now, count: 0 };
+    if (++rateLimit.current.count > PROTOCOL_LIMITS.maxRequestsPerSecond) {
       sendResponse(false, undefined, 'Rate limit exceeded: too many requests');
       return;
     }
@@ -206,6 +207,20 @@ export const AppHost: React.FC<AppHostProps> = ({
     try {
       if (typeof p.title === 'string' && p.title.length > 256) throw new Error('Title is too long');
       switch (action) {
+        case 'preview:output': {
+          if (!previewRecord || typeof p.message !== 'string' || p.message.length > 4000 ||
+              typeof p.level !== 'string' || !['log', 'info', 'warn', 'error', 'exception'].includes(p.level)) {
+            throw new Error('Invalid preview output');
+          }
+          onPreviewOutput?.({
+            level: p.level, message: p.message,
+            source: typeof p.source === 'string' ? p.source.slice(0, 400) : undefined,
+            line: typeof p.line === 'number' ? p.line : undefined,
+            col: typeof p.col === 'number' ? p.col : undefined,
+          });
+          sendResponse(true);
+          break;
+        }
         case 'app:getInfo': {
           sendResponse(true, {
             id: appRecord?.id,
@@ -234,6 +249,10 @@ export const AppHost: React.FC<AppHostProps> = ({
         }
 
         case 'window:setMinimumSize': {
+          if (typeof p.width !== 'number' || typeof p.height !== 'number' ||
+              !Number.isFinite(p.width) || !Number.isFinite(p.height) ||
+              p.width < 100 || p.height < 80) throw new Error('Invalid minimum window size');
+          if (!previewRecord) updateWindowMinimum(windowId, p.width, p.height);
           sendResponse(true);
           break;
         }
@@ -379,8 +398,9 @@ export const AppHost: React.FC<AppHostProps> = ({
                 cancelText: 'Deny',
               });
               if (channelRef.current?.port1 !== port || !dynamicAppRegistry.isInstalled(appId)) return;
-              if (granted && permissionManager.getGrantState(appId, scope) === 'prompt') {
-                permissionManager.grantPermission(appId, scope, 'session');
+              if (permissionManager.getGrantState(appId, scope) === 'prompt') {
+                if (granted) permissionManager.grantPermission(appId, scope, 'session');
+                else permissionManager.denyPermission(appId, scope);
               }
               sendResponse(true, permissionManager.hasPermission(appId, scope));
             } finally {
@@ -477,7 +497,7 @@ export const AppHost: React.FC<AppHostProps> = ({
             <RefreshCw className="w-3.5 h-3.5" />
             Retry
           </button>
-          <button
+          {!previewRecord && <button
             onClick={() => {
               dynamicAppRegistry.unregister(effectiveAppId);
               onClose?.();
@@ -486,7 +506,7 @@ export const AppHost: React.FC<AppHostProps> = ({
           >
             <Trash2 className="w-3.5 h-3.5" />
             Uninstall
-          </button>
+          </button>}
         </div>
       </div>
     );

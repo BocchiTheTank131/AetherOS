@@ -2,7 +2,7 @@
 // This script is injected directly into guest iframe HTML environments.
 
 export const SDK_CLIENT_SCRIPT = `
-function(sessionToken) {
+function(sessionToken, preview) {
   if (window.aether) return;
 
   var channel = new MessageChannel();
@@ -200,6 +200,29 @@ function(sessionToken) {
       if (idx !== -1) list.splice(idx, 1);
     }
   };
+  if (preview) {
+    function report(level, message, source, line, col) {
+      callHost('preview:output', {
+        level: level, message: message.slice(0, 4000), source: source || '', line: line || 0, col: col || 0
+      }).catch(function() {});
+    }
+    ['log', 'info', 'warn', 'error'].forEach(function(level) {
+      var original = console[level].bind(console);
+      console[level] = function() {
+        original.apply(null, arguments);
+        report(level, Array.from(arguments, function(value) {
+          try { return typeof value === 'object' ? JSON.stringify(value) : String(value); }
+          catch (_) { return String(value); }
+        }).join(' '));
+      };
+    });
+    window.addEventListener('error', function(error) {
+      report('exception', error.message || 'Resource failed to load', error.filename, error.lineno, error.colno);
+    });
+    window.addEventListener('unhandledrejection', function(event) {
+      report('exception', String(event.reason));
+    });
+  }
   parent.postMessage({ type: 'aether:connect', token: sessionToken }, '*', [channel.port2]);
 }
 `;

@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.5.0 · Real Developer Workstation
+
+- Official TypeScript 6.0 compiler and incremental language service in a dedicated worker, with project-based checks, source navigation and esbuild WASM bundles.
+- Code Studio 3.0 adds autosave, conflict checks, restored projects and tabs, configurable splits, preview sizes, console output and runtime error overlays.
+- Shipped Pyodide assets load on demand and work offline after caching. Python sync applies only changed workspace files and protects concurrent edits. Selected Python wheels are pinned and checksum-verified.
+- Developer tasks use virtual kernel PIDs, streamed output, cancellation and timeouts. Git handles staged deletions, index restore, binary diffs and clean branch switching.
+- Code Studio and the Git engine load on demand. Playwright checks production workflows in Chromium and Firefox.
+
+See the [workstation guide](README.md#developer-workstation) for supported commands and limits.
+
 ## 1.4.1 · Stability & Security
 
 - Reproducible installation with `npm ci`, explicit browser Git dependencies and CI for lint, type checking, unit tests, production builds, Chromium and Firefox.

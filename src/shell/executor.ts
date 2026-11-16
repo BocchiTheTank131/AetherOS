@@ -11,6 +11,7 @@ import { parseScript } from './parser';
 import { expandVariables, expandGlobs } from './environment';
 import { commandRegistry } from './registry';
 import { vfs } from '../vfs/vfs';
+import { aetherRuntime } from '../runtime/AetherRuntime';
 import { virtualKernel } from '../core/kernel';
 
 export class ShellExecutor {
@@ -34,6 +35,7 @@ export class ShellExecutor {
     }
 
     try {
+      if (input.length > 256 * 1024) throw new Error('Command exceeds the shell input limit');
       const tokens = tokenize(input);
       const statements = parseScript(tokens);
       return await this.executeStatements(statements, context);
@@ -57,8 +59,9 @@ export class ShellExecutor {
     let finalStderr = '';
     let lastExitCode = 0;
 
+    const limit = context.onOutput ? 256 * 1024 : Infinity;
     for (let i = 0; i < stmts.length; i++) {
-      if (context.aborted) {
+      if (context.aborted || context.signal?.aborted) {
         finalStderr += '^C\n';
         lastExitCode = 130;
         break;
@@ -91,13 +94,18 @@ export class ShellExecutor {
               .map((c) => c.name + (c.args.length ? ' ' + c.args.join(' ') : ''))
               .join(' | ');
 
+            const controller = new AbortController();
+            const jobContext = { ...context, env: { ...context.env }, signal: context.signal
+              ? AbortSignal.any([context.signal, controller.signal]) : controller.signal };
             const proc = virtualKernel.spawn({
               name: chain.pipeline.commands[0]?.name || 'job',
               command: cmdName,
               user: context.user,
+              ppid: context.pid,
+              cleanup: (code) => controller.abort(code),
             });
 
-            const jobPromise = this.executePipeline(chain.pipeline.commands, context)
+            const jobPromise = this.executePipeline(chain.pipeline.commands, { ...jobContext, pid: proc.pid })
               .then((res) => {
                 const job = context.jobs?.get(jobId);
                 if (job) {
@@ -140,8 +148,8 @@ export class ShellExecutor {
           context.exitCode = lastExitCode;
           context.env['?'] = String(lastExitCode);
 
-          finalStdout += pipelineRes.stdout;
-          finalStderr += pipelineRes.stderr;
+          finalStdout = (finalStdout + pipelineRes.stdout).slice(0, limit);
+          finalStderr = (finalStderr + pipelineRes.stderr).slice(0, limit);
           break;
         }
 
@@ -151,8 +159,8 @@ export class ShellExecutor {
 
           if (testRes.exitCode === 0) {
             const thenRes = await this.executeStatements(stmt.then, context);
-            finalStdout += thenRes.stdout;
-            finalStderr += thenRes.stderr;
+            finalStdout = (finalStdout + thenRes.stdout).slice(0, limit);
+            finalStderr = (finalStderr + thenRes.stderr).slice(0, limit);
             lastExitCode = thenRes.exitCode;
             handled = true;
           } else if (stmt.elifs && stmt.elifs.length > 0) {
@@ -160,8 +168,8 @@ export class ShellExecutor {
               const elifTestRes = await this.executeStatements(elif.test, context);
               if (elifTestRes.exitCode === 0) {
                 const elifThenRes = await this.executeStatements(elif.then, context);
-                finalStdout += elifThenRes.stdout;
-                finalStderr += elifThenRes.stderr;
+                finalStdout = (finalStdout + elifThenRes.stdout).slice(0, limit);
+                finalStderr = (finalStderr + elifThenRes.stderr).slice(0, limit);
                 lastExitCode = elifThenRes.exitCode;
                 handled = true;
                 break;
@@ -171,8 +179,8 @@ export class ShellExecutor {
 
           if (!handled && stmt.else) {
             const elseRes = await this.executeStatements(stmt.else, context);
-            finalStdout += elseRes.stdout;
-            finalStderr += elseRes.stderr;
+            finalStdout = (finalStdout + elseRes.stdout).slice(0, limit);
+            finalStderr = (finalStderr + elseRes.stderr).slice(0, limit);
             lastExitCode = elseRes.exitCode;
           }
 
@@ -196,11 +204,11 @@ export class ShellExecutor {
           }
 
           for (const itemVal of expandedItems) {
-            if (context.aborted) break;
+            if (context.aborted || context.signal?.aborted) break;
             context.env[stmt.variable] = itemVal;
             const bodyRes = await this.executeStatements(stmt.body, context);
-            finalStdout += bodyRes.stdout;
-            finalStderr += bodyRes.stderr;
+            finalStdout = (finalStdout + bodyRes.stdout).slice(0, limit);
+            finalStderr = (finalStderr + bodyRes.stderr).slice(0, limit);
             lastExitCode = bodyRes.exitCode;
           }
 
@@ -212,7 +220,7 @@ export class ShellExecutor {
         case 'while': {
           let iterations = 0;
           while (true) {
-            if (context.aborted) break;
+            if (context.aborted || context.signal?.aborted) break;
             if (++iterations % 100 === 0) {
               await new Promise((resolve) => setTimeout(resolve, 0));
             }
@@ -220,8 +228,8 @@ export class ShellExecutor {
             if (testRes.exitCode !== 0) break;
 
             const bodyRes = await this.executeStatements(stmt.body, context);
-            finalStdout += bodyRes.stdout;
-            finalStderr += bodyRes.stderr;
+            finalStdout = (finalStdout + bodyRes.stdout).slice(0, limit);
+            finalStderr = (finalStderr + bodyRes.stderr).slice(0, limit);
             lastExitCode = bodyRes.exitCode;
           }
 
@@ -250,8 +258,8 @@ export class ShellExecutor {
 
             if (matches) {
               const armRes = await this.executeStatements(arm.body, context);
-              finalStdout += armRes.stdout;
-              finalStderr += armRes.stderr;
+              finalStdout = (finalStdout + armRes.stdout).slice(0, limit);
+              finalStderr = (finalStderr + armRes.stderr).slice(0, limit);
               lastExitCode = armRes.exitCode;
               break;
             }
@@ -282,7 +290,7 @@ export class ShellExecutor {
     return {
       stdout: finalStdout,
       stderr: finalStderr,
-      exitCode: lastExitCode,
+      exitCode: context.signal?.aborted ? Number(context.signal.reason) || 130 : lastExitCode,
     };
   }
 
@@ -337,8 +345,20 @@ export class ShellExecutor {
         }
       }
 
-      // Execute single command
-      const res = await this.executeSingleCommand(cmdName, expandedArgs, context, stdinData);
+      if (context.signal?.aborted) return { stdout: pipelineStdout, stderr: pipelineStderr, exitCode: Number(context.signal.reason) || 130 };
+      const originalStream = context.stream;
+      const streamed = { stdout: '', stderr: '' };
+      context.stream = isLast && cmd.redirections.length === 0 && context.onOutput ? (chunk, stream) => {
+        streamed[stream] += chunk;
+        context.onOutput?.(chunk, stream);
+      } : undefined;
+      let res: ExecutionResult;
+      try {
+        res = await this.executeSingleCommand(cmdName, expandedArgs, context, stdinData);
+      } finally {
+        context.stream = originalStream;
+      }
+      if (context.signal?.aborted) return { stdout: pipelineStdout, stderr: pipelineStderr, exitCode: Number(context.signal.reason) || 130 };
       lastExit = res.exitCode;
 
       // Output redirection
@@ -381,6 +401,8 @@ export class ShellExecutor {
         }
       }
 
+      if (isLast && cmdStdout) context.onOutput?.(cmdStdout.startsWith(streamed.stdout) ? cmdStdout.slice(streamed.stdout.length) : cmdStdout, 'stdout');
+      if (cmdStderr) context.onOutput?.(cmdStderr.startsWith(streamed.stderr) ? cmdStderr.slice(streamed.stderr.length) : cmdStderr, 'stderr');
       if (isLast) {
         pipelineStdout += cmdStdout;
       } else {
@@ -541,11 +563,14 @@ export class ShellExecutor {
           content.startsWith('#!/bin/js') ||
           scriptPath.endsWith('.js')
         ) {
-          const { aetherRuntime } = await import('../runtime/AetherRuntime');
           const runRes = await aetherRuntime.execute(
             content.replace(/^#!.*\n/, ''),
             {
               commandName: name,
+              ppid: context.pid,
+              signal: context.signal,
+              onStdout: (chunk) => context.stream?.(chunk, 'stdout'),
+              onStderr: (chunk) => context.stream?.(chunk, 'stderr'),
               args,
             }
           );

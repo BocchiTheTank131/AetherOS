@@ -1,3 +1,4 @@
+import { aetherRuntime } from '../runtime/AetherRuntime';
 // AetherOS v1.4.0: Developer Workstation Test Suite
 import { describe, it, expect, beforeEach } from 'vitest';
 import { vfs } from '../vfs/vfs';
@@ -134,7 +135,7 @@ while True:
   // Objective B: TypeScript Compiler & Language Services
   // ==========================================
   describe('Objective B: TypeScript Compiler & Language Services', () => {
-    it('transpiles TypeScript code to clean executable JavaScript', () => {
+    it('transpiles TypeScript code to clean executable JavaScript', async () => {
       const tsCode = `
 interface User {
   id: number;
@@ -153,26 +154,26 @@ function greet(user: User): string {
 const u: User = { id: 1, name: "Alice" };
 console.log(greet(u));
 `;
-      const res = typeScriptCompiler.transpile(tsCode);
+      const res = await typeScriptCompiler.transpile(tsCode);
       expect(res.outputText).not.toContain('interface User');
-      expect(res.outputText).toContain('const Role = {');
+      expect(res.outputText).toContain('Role["Admin"]');
       expect(res.outputText).toContain('function greet(user)');
       expect(res.outputText).toContain('const u = {');
     });
 
-    it('detects type mismatches and semantic diagnostics', () => {
+    it('detects type mismatches and semantic diagnostics', async () => {
       const invalidTs = `
 const age: number = "twenty";
 const name: string = 42;
 `;
-      const diags = typeScriptCompiler.typeCheck('bad.ts', invalidTs);
+      const diags = await typeScriptCompiler.typeCheck('bad.ts', invalidTs);
       expect(diags.length).toBeGreaterThanOrEqual(2);
       expect(diags.some((d) => d.code === 'TS2322')).toBe(true);
     });
 
-    it('detects undeclared symbols (TS2304)', () => {
+    it('detects undeclared symbols (TS2304)', async () => {
       const code = 'console.log(nonExistentVariable);';
-      const diags = typeScriptCompiler.typeCheck('test.ts', code);
+      const diags = await typeScriptCompiler.typeCheck('test.ts', code);
       expect(diags.some((d) => d.code === 'TS2304')).toBe(true);
     });
 
@@ -197,7 +198,9 @@ console.log("Sum:", add(5, 7));
       expect(res.success).toBe(true);
       expect(vfs.exists(`${TEST_DIR}/dist/main.js`)).toBe(true);
       const bundle = vfs.readFile(`${TEST_DIR}/dist/main.js`);
-      expect(bundle).toContain('Compiled TypeScript Bundle');
+      const output = await aetherRuntime.execute(bundle);
+      expect(output.exitCode, output.stderr).toBe(0);
+      expect(output.stdout).toContain('Sum: 12');
     });
 
     it('runs tsc CLI commands in aesh shell', async () => {
@@ -208,12 +211,12 @@ console.log("Sum:", add(5, 7));
       expect(vfs.exists(`${TEST_DIR}/dist/hello.js`)).toBe(true);
     });
 
-    it('provides autocomplete and hover intelligence via TypeScriptService', () => {
-      const completions = typeScriptService.getCompletions('const num = 10;\ncon', 2, 3);
+    it('provides autocomplete and hover intelligence via TypeScriptService', async () => {
+      const completions = await typeScriptService.getCompletions('const num = 10;\ncon', 2, 3);
       expect(completions.some((c) => c.label === 'const')).toBe(true);
-      expect(completions.some((c) => c.label === 'console.log')).toBe(true);
+      expect(completions.some((c) => c.label === 'console')).toBe(true);
 
-      const hover = typeScriptService.getHover('console.log("test");', 1, 3);
+      const hover = await typeScriptService.getHover('console.log("test");', 1, 3);
       expect(hover?.contents[0]).toContain('console');
     });
   });

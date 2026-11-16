@@ -1,4 +1,4 @@
-// AetherOS - Code Studio 2.0 (Developer Workstation IDE)
+// AetherOS - Code Studio 3.0 (Developer Workstation IDE)
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { AppProps } from '../types';
 import { vfs } from '../../vfs/vfs';
@@ -7,19 +7,27 @@ import { pythonRuntime } from '../../runtimes/python/PythonRuntime';
 import { typeScriptCompiler } from '../../runtimes/typescript/TypeScriptCompiler';
 import { gitService, type GitStatusSummary, type GitCommitRecord } from '../../git/GitService';
 import type { FileDiffResult } from '../../git/GitDiff';
+import { projectManager } from '../../developer/ProjectManager';
 import { taskManager } from '../../developer/TaskManager';
-import type { TaskDefinition } from '../../developer/types';
+import type { TaskDefinition, TaskExecution } from '../../developer/types';
 import { TEMPLATES, type ProjectTemplate } from './templates';
 import { PackageArchive } from '../../pkg/packageArchive';
 import { PackageValidator } from '../../pkg/packageValidator';
 import { packageManager } from '../../pkg/packageManager';
-import { AppHost } from '../../appPlatform/AppHost';
+import { useSystem } from '../../core/context';
+import { systemLogger } from '../../core/logger';
+import { dialogService } from '../../core/dialog';
+import { isWithin, relativeFilePath, withoutSymlinks } from '../../vfs/safePath';
+import { typeScriptService } from '../../runtimes/typescript/TypeScriptService';
+import { generateIntegrityManifest } from '../../pkg/packageIntegrity';
+import { lastStudioProject, readStudioWorkspace, saveStudioWorkspace, type PreviewSize } from './workspaceState';
+import { AppHost, type PreviewMessage } from '../../appPlatform/AppHost';
 import type { AppManifest } from '../../appPlatform/AppManifest';
 import type { InstalledAppRecord } from '../../appPlatform/DynamicAppRegistry';
 import { EditorHost } from '../../editor/EditorHost';
 import { StudioTerminal } from './StudioTerminal';
 import { StudioDiffViewer } from './StudioDiffViewer';
-import type { TSDiagnostic } from '../../runtimes/typescript/types';
+import type { TSCompletionItem, TSDiagnostic } from '../../runtimes/typescript/types';
 import {
   Play,
   Square,
@@ -46,19 +54,21 @@ import {
   X,
 } from 'lucide-react';
 
-export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
+export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid, isFocused }) => {
+  const { registerCloseGuard } = useSystem();
   const initialFilePath = (initialProps?.filePath as string) || '';
   const initialRoot = initialFilePath
-    ? initialFilePath.split('/').slice(0, -1).join('/') || '/'
-    : ((initialProps?.projectRoot as string) || '/home/aether/Projects/typescript-demo');
+    ? projectManager.findProjectRoot(initialFilePath)
+    : ((initialProps?.projectRoot as string) || lastStudioProject() || '/home/aether/Projects/typescript-demo');
 
   // Project state
+  const [initialWorkspace] = useState(() => readStudioWorkspace(initialRoot));
   const [projectRoot, setProjectRoot] = useState<string>(initialRoot);
   const [fileList, setFileList] = useState<string[]>([]);
-  const [openTabs, setOpenTabs] = useState<string[]>([]);
-  const [activeFile, setActiveFile] = useState<string>('');
-  const [secondaryActiveFile, _setSecondaryActiveFile] = useState<string>('');
-  const [splitMode, setSplitMode] = useState<'none' | 'horizontal' | 'vertical'>('none');
+  const [openTabs, setOpenTabs] = useState<string[]>(() => initialFilePath ? [...new Set([...initialWorkspace.openTabs, initialFilePath])] : initialWorkspace.openTabs);
+  const [activeFile, setActiveFile] = useState(initialFilePath || initialWorkspace.activeFile);
+  const [secondaryActiveFile, setSecondaryActiveFile] = useState(initialWorkspace.secondaryFile);
+  const [splitMode, setSplitMode] = useState(initialWorkspace.split);
 
   // File buffer contents
   const [fileContents, setFileContents] = useState<Record<string, string>>({});
@@ -72,13 +82,33 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
 
   // Cursor & status
   const [cursorPos, setCursorPos] = useState<{ line: number; col: number }>({ line: 1, col: 1 });
-  const [jumpToLine, setJumpToLine] = useState<number | undefined>(undefined);
+  const [jump, setJump] = useState<{ line: number; col?: number }>();
+  const [suggestions, setSuggestions] = useState<{ items: TSCompletionItem[]; position: number; prefix: string }>();
+  const [hoverText, setHoverText] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const [autosave, setAutosave] = useState(initialWorkspace.autosave);
   const [logs, setLogs] = useState<string[]>([]);
+  const queuedLogs = useRef<string[]>([]);
+  const logFrame = useRef<number | undefined>(undefined);
+  const appendLog = useCallback((chunk: string) => {
+    queuedLogs.current.push(chunk.trimEnd().slice(0, 8000));
+    if (logFrame.current !== undefined) return;
+    logFrame.current = requestAnimationFrame(() => {
+      logFrame.current = undefined;
+      const batch = queuedLogs.current.splice(0);
+      setLogs((previous) => [...previous, ...batch].slice(-300));
+    });
+  }, []);
+  useEffect(() => () => {
+    if (logFrame.current !== undefined) cancelAnimationFrame(logFrame.current);
+    logFrame.current = undefined;
+  }, []);
   const [isRunning, setIsRunning] = useState(false);
   const [activePid, setActivePid] = useState<number | null>(null);
 
   // Git state
   const [gitStatus, setGitStatus] = useState<GitStatusSummary | null>(null);
+  const [branches, setBranches] = useState<string[]>([]);
   const [gitCommits, setGitCommits] = useState<GitCommitRecord[]>([]);
   const [commitMessage, setCommitMessage] = useState('');
   const [selectedDiff, setSelectedDiff] = useState<FileDiffResult | null>(null);
@@ -86,9 +116,19 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
 
   // Project search & diagnostics
   const [searchQuery, setSearchQuery] = useState('');
+  const searchSequence = useRef(0);
   const [searchResults, setSearchResults] = useState<{ file: string; line: number; text: string }[]>([]);
   const [projectDiagnostics, setProjectDiagnostics] = useState<TSDiagnostic[]>([]);
   const [projectTasks, setProjectTasks] = useState<TaskDefinition[]>([]);
+  const [taskRuns, setTaskRuns] = useState<TaskExecution[]>([]);
+  const [taskClock, setTaskClock] = useState(0);
+  const tasksRunning = taskRuns.some((task) => task.status === 'running');
+  useEffect(() => {
+    if (!tasksRunning || activeSidebar !== 'tasks') return;
+    const timer = setInterval(() => setTaskClock(Date.now()), 500);
+    return () => clearInterval(timer);
+  }, [tasksRunning, activeSidebar]);
+  const runningTasks = useRef(new Set<number>());
 
   // Modals
   const [newProjectModal, setNewProjectModal] = useState(false);
@@ -99,166 +139,259 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
 
   // Packaging & Preview
   const [previewKey, setPreviewKey] = useState(0);
+  const [previewSize, setPreviewSize] = useState<PreviewSize>(initialWorkspace.previewSize);
+  const [previewConsole, setPreviewConsole] = useState<PreviewMessage[]>([]);
+  const [previewError, setPreviewError] = useState<PreviewMessage>();
+  const capturePreview = useCallback((message: PreviewMessage) => {
+    setPreviewConsole((previous) => [...previous.slice(-199), message]);
+    if (message.level === 'exception') setPreviewError(message);
+  }, []);
   const [builtArchive, setBuiltArchive] = useState<Uint8Array | null>(null);
   const [installSuccess, setInstallSuccess] = useState(false);
 
   // Active execution session refs
   const activeJsSessionRef = useRef<RuntimeSession | null>(null);
+  const activeRun = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const tasks = runningTasks.current;
+    return () => {
+      activeRun.current?.abort(143);
+      activeJsSessionRef.current?.cancel();
+      for (const task of tasks) taskManager.cancel(task);
+    };
+  }, []);
 
-  // Scan and refresh project files
+  const state = useRef({ activeFile, openTabs, fileContents, savedContents });
+  const refreshSequence = useRef(0);
+  const loadedRoot = useRef('');
+  useEffect(() => {
+    state.current = { activeFile, openTabs, fileContents, savedContents };
+  }, [activeFile, openTabs, fileContents, savedContents]);
+
   const refreshProject = useCallback(async () => {
+    const current = ++refreshSequence.current;
     try {
       if (!vfs.exists(projectRoot)) {
-        vfs.mkdir(projectRoot, { recursive: true });
-        const defaultTmpl = TEMPLATES[1] || TEMPLATES[0];
-        for (const [name, content] of Object.entries(defaultTmpl.files)) {
-          const parentDir = `${projectRoot}/${name}`.split('/').slice(0, -1).join('/') || '/';
-          if (!vfs.exists(parentDir)) vfs.mkdir(parentDir, { recursive: true });
-          vfs.writeFile(`${projectRoot}/${name}`, content);
-        }
-      }
-
-      // Collect project files recursively
-      const collectFiles = (dir: string): string[] => {
-        const res: string[] = [];
-        try {
-          const entries = vfs.readdir(dir);
-          for (const e of entries) {
-            if (e.name.startsWith('.git') || e.name === 'dist' || e.name === '__pycache__') continue;
-            if (e.type === 'file') res.push(e.path);
-            else if (e.type === 'dir') res.push(...collectFiles(e.path));
+        vfs.atomicBatch(() => {
+          for (const [name, content] of Object.entries((TEMPLATES.find((template) => template.id === 'typescript-app') ?? TEMPLATES[0]).files)) {
+            const path = vfs.resolve(projectRoot, name);
+            vfs.mkdir(path.slice(0, path.lastIndexOf('/')), { recursive: true });
+            vfs.writeText(path, content);
           }
-        } catch {}
-        return res;
-      };
-
-      const files = collectFiles(projectRoot);
+        });
+      }
+      const files = vfs.getAllNodes().filter((node) => node.type === 'file' && isWithin(node.path, projectRoot) &&
+        !node.path.slice(projectRoot.length + 1).split('/').some((part) =>
+          ['.git', 'dist', 'node_modules', '__pycache__'].includes(part))).map((node) => node.path).sort();
       setFileList(files);
-
-      // Load contents for clean files, preserve dirty edits
-      setFileContents((prev) => {
-        const next: Record<string, string> = { ...prev };
-        for (const f of files) {
-          try {
-            if (!(f in next) || next[f] === savedContents[f]) {
-              next[f] = vfs.readFile(f);
-            }
-          } catch {}
-        }
-        return next;
-      });
-
-      setSavedContents((prev) => {
-        const next: Record<string, string> = { ...prev };
-        for (const f of files) {
-          try {
-            next[f] = vfs.readFile(f);
-          } catch {}
-        }
-        return next;
-      });
-
-      // Update active file & tabs
-      if (files.length > 0) {
-        if (!activeFile || !files.includes(activeFile)) {
-          const candidate =
-            initialFilePath && files.includes(initialFilePath)
-              ? initialFilePath
-              : files.find((f) => f.endsWith('main.ts') || f.endsWith('main.py') || f.endsWith('index.html')) || files[0];
-          setActiveFile(candidate);
-          setOpenTabs((prev) => (prev.includes(candidate) ? prev : [...prev, candidate]));
-        }
+      if (loadedRoot.current !== projectRoot) {
+        loadedRoot.current = projectRoot;
+        const candidate = state.current.activeFile && files.includes(state.current.activeFile)
+          ? state.current.activeFile
+          : files.find((file) => /\/(main\.[jt]s|main\.py|index\.html)$/.test(file)) ?? files[0] ?? '';
+        setActiveFile(candidate);
+        if (candidate) setOpenTabs((previous) => previous.includes(candidate) ? previous : [...previous, candidate]);
       }
-
-      // Check Git status
+      const currentState = state.current;
+      const updates: Record<string, string> = {};
+      for (const file of currentState.openTabs) {
+        if (!files.includes(file) || currentState.fileContents[file] !== currentState.savedContents[file]) continue;
+        const node = vfs.getNodeRaw(file);
+        if (node && !node.isBinary && node.size <= 2 * 1024 * 1024) updates[file] = vfs.readText(file);
+      }
+      if (Object.entries(updates).some(([file, text]) => text !== currentState.savedContents[file])) {
+        setFileContents((previous) => ({ ...previous, ...updates }));
+        setSavedContents((previous) => ({ ...previous, ...updates }));
+      }
+      setProjectTasks(taskManager.getTasksForProject(projectRoot));
       const isRepo = await gitService.isRepo(projectRoot);
+      const status = isRepo ? await gitService.status(projectRoot) : null;
+      const commits = isRepo ? await gitService.log(projectRoot, 10) : [];
+      const refs = isRepo ? await gitService.listBranches(projectRoot) : [];
+      if (current !== refreshSequence.current) return;
       setHasGitRepo(isRepo);
-      if (isRepo) {
-        const status = await gitService.status(projectRoot);
-        setGitStatus(status);
-        const commits = await gitService.log(projectRoot, 10);
-        setGitCommits(commits);
-      } else {
-        setGitStatus(null);
-        setGitCommits([]);
-      }
+      setGitStatus(status);
+      setGitCommits(commits);
+      setBranches(refs);
+    } catch (error) {
+      if (current === refreshSequence.current) setSaveError(String(error));
+    }
+  }, [projectRoot]);
 
-      // Load project tasks
-      const tasks = taskManager.getTasksForProject(projectRoot);
-      setProjectTasks(tasks);
-
-      // Update diagnostics
-      const diags: TSDiagnostic[] = [];
-      for (const f of files) {
-        if (f.endsWith('.ts') || f.endsWith('.tsx') || f.endsWith('.js')) {
-          try {
-            const raw = vfs.readFile(f);
-            diags.push(...typeScriptCompiler.typeCheck(f, raw));
-          } catch {}
-        }
-      }
-      setProjectDiagnostics(diags);
-    } catch {}
-  }, [projectRoot, initialFilePath, activeFile, savedContents]);
-
-  // Initial load and file watching
   useEffect(() => {
-    const initialLoad = setTimeout(refreshProject, 0);
-    const unsub = vfs.watch(projectRoot, () => {
-      refreshProject();
+    let timer = setTimeout(refreshProject, 0);
+    const unsubscribe = vfs.watch(projectRoot, ({ path }) => {
+      if (path.endsWith('/code-studio.json')) return;
+      clearTimeout(timer);
+      timer = setTimeout(refreshProject, 80);
+      if (/\.(?:html?|css|[cm]?js|svg|png|jpe?g)$/.test(path)) {
+        setPreviewError(undefined);
+        setPreviewConsole([]);
+        setPreviewKey((key) => key + 1);
+      }
     });
-    return () => { clearTimeout(initialLoad); unsub(); };
+    const invalidate = () => { refreshSequence.current++; };
+    return () => { clearTimeout(timer); unsubscribe(); invalidate(); };
   }, [projectRoot, refreshProject]);
 
-  // Handle Save All
-  const handleSaveAll = useCallback(async () => {
-    for (const [path, content] of Object.entries(fileContents)) {
-      if (content !== savedContents[path]) {
+  useEffect(() => {
+    const paths = new Set([activeFile, secondaryActiveFile, ...openTabs].filter(Boolean));
+    const timer = setTimeout(() => {
+      const loaded: Record<string, string> = {};
+      for (const path of paths) {
+        if (!isWithin(path, projectRoot) || Object.hasOwn(state.current.fileContents, path) || !vfs.exists(path)) continue;
         try {
-          await vfs.writeFile(path, content);
+          const stat = vfs.stat(path);
+          if (stat.isFile() && !vfs.getNodeRaw(path)?.isBinary && stat.size <= 2 * 1024 * 1024) loaded[path] = vfs.readText(path);
         } catch {}
       }
-    }
-    setSavedContents({ ...fileContents });
-    setPreviewKey((k) => k + 1);
+      if (!Object.keys(loaded).length) return;
+      setFileContents((previous) => ({ ...previous, ...loaded }));
+      setSavedContents((previous) => ({ ...previous, ...loaded }));
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [activeFile, openTabs, secondaryActiveFile, projectRoot]);
 
-    // Refresh Git & Diagnostics
-    if (hasGitRepo) {
+  useEffect(() => {
+    const write = () => {
       try {
-        const status = await gitService.status(projectRoot);
-        setGitStatus(status);
-      } catch {}
-    }
-  }, [fileContents, savedContents, hasGitRepo, projectRoot]);
+        saveStudioWorkspace(projectRoot, { openTabs, activeFile, secondaryFile: secondaryActiveFile,
+          split: splitMode, previewSize, autosave });
+      } catch (error) { systemLogger.warn('studio', 'Could not store workspace: ' + String(error)); }
+    };
+    write();
+    window.addEventListener('pagehide', write);
+    return () => window.removeEventListener('pagehide', write);
+  }, [projectRoot, openTabs, activeFile, secondaryActiveFile, splitMode, previewSize, autosave]);
 
-  // Handle Save active file
-  const handleSaveActive = useCallback(async () => {
-    if (!activeFile) return;
-    const content = fileContents[activeFile];
-    if (content !== undefined) {
-      await vfs.writeFile(activeFile, content);
-      setSavedContents((prev) => ({ ...prev, [activeFile]: content }));
-      setPreviewKey((k) => k + 1);
+  const dirtyFiles = useMemo(() => Object.keys(fileContents).filter((file) =>
+    fileContents[file] !== savedContents[file]), [fileContents, savedContents]);
+  const overlays = useMemo(() => Object.fromEntries(dirtyFiles.map((file) => [file, fileContents[file]])), [dirtyFiles, fileContents]);
+
+  useEffect(() => {
+    if (!fileList.some((file) => /\.[cm]?tsx?$/.test(file))) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      void typeScriptCompiler.compile({ cwd: projectRoot, noEmit: true }, overlays, controller.signal)
+        .then((report) => { if (!controller.signal.aborted) setProjectDiagnostics(report.diagnostics); })
+        .catch((error: unknown) => { if (!controller.signal.aborted) setSaveError(String(error)); });
+    }, 400);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [projectRoot, fileList, overlays]);
+
+  const saveFiles = useCallback(async (paths = dirtyFiles, ask = false): Promise<boolean> => {
+    if (!paths.length) return true;
+    try {
+      const snapshot = state.current;
+      const versions = new Map<string, string | undefined>();
+      for (const path of paths) {
+        const checked = withoutSymlinks(path);
+        if (!isWithin(checked, projectRoot) || !vfs.checkAccess(checked, 'w')) throw new Error(`Cannot write ${path}`);
+        const disk = vfs.exists(checked) ? vfs.readText(checked) : undefined;
+        versions.set(path, disk);
+        if (disk !== snapshot.savedContents[path] && disk !== snapshot.fileContents[path]) {
+          if (!ask || !await dialogService.confirm({
+            title: 'File changed outside Code Studio', message: `${path} changed on disk. Overwrite it?`,
+            confirmText: 'Overwrite file', danger: true,
+          })) throw new Error(`Save conflict in ${path}`);
+          if ((vfs.exists(checked) ? vfs.readText(checked) : undefined) !== disk) throw new Error(`File changed again: ${path}`);
+        }
+      }
+      vfs.atomicBatch(() => {
+        for (const path of paths) {
+          const target = withoutSymlinks(path);
+          if (!vfs.checkAccess(target, 'w') || (vfs.exists(target) ? vfs.readText(target) : undefined) !== versions.get(path)) {
+            throw new Error(`File changed while saving: ${path}`);
+          }
+          vfs.writeText(target, snapshot.fileContents[path]);
+        }
+      });
+      if (!await vfs.flush()) throw new Error('File changes are in memory. AetherFS could not persist them.');
+      const written = Object.fromEntries(paths.map((path) => [path, snapshot.fileContents[path]]));
+      setSavedContents((previous) => ({ ...previous, ...written }));
+      setSaveError('');
+      return true;
+    } catch (error) {
+      setSaveError(String(error));
+      return false;
     }
-  }, [activeFile, fileContents]);
+  }, [dirtyFiles, projectRoot]);
+
+  const handleSaveAll = useCallback(() => saveFiles(dirtyFiles, true), [dirtyFiles, saveFiles]);
+  const handleSaveActive = useCallback(() => saveFiles(dirtyFiles.filter((path) => path === activeFile), true), [dirtyFiles, activeFile, saveFiles]);
+  useEffect(() => {
+    if (!autosave || !dirtyFiles.length) return;
+    const timer = setTimeout(() => { void saveFiles(); }, 650);
+    return () => clearTimeout(timer);
+  }, [autosave, dirtyFiles, saveFiles]);
+
+  const confirmLeaving = useCallback(async () => {
+    if (!dirtyFiles.length || await saveFiles()) return true;
+    return dialogService.confirm({
+      title: 'Unsaved changes', message: 'Some changes could not be saved. Discard them?',
+      confirmText: 'Discard changes', danger: true,
+    });
+  }, [dirtyFiles, saveFiles]);
+  useEffect(() => registerCloseGuard(windowId, confirmLeaving), [registerCloseGuard, windowId, confirmLeaving]);
+  useEffect(() => {
+    if (!dirtyFiles.length) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirtyFiles.length]);
+
+  const changeProject = async (root: string) => {
+    root = withoutSymlinks(root);
+    if (root === projectRoot || !await confirmLeaving()) return;
+    const saved = readStudioWorkspace(root);
+    searchSequence.current++;
+    setSearchQuery('');
+    setSearchResults([]);
+    setProjectRoot(root);
+    setOpenTabs(saved.openTabs);
+    setActiveFile(saved.activeFile);
+    setSecondaryActiveFile(saved.secondaryFile);
+    setSplitMode(saved.split);
+    setPreviewSize(saved.previewSize);
+    setAutosave(saved.autosave);
+    setFileContents({});
+    setSavedContents({});
+    setProjectDiagnostics([]);
+    setSaveError('');
+    setBuiltArchive(null);
+    setPreviewConsole([]);
+    setPreviewError(undefined);
+    setMainView('editor');
+  };
+
+  const openProject = async () => {
+    const input = await dialogService.prompt({
+      title: 'Open Project', message: 'Enter an AetherFS project directory.', defaultValue: projectRoot,
+      validate: (path) => {
+        try { return vfs.stat(vfs.resolve(projectRoot, path)).isDirectory() ? null : 'Choose a directory.'; }
+        catch { return 'Directory not found.'; }
+      },
+    });
+    if (input) {
+      try { await changeProject(vfs.resolve(projectRoot, input)); }
+      catch (error) { setSaveError(String(error)); }
+    }
+  };
 
   // Create New Project
-  const handleCreateProject = () => {
+  const handleCreateProject = async () => {
     const cleanName = newProjectName.trim().replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase() || 'my-project';
     const targetDir = `/home/aether/Projects/${cleanName}`;
     try {
-      if (!vfs.exists(targetDir)) {
-        vfs.mkdir(targetDir, { recursive: true });
-      }
+      if (vfs.exists(targetDir)) throw new Error('A project directory already exists with that name');
+      vfs.mkdir(targetDir, { recursive: true });
       for (const [relPath, content] of Object.entries(selectedTemplate.files)) {
         const fullPath = `${targetDir}/${relPath}`;
         const parent = fullPath.split('/').slice(0, -1).join('/') || '/';
         if (!vfs.exists(parent)) vfs.mkdir(parent, { recursive: true });
         vfs.writeFile(fullPath, content);
       }
-      setProjectRoot(targetDir);
-      setOpenTabs([]);
-      setActiveFile('');
+      await changeProject(targetDir);
       setNewProjectModal(false);
       setLogs((prev) => [
         ...prev,
@@ -272,8 +405,9 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
   // Create New File in project
   const handleCreateFile = () => {
     if (!newFileNameInput.trim()) return;
-    const filePath = `${projectRoot}/${newFileNameInput.trim()}`;
     try {
+      const filePath = withoutSymlinks(`${projectRoot}/${relativeFilePath(newFileNameInput.trim())}`);
+      if (vfs.exists(filePath)) throw new Error('A file already exists at this path');
       const parent = filePath.split('/').slice(0, -1).join('/') || '/';
       if (!vfs.exists(parent)) vfs.mkdir(parent, { recursive: true });
       if (!vfs.exists(filePath)) {
@@ -289,145 +423,78 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
     }
   };
 
-  // Run File based on type
   const handleRunActiveFile = async () => {
-    await handleSaveAll();
-    const fileName = activeFile.split('/').pop() || '';
-    const content = fileContents[activeFile] || '';
-
-    // Python Execution
-    if (activeFile.endsWith('.py')) {
-      setIsRunning(true);
-      setActiveBottomTab('output');
-      setLogs((prev) => [
-        ...prev,
-        `[Python] Executing ${fileName} in WebAssembly Runtime (Pyodide v0.27.2)...`,
-      ]);
-
-      const session = pythonRuntime.createSession(`python ${fileName}`);
-      setActivePid(session.pid);
-
-      try {
-        const res = await session.execute({
-          code: content,
-          filename: fileName,
-          cwd: projectRoot,
-          onStdout: (c) => setLogs((prev) => [...prev, c.trimEnd()]),
-          onStderr: (c) => setLogs((prev) => [...prev, `\x1b[31m${c.trimEnd()}\x1b[0m`]),
-        });
-
-        setLogs((prev) => [
-          ...prev,
-          `[Python Finished] Process exited with code ${res.exitCode} (${res.durationMs}ms)`,
-        ]);
-        refreshProject();
-      } catch (err) {
-        setLogs((prev) => [...prev, `[Python Fatal] ${(err as Error).message}`]);
-      } finally {
-        setIsRunning(false);
-        setActivePid(null);
-      }
+    if (!activeFile || activeRun.current) return;
+    if (/\.html?$/.test(activeFile)) {
+      if (await handleSaveAll()) preview();
       return;
     }
-
-    // TypeScript Compilation & Execution
-    if (activeFile.endsWith('.ts') || activeFile.endsWith('.tsx')) {
-      setIsRunning(true);
-      setActiveBottomTab('output');
-      setLogs((prev) => [
-        ...prev,
-        `[TypeScript] Compiling project from ${fileName}...`,
-      ]);
-
-      try {
-        const res = await typeScriptCompiler.compile({
-          entryFile: activeFile,
-          cwd: projectRoot,
-        });
-
-        for (const d of res.diagnostics) {
-          const line = `${d.file}(${d.line},${d.col}): ${d.message}`;
-          setLogs((prev) => [...prev, d.severity === 'error' ? `[TS Error] ${line}` : `[TS Warning] ${line}`]);
-        }
-
-        if (res.success && res.bundleCode) {
-          setLogs((prev) => [
-            ...prev,
-            `[TypeScript Success] Generated compiled JavaScript in dist/main.js`,
-            `[Runtime] Executing compiled bundle...`,
-          ]);
-
-          const jsSession = aetherRuntime.createSession({
-            commandName: `js ${fileName}`,
-            onStdout: (c) => setLogs((prev) => [...prev, c.trimEnd()]),
-            onStderr: (c) => setLogs((prev) => [...prev, `[JS Error] ${c.trimEnd()}`]),
-          });
-          activeJsSessionRef.current = jsSession;
-          setActivePid(jsSession.pid);
-
-          const runRes = await jsSession.execute(res.bundleCode);
-          setLogs((prev) => [
-            ...prev,
-            `[Execution Finished] Exit code ${runRes.exitCode} (${runRes.durationMs}ms)`,
-          ]);
-        } else {
-          setLogs((prev) => [...prev, `[TypeScript Build Failed] Found compilation errors.`]);
-        }
-        refreshProject();
-      } catch (err) {
-        setLogs((prev) => [...prev, `[Compile Error] ${(err as Error).message}`]);
-      } finally {
-        setIsRunning(false);
-        setActivePid(null);
-        activeJsSessionRef.current = null;
-      }
+    if (!/\.(?:py|[cm]?[jt]sx?)$/.test(activeFile)) {
+      setSaveError('Select a JavaScript, TypeScript, Python, or HTML file to run.');
       return;
     }
-
-    // JavaScript Execution
-    if (activeFile.endsWith('.js')) {
-      setIsRunning(true);
-      setActiveBottomTab('output');
-      setLogs((prev) => [
-        ...prev,
-        `[Runtime] Executing ${fileName} in Aether Secure Runtime...`,
-      ]);
-
+    const controller = new AbortController();
+    activeRun.current = controller;
+    const filename = activeFile.split('/').at(-1) ?? activeFile;
+    setIsRunning(true);
+    setActiveBottomTab('output');
+    setBottomPanelOpen(true);
+    const stderr = (chunk: string) => appendLog('[stderr] ' + chunk);
+    try {
+      if (!await handleSaveAll()) return;
+      controller.signal.throwIfAborted();
+      let code = fileContents[activeFile] ?? vfs.readText(activeFile);
+      if (activeFile.endsWith('.py')) {
+        appendLog(`[Python] Running ${filename}`);
+        const session = pythonRuntime.createSession(`python ${filename}`, pid);
+        setActivePid(session.pid);
+        const result = await session.execute({
+          code, filename, cwd: projectRoot, signal: controller.signal,
+          onStdout: appendLog, onStderr: stderr, onStatus: appendLog,
+        });
+        appendLog(`[Python] Exit ${result.exitCode} (${result.durationMs} ms)`);
+        return;
+      }
+      if (/\.[cm]?tsx?$/.test(activeFile)) {
+        appendLog(`[TypeScript] Compiling ${filename}`);
+        const result = await typeScriptCompiler.compile({
+          entryFile: activeFile, cwd: projectRoot,
+        }, overlays, controller.signal);
+        for (const diagnostic of result.diagnostics) {
+          appendLog(`${diagnostic.file}:${diagnostic.line}:${diagnostic.col} ${diagnostic.code} ${diagnostic.message}`);
+        }
+        if (!result.success || !result.bundleCode) {
+          appendLog(result.success ? 'The project configuration emitted no runnable bundle.' : 'TypeScript compilation failed.');
+          return;
+        }
+        code = result.bundleCode;
+      }
+      controller.signal.throwIfAborted();
       const session = aetherRuntime.createSession({
-        commandName: `js ${fileName}`,
-        onStdout: (c) => setLogs((prev) => [...prev, c.trimEnd()]),
-        onStderr: (c) => setLogs((prev) => [...prev, `[Error] ${c.trimEnd()}`]),
+        commandName: `js ${filename}`, ppid: pid, onStdout: appendLog, onStderr: stderr,
       });
       activeJsSessionRef.current = session;
       setActivePid(session.pid);
-
-      try {
-        const res = await session.execute(content);
-        setLogs((prev) => [...prev, `[Finished] Exit code ${res.exitCode} (${res.durationMs}ms)`]);
-      } catch (err) {
-        setLogs((prev) => [...prev, `[Fatal] ${(err as Error).message}`]);
-      } finally {
-        setIsRunning(false);
-        setActivePid(null);
-        activeJsSessionRef.current = null;
-      }
-    }
-  };
-
-  // Stop Execution
-  const handleStopExecution = () => {
-    if (activePid) {
-      pythonRuntime.cancel(activePid);
-      if (activeJsSessionRef.current) activeJsSessionRef.current.cancel();
-      setLogs((prev) => [...prev, `[Stopped] Process PID ${activePid} cancelled by user.`]);
+      const result = await session.execute(code);
+      appendLog(`[JavaScript] Exit ${result.exitCode} (${result.durationMs} ms)`);
+    } catch (error) {
+      appendLog(controller.signal.aborted ? 'Execution cancelled.' : String(error));
+    } finally {
       setIsRunning(false);
       setActivePid(null);
+      activeJsSessionRef.current = null;
+      activeRun.current = null;
+      void refreshProject();
     }
   };
 
-  // Build .aepkg Package Archive
+  const handleStopExecution = () => {
+    activeRun.current?.abort(130);
+    activeJsSessionRef.current?.cancel();
+  };
+
   const handleBuildPackage = async () => {
-    await handleSaveAll();
+    if (!await handleSaveAll()) return;
     setInstallSuccess(false);
 
     try {
@@ -441,6 +508,7 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
         }
       }
 
+      packFiles.set('integrity.json', new TextEncoder().encode(JSON.stringify(await generateIntegrityManifest(packFiles))));
       const val = await PackageValidator.validate(packFiles);
       if (!val.valid || !val.manifest) {
         setLogs((prev) => [
@@ -516,6 +584,8 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
   const handleGitCommit = async () => {
     if (!commitMessage.trim()) return;
     try {
+      const summary = await gitService.status(projectRoot);
+      if (!summary.staged.length) throw new Error('Stage files before committing');
       const oid = await gitService.commit(projectRoot, commitMessage.trim());
       setLogs((prev) => [...prev, `[Git Commit] [${gitStatus?.branch} ${oid.slice(0, 7)}] ${commitMessage}`]);
       setCommitMessage('');
@@ -525,9 +595,9 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
     }
   };
 
-  const handleViewDiff = async (filepath: string) => {
+  const handleViewDiff = async (filepath: string, staged = false) => {
     try {
-      const diffs = await gitService.diff(projectRoot, filepath);
+      const diffs = await gitService.diff(projectRoot, filepath, staged ? 'staged' : 'unstaged');
       if (diffs.length > 0) {
         setSelectedDiff(diffs[0]);
         setMainView('diff');
@@ -538,8 +608,38 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
   };
 
   // Project search
-  const handleProjectSearch = (query: string) => {
+  const gitAction = async (operation: () => Promise<void>) => {
+    try { await operation(); await refreshProject(); }
+    catch (error) { setSaveError(String(error)); }
+  };
+
+  const addBranch = async () => {
+    const ref = await dialogService.prompt({ title: 'Create Git branch', message: 'Enter a branch name.' });
+    if (ref?.trim()) await gitAction(() => gitService.branch(projectRoot, ref.trim()));
+  };
+
+  const switchBranch = async (ref: string) => {
+    if (dirtyFiles.length) {
+      setSaveError('Save your editor buffers before switching branches.');
+      return;
+    }
+    await gitAction(() => gitService.checkout(projectRoot, ref));
+  };
+
+  const restoreFile = async (file: string) => {
+    if (dirtyFiles.includes(vfs.resolve(projectRoot, file))) {
+      setSaveError('Save or close the editor buffer before restoring this file.');
+      return;
+    }
+    if (await dialogService.confirm({
+      title: 'Restore working file', message: `Replace changes in ${file} with the staged version?`,
+      danger: true, confirmText: 'Restore',
+    })) await gitAction(() => gitService.restore(projectRoot, file));
+  };
+
+  const handleProjectSearch = async (query: string) => {
     setSearchQuery(query);
+    const request = ++searchSequence.current;
     if (!query.trim()) {
       setSearchResults([]);
       return;
@@ -547,10 +647,18 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
     const results: { file: string; line: number; text: string }[] = [];
     const lower = query.toLowerCase();
 
+    let scanned = 0;
     for (const f of fileList) {
-      const content = fileContents[f] || (vfs.exists(f) ? vfs.readFile(f) : '');
+      if (results.length >= 200) break;
+      if (++scanned % 16 === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        if (request !== searchSequence.current) return;
+      }
+      const node = vfs.getNodeRaw(f);
+      if (!node || node.isBinary || node.size > 2 * 1024 * 1024 || !vfs.checkAccess(f, 'r')) continue;
+      const content = fileContents[f] ?? vfs.readFile(f);
       const fileLines = content.split('\n');
-      for (let i = 0; i < fileLines.length; i++) {
+      for (let i = 0; i < fileLines.length && results.length < 200; i++) {
         if (fileLines[i].toLowerCase().includes(lower)) {
           results.push({
             file: f,
@@ -560,40 +668,84 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
         }
       }
     }
-    setSearchResults(results);
+    if (request === searchSequence.current) setSearchResults(results);
   };
 
-  // Manifest and Preview Record
-  const manifestContent = fileContents[`${projectRoot}/manifest.json`];
-  let parsedManifest: AppManifest | null = null;
-  if (manifestContent) {
-    try {
-      parsedManifest = JSON.parse(manifestContent);
-    } catch {}
-  }
+  const parsedManifest = useMemo<AppManifest | null>(() => {
+    const file = projectRoot + '/manifest.json';
+    try { return JSON.parse(fileContents[file] ?? (fileList.includes(file) ? vfs.readText(file) : 'null')); }
+    catch { return null; }
+  }, [fileContents, fileList, projectRoot]);
 
-  const previewRecord: InstalledAppRecord | undefined = useMemo(() => {
-    if (!parsedManifest) return undefined;
-    return {
-      id: parsedManifest.id || 'preview.app',
-      packageId: parsedManifest.id || 'preview.app',
-      name: parsedManifest.name || 'Preview App',
-      version: parsedManifest.version || '1.0.0',
-      description: parsedManifest.description || '',
-      author: parsedManifest.author || '',
-      type: parsedManifest.type || 'windowed',
-      entry: parsedManifest.entry || 'index.html',
-      icon: parsedManifest.icon,
-      installDir: projectRoot,
-      manifest: parsedManifest,
-      installedAt: '2026-01-01T00:00:00.000Z',
-      updatedAt: '2026-01-01T00:00:00.000Z',
-      source: 'local',
+  const previewEntry = fileList.find((path) => path === projectRoot + '/index.html') ??
+    fileList.find((path) => /\.html?$/.test(path));
+  const previewRecord = useMemo<InstalledAppRecord | undefined>(() => {
+    if (!previewEntry) return;
+    const entry = previewEntry.slice(projectRoot.length + 1);
+    const manifest: AppManifest = {
+      schemaVersion: 1, id: 'preview.app', name: 'Web Preview',
+      version: '1.0.0', description: '', author: '', type: 'windowed', entry, ...parsedManifest,
     };
-  }, [parsedManifest, projectRoot]);
+    if (!/\.html?$/i.test(manifest.entry)) manifest.entry = entry;
+    return {
+      id: manifest.id, packageId: manifest.id, name: manifest.name, version: manifest.version,
+      description: manifest.description, author: manifest.author, type: manifest.type, entry: manifest.entry,
+      installDir: projectRoot, manifest, installedAt: '', updatedAt: '', source: 'local',
+    };
+  }, [parsedManifest, previewEntry, projectRoot]);
+
+  const preview = () => {
+    setPreviewError(undefined);
+    setPreviewConsole([]);
+    setPreviewKey((key) => key + 1);
+    setMainView('preview');
+  };
+
+  const openFile = (path: string, line?: number, col?: number) => {
+    if (!isWithin(path, projectRoot) || !vfs.exists(path)) return;
+    setOpenTabs((previous) => previous.includes(path) ? previous : [...previous, path]);
+    setActiveFile(path);
+    setSuggestions(undefined);
+    setHoverText('');
+    setMainView('editor');
+    if (line) setJump({ line, col });
+  };
+
+  const inspectSymbol = async (action: 'complete' | 'hover' | 'definition') => {
+    if (!/\.[cm]?[jt]sx?$/.test(activeFile)) return;
+    try {
+      const project = { root: projectRoot, file: activeFile, overlays };
+      const { line, col } = cursorPos;
+      if (action === 'complete') {
+        const items = await typeScriptService.getCompletions(currentContent, line, col, project);
+        const position = currentContent.split('\n').slice(0, line - 1).reduce((offset, text) => offset + text.length + 1, 0) + col - 1;
+        setSuggestions({ items: items.slice(0, 12), position, prefix: currentContent.slice(0, position).match(/[\w$]+$/)?.[0] ?? '' });
+      } else if (action === 'hover') {
+        const info = await typeScriptService.getHover(currentContent, line, col, project);
+        setHoverText(info?.contents.join('\n') || 'No symbol information');
+      } else {
+        const targets = await typeScriptService.getDefinition(currentContent, line, col, project);
+        const target = targets.find((item) => isWithin(item.file, projectRoot));
+        if (target) openFile(target.file, target.line, target.col);
+        else setHoverText('No project definition found');
+      }
+    } catch (error) { setSaveError(String(error)); }
+  };
+
+  const taskState = (execution: TaskExecution) => {
+    if (execution.status === 'running') {
+      runningTasks.current.add(execution.pid);
+      setTaskClock(execution.startTime);
+    }
+    else runningTasks.current.delete(execution.pid);
+    setTaskRuns((previous) => [execution, ...previous.filter((item) => item.pid !== execution.pid)]
+      .filter((item, index) => item.status === 'running' || index < 12));
+  };
 
   const activeFileName = activeFile.split('/').pop() || '';
-  const currentContent = fileContents[activeFile] || '';
+  const currentContent = fileContents[activeFile] ?? '';
+  const activeNode = fileList.includes(activeFile) ? vfs.getNodeRaw(activeFile) : null;
+  const editorUnavailable = Boolean(activeNode && (activeNode.isBinary || activeNode.size > 2 * 1024 * 1024));
 
   return (
     <div className="flex flex-col h-full bg-[#0d1117] text-gray-200 font-mono text-xs overflow-hidden select-text relative">
@@ -601,7 +753,7 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
       <div className="flex items-center justify-between px-3 py-1.5 bg-[#161b22] border-b border-gray-800 select-none">
         <div className="flex items-center gap-2">
           <Code2 className="w-4 h-4 text-cyan-400" />
-          <span className="font-semibold text-white">Code Studio 2.0</span>
+          <span className="font-semibold text-white">Code Studio 3.0</span>
           <span className="text-gray-500">|</span>
           <span className="text-gray-400 truncate max-w-[200px]" title={projectRoot}>
             {projectRoot.replace('/home/aether/Projects/', '')}
@@ -615,9 +767,14 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
             <Plus className="w-3 h-3 text-cyan-400" />
             <span>New Project</span>
           </button>
+          <button onClick={openProject} className="px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700">Open Project</button>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 flex-wrap justify-end">
+          <label className="flex items-center gap-1 text-[10px]">
+            <input type="checkbox" checked={autosave} onChange={(event) => setAutosave(event.target.checked)} />
+            Autosave
+          </label>
           {/* Intelligent Run Button */}
           {isRunning ? (
             <button
@@ -626,7 +783,7 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
               title="Stop Running Process"
             >
               <Square className="w-3.5 h-3.5" />
-              <span>Stop (PID {activePid})</span>
+              <span>{activePid ? `Stop (PID ${activePid})` : 'Cancel'}</span>
             </button>
           ) : (
             <button
@@ -686,10 +843,7 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
 
           {previewRecord && (
             <button
-              onClick={() => {
-                handleSaveAll();
-                setMainView('preview');
-              }}
+              onClick={preview}
               className="flex items-center gap-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-medium"
               title="Run Project in Sandboxed Preview"
             >
@@ -700,6 +854,7 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
         </div>
       </div>
 
+      {saveError && <div role="alert" className="px-3 py-1 bg-rose-950/60 text-rose-200">{saveError}</div>}
       {/* Main Studio Body */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Activity Bar */}
@@ -841,10 +996,16 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
               ) : (
                 <div className="flex-1 overflow-y-auto flex flex-col gap-2">
                   <div className="flex flex-col gap-1">
+                    <div className="flex gap-1">
+                      <select aria-label="Git branch" className="min-w-0 flex-1 bg-gray-800" value={gitStatus?.branch ?? ''} onChange={(event) => void switchBranch(event.target.value)}>
+                        {[...new Set([gitStatus?.branch ?? 'main', ...branches])].map((branch) => <option key={branch}>{branch}</option>)}
+                      </select>
+                      <button className="px-1 bg-gray-800 rounded" onClick={addBranch}>New branch</button>
+                    </div>
                     <textarea
                       value={commitMessage}
                       onChange={(e) => setCommitMessage(e.target.value)}
-                      placeholder="Commit message (Enter to commit)..."
+                      placeholder="Commit message"
                       className="w-full h-16 p-2 bg-[#0d1117] border border-gray-700 rounded text-xs text-white outline-none resize-none focus:border-cyan-400"
                     />
                     <button
@@ -873,7 +1034,7 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
                             title="Click to view diff"
                           >
                             <span className="text-[10px] font-bold text-amber-400">
-                              {item.status === 'untracked' ? 'U' : 'M'}
+                              {item.status === 'untracked' ? 'U' : item.status === 'deleted' ? 'D' : 'M'}
                             </span>
                             <span className="truncate">{item.filepath}</span>
                           </button>
@@ -881,9 +1042,11 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
                             onClick={() => handleGitStage(item.filepath)}
                             className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-emerald-400 text-gray-400 transition-opacity"
                             title="Stage file"
+                            aria-label={`Stage ${item.filepath}`}
                           >
                             <Plus className="w-3.5 h-3.5" />
                           </button>
+                          {item.status !== 'untracked' && <button className="px-1" onClick={() => void restoreFile(item.filepath)}>Restore</button>}
                         </div>
                       ))}
 
@@ -899,14 +1062,15 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
                               className="flex items-center justify-between px-1.5 py-1 rounded hover:bg-gray-800/80"
                             >
                               <button
-                                onClick={() => handleViewDiff(item.filepath)}
+                                onClick={() => handleViewDiff(item.filepath, true)}
                                 className="flex items-center gap-1.5 truncate text-left text-emerald-300 hover:underline flex-1"
                               >
                                 <span className="text-[10px] font-bold text-emerald-400">
-                                  {item.status === 'added' ? 'A' : 'M'}
+                                  {item.status === 'added' ? 'A' : item.status === 'deleted' ? 'D' : 'M'}
                                 </span>
                                 <span className="truncate">{item.filepath}</span>
                               </button>
+                              <button className="px-1" onClick={() => void gitAction(() => gitService.unstage(projectRoot, item.filepath))}>Unstage</button>
                             </div>
                           ))}
                         </>
@@ -951,7 +1115,7 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
                     onClick={() => {
                       if (!openTabs.includes(res.file)) setOpenTabs((prev) => [...prev, res.file]);
                       setActiveFile(res.file);
-                      setJumpToLine(res.line);
+                      setJump({ line: res.line });
                       setMainView('editor');
                     }}
                     className="flex flex-col text-left p-1.5 rounded hover:bg-gray-800/60 border border-transparent hover:border-gray-700 transition-colors"
@@ -982,7 +1146,7 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
                       onClick={() => {
                         if (!openTabs.includes(d.file)) setOpenTabs((prev) => [...prev, d.file]);
                         setActiveFile(d.file);
-                        setJumpToLine(d.line);
+                        setJump({ line: d.line, col: d.col });
                         setMainView('editor');
                       }}
                       className="flex flex-col text-left p-1.5 rounded hover:bg-gray-800/60 border border-transparent hover:border-rose-900/40"
@@ -1008,6 +1172,14 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
                 <span>Tasks & Scripts</span>
               </div>
               <div className="flex-1 overflow-y-auto flex flex-col gap-1.5">
+                {taskRuns.map((task) => (
+                  <div key={task.pid} className="rounded border border-gray-700 p-2" role="status">
+                    <div>{task.taskId} · PID {task.pid} · {task.status}</div>
+                    {task.endTime !== undefined ? <span>Exit {task.exitCode} · {task.endTime - task.startTime} ms</span> :
+                      <div className="flex justify-between"><span>{((Math.max(taskClock, task.startTime) - task.startTime) / 1000).toFixed(1)} s</span>
+                        <button className="text-rose-300" onClick={() => taskManager.cancel(task.pid)}>Stop task</button></div>}
+                  </div>
+                ))}
                 {projectTasks.map((t) => (
                   <div
                     key={t.id}
@@ -1019,11 +1191,12 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
                     </div>
                     <button
                       onClick={async () => {
+                        setBottomPanelOpen(true);
                         setActiveBottomTab('output');
-                        await taskManager.runTask(projectRoot, t, (chunk) => {
-                          setLogs((prev) => [...prev, chunk.trimEnd()]);
-                        });
-                        refreshProject();
+                        try {
+                          await taskManager.runTask(projectRoot, t, appendLog, taskState, pid);
+                          void refreshProject();
+                        } catch (error) { setSaveError(String(error)); }
                       }}
                       className="p-1.5 bg-cyan-600/80 hover:bg-cyan-500 text-white rounded"
                       title="Run Task"
@@ -1052,6 +1225,8 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
                     key={tabPath}
                     onClick={() => {
                       setActiveFile(tabPath);
+                      setSuggestions(undefined);
+                      setHoverText('');
                       setMainView('editor');
                     }}
                     className={`flex items-center gap-1.5 px-3 py-1.5 border-t-2 font-medium cursor-pointer border-r border-gray-800/60 transition-colors ${
@@ -1064,13 +1239,16 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
                     <span>{tabName}</span>
                     {tabDirty && <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />}
                     <button
-                      onClick={(e) => {
+                      aria-label={`Close ${tabName}`}
+                      onClick={async (e) => {
                         e.stopPropagation();
+                        if (tabDirty && !await saveFiles([tabPath]) &&
+                            !await dialogService.confirm({ title: 'Close unsaved file?', message: tabPath, confirmText: 'Discard changes', danger: true })) return;
+                        setFileContents((previous) => { const next = { ...previous }; delete next[tabPath]; return next; });
+                        setSavedContents((previous) => { const next = { ...previous }; delete next[tabPath]; return next; });
                         const nextTabs = openTabs.filter((t) => t !== tabPath);
                         setOpenTabs(nextTabs);
-                        if (activeFile === tabPath && nextTabs.length > 0) {
-                          setActiveFile(nextTabs[nextTabs.length - 1]);
-                        }
+                        if (activeFile === tabPath) setActiveFile(nextTabs.at(-1) ?? '');
                       }}
                       className="p-0.5 hover:text-white rounded hover:bg-gray-700 ml-1 text-gray-500"
                     >
@@ -1082,7 +1260,7 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
 
               {previewRecord && (
                 <button
-                  onClick={() => setMainView('preview')}
+                  onClick={preview}
                   className={`flex items-center gap-1.5 px-3 py-1.5 border-t-2 font-medium ${
                     mainView === 'preview'
                       ? 'bg-[#0d1117] text-white border-emerald-400'
@@ -1136,48 +1314,86 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
           <div className="flex-1 flex overflow-hidden relative">
             {mainView === 'preview' ? (
               <div className="w-full h-full flex flex-col bg-[#0f172a] relative">
-                {previewRecord ? (
-                  <AppHost
-                    key={previewKey}
-                    windowId="code-studio-preview"
-                    pid={9999}
-                    isFocused={true}
-                    onClose={() => setMainView('editor')}
-                    previewRecord={previewRecord}
-                  />
-                ) : (
-                  <div className="p-4 text-gray-400 text-xs">No previewable app available.</div>
-                )}
+                <div className="flex items-center gap-2 p-2 border-b border-gray-800">
+                  <label>Viewport <select aria-label="Preview viewport" className="bg-gray-800 p-1" value={previewSize}
+                    onChange={(event) => setPreviewSize(event.target.value as PreviewSize)}>
+                    <option value="desktop">Desktop</option><option value="tablet">Tablet</option><option value="mobile">Mobile</option>
+                  </select></label>
+                  <button className="px-2 py-1 bg-gray-800 rounded" onClick={preview}>Reload preview</button>
+                </div>
+                <div className="flex-1 min-h-0 relative overflow-auto">
+                  <div className="h-full mx-auto bg-white" style={{ width: previewSize === 'mobile' ? 390 : previewSize === 'tablet' ? 768 : '100%' }}>
+                    {previewRecord && <AppHost key={previewKey} windowId={windowId + '-preview'} pid={pid}
+                      isFocused={isFocused} previewRecord={previewRecord} onPreviewOutput={capturePreview} />}
+                  </div>
+                  {previewError && <div role="alert" className="absolute top-0 inset-x-0 p-3 bg-rose-950/95 text-rose-100">
+                    <button className="float-right underline" onClick={() => setPreviewError(undefined)}>Dismiss</button>
+                    <div>{previewError.message}</div>
+                    {previewError.source && <div>{previewError.source}:{previewError.line}:{previewError.col}</div>}
+                  </div>}
+                </div>
+                <div className="h-24 overflow-auto border-t border-gray-700 p-2" aria-label="Preview console">
+                  {previewConsole.map((log, index) => <div key={index} className={log.level === 'exception' || log.level === 'error' ? 'text-rose-300' : 'text-gray-300'}>
+                    [{log.level}] {log.message}
+                  </div>)}
+                </div>
               </div>
             ) : mainView === 'diff' && selectedDiff ? (
               <StudioDiffViewer diff={selectedDiff} onClose={() => setMainView('editor')} />
             ) : (
               <div className={`flex-1 flex overflow-hidden ${splitMode === 'vertical' ? 'flex-col' : 'flex-row'}`}>
                 {/* Primary Editor Pane */}
-                <div className="flex-1 h-full overflow-hidden">
-                  <EditorHost
+                <div className="flex-1 h-full overflow-hidden relative">
+                  <div className="absolute right-2 top-1 z-10 flex gap-1">
+                    <button className="rounded bg-gray-800 px-1.5" onClick={() => void inspectSymbol('complete')}>Complete</button>
+                    <button className="rounded bg-gray-800 px-1.5" onClick={() => void inspectSymbol('hover')}>Type info</button>
+                    <button className="rounded bg-gray-800 px-1.5" onClick={() => void inspectSymbol('definition')}>Definition</button>
+                  </div>
+                  {hoverText && <div className="absolute right-2 top-7 z-20 max-w-[80%] rounded bg-gray-900 p-2 shadow" role="status">
+                    <button className="float-right ml-2 underline" onClick={() => setHoverText('')}>Close</button>
+                    <pre className="whitespace-pre-wrap">{hoverText}</pre>
+                  </div>}
+                  {suggestions && <div className="absolute right-2 top-7 z-20 rounded bg-gray-900 p-2 shadow">
+                    <button className="underline" onClick={() => setSuggestions(undefined)}>Close suggestions</button>
+                    {suggestions.items.map((item) => <button key={item.label} className="block w-full text-left p-1 hover:bg-gray-700"
+                      onClick={() => {
+                        const start = suggestions.position - suggestions.prefix.length;
+                        setFileContents((previous) => ({ ...previous, [activeFile]: currentContent.slice(0, start) + item.label + currentContent.slice(suggestions.position) }));
+                        setSuggestions(undefined);
+                      }}>{item.label}</button>)}
+                  </div>}
+                  {editorUnavailable ? <p className="p-4 text-gray-400">This file is binary or exceeds the 2 MiB editor limit.</p> : <EditorHost
                     value={currentContent}
+                    key={activeFile}
+                    readOnly={!activeFile || fileContents[activeFile] === undefined}
+                    onComplete={() => void inspectSymbol('complete')}
+                    onDefinition={() => void inspectSymbol('definition')}
                     onChange={(val) => {
                       setFileContents((prev) => ({ ...prev, [activeFile]: val }));
                     }}
                     filename={activeFileName}
                     onSave={handleSaveActive}
                     onCursorChange={(line, col) => setCursorPos({ line, col })}
-                    highlightLine={jumpToLine}
+                    jump={jump}
                     diagnostics={projectDiagnostics.filter((d) => d.file === activeFile)}
-                  />
+                  />}
                 </div>
 
                 {/* Secondary Split Pane */}
                 {splitMode !== 'none' && (
-                  <div className="flex-1 h-full border-l border-gray-800 overflow-hidden">
+                  <div className="flex-1 h-full border-l border-gray-800 overflow-hidden flex flex-col">
+                    <select aria-label="Split editor file" value={secondaryActiveFile || activeFile} className="bg-gray-800 px-2"
+                      onChange={(event) => setSecondaryActiveFile(event.target.value)}>
+                      {fileList.map((path) => <option key={path} value={path}>{path.slice(projectRoot.length + 1)}</option>)}
+                    </select>
                     <EditorHost
-                      value={fileContents[secondaryActiveFile || fileList[1] || activeFile] || ''}
+                      value={fileContents[secondaryActiveFile || activeFile] || ''}
+                      readOnly={fileContents[secondaryActiveFile || activeFile] === undefined}
                       onChange={(val) => {
-                        const target = secondaryActiveFile || fileList[1] || activeFile;
+                        const target = secondaryActiveFile || activeFile;
                         setFileContents((prev) => ({ ...prev, [target]: val }));
                       }}
-                      filename={(secondaryActiveFile || fileList[1] || activeFile).split('/').pop()}
+                      filename={(secondaryActiveFile || activeFile).split('/').pop()}
                       onSave={handleSaveAll}
                     />
                   </div>
@@ -1257,7 +1473,7 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
               {/* Bottom Tab Content */}
               <div className="flex-1 overflow-hidden">
                 {activeBottomTab === 'terminal' ? (
-                  <StudioTerminal cwd={projectRoot} onCwdChange={(newCwd) => setProjectRoot(newCwd)} />
+                  <StudioTerminal key={projectRoot} cwd={projectRoot} />
                 ) : activeBottomTab === 'output' ? (
                   <div className="h-full p-2 font-mono text-[11px] overflow-y-auto select-text text-gray-300 leading-relaxed">
                     {logs.length === 0 ? (
@@ -1274,7 +1490,7 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
                         onClick={() => {
                           if (!openTabs.includes(d.file)) setOpenTabs((prev) => [...prev, d.file]);
                           setActiveFile(d.file);
-                          setJumpToLine(d.line);
+                          setJump({ line: d.line, col: d.col });
                           setMainView('editor');
                         }}
                         className="flex items-center gap-2 p-1 rounded hover:bg-gray-800 cursor-pointer text-rose-300"

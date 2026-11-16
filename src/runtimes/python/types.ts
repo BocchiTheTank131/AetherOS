@@ -7,6 +7,8 @@ export interface PythonExecutionOptions {
   args?: string[];
   timeoutMs?: number;
   signal?: AbortSignal;
+  ppid?: number;
+  packages?: string[];
   files?: Record<string, Uint8Array | string>;
   onStdout?: (chunk: string) => void;
   onStderr?: (chunk: string) => void;

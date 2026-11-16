@@ -20,7 +20,7 @@ Options:
 
       if (args.includes('-v') || args.includes('--version')) {
         return {
-          stdout: 'Version 5.8.0-aether (TypeScript Compiler for AetherOS)\n',
+          stdout: `Version ${await typeScriptCompiler.version()}\n`,
           stderr: '',
           exitCode: 0,
         };
@@ -35,35 +35,34 @@ Options:
       }
 
       const noEmit = args.includes('--noEmit');
-      let configPath = `${cwd}/tsconfig.json`;
-      const pIdx = args.indexOf('-p');
-      const pArg = pIdx !== -1 ? args[pIdx + 1] : undefined;
-      if (pArg) {
-        configPath = vfs.resolve(cwd, pArg);
-      }
-
-      // Check single file compilation: tsc main.ts
-      const files = args.filter((a) => !a.startsWith('-') && a !== pArg);
-      let entryFile: string | undefined = undefined;
-
-      if (files.length > 0) {
-        entryFile = vfs.resolve(cwd, files[0]);
-        if (!vfs.exists(entryFile)) {
-          return {
-            stdout: '',
-            stderr: `error TS5058: The specified path does not exist: '${files[0]}'.\n`,
-            exitCode: 1,
-          };
+      const pIdx = args.findIndex((arg) => arg === '-p' || arg === '--project');
+      const pArg = pIdx === -1 ? undefined : args[pIdx + 1];
+      const files = args.filter((arg, index) => !arg.startsWith('-') && (pIdx === -1 || index !== pIdx + 1))
+        .map((file) => vfs.resolve(cwd, file));
+      let configPath = pArg ? vfs.resolve(cwd, pArg) : undefined;
+      if (pIdx !== -1) {
+        if (!configPath || !vfs.exists(configPath)) return { stdout: '', stderr: 'tsc: project config does not exist\n', exitCode: 1 };
+        if (vfs.stat(configPath).isDirectory()) configPath = vfs.resolve(configPath, 'tsconfig.json');
+        if (!vfs.exists(configPath) || files.length) {
+          return { stdout: '', stderr: 'tsc: provide a project config or a list of input files\n', exitCode: 1 };
         }
+      }
+      if (args.some((arg, index) => arg.startsWith('-') && (pIdx === -1 || index !== pIdx + 1) &&
+          !['-p', '--project', '--noEmit'].includes(arg))) {
+        return { stdout: '', stderr: 'tsc: unsupported compiler flag. Use tsconfig.json for compiler options.\n', exitCode: 1 };
+      }
+      for (const file of files) {
+        if (!vfs.exists(file)) return { stdout: '', stderr: `error TS6053: File '${file}' not found.\n`, exitCode: 1 };
       }
 
       try {
         const result = await typeScriptCompiler.compile({
-          entryFile,
+          entryFile: files[0],
+          files: files.length ? files : undefined,
           cwd,
           noEmit,
           configPath,
-        });
+        }, undefined, context.signal);
 
         let out = '';
         let errOut = '';

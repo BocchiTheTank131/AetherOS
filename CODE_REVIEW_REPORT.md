@@ -17,6 +17,12 @@
 
 ---
 
+## v1.5.0 follow-up
+
+The previous TypeScript diagnostics and simulated Python path have been replaced with the official compiler API and Pyodide execution. Workstation regressions cover project configuration and navigation, Python file conflicts, tracked Git deletions, binary index restore, and task termination. Playwright covers real workers, offline reload, preview diagnostics, package updates and application boundaries in Chromium and Firefox.
+
+Remaining limits include bounded transfers, best-effort browser resource isolation, browser storage eviction, local-only Git and a curated set of Python packages. Git uses a whole-file replacement hunk for large text diffs beyond its comparison budget. Review the [release notes](CHANGELOG.md) for scope.
+
 ## v1.4.1 follow-up
 
 The original audit below is a historical record. v1.4.1 covers private-path collisions and symlink traversal, authenticated guest channels, worker prototype lockdown and removal of main-thread fallback execution, bounded ZIP extraction, persistence conflicts, and workspace component lifetimes. See [the release notes](CHANGELOG.md) for verification scope and browser limits.

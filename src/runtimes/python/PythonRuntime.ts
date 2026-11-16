@@ -1,15 +1,15 @@
 // AetherOS - Python Runtime Coordinator
 import { PythonSession } from './PythonSession';
 import type { PythonExecutionOptions, PythonExecutionResult } from './types';
-import { PYODIDE_VERSION } from './pythonWorkerSource';
+import { info } from 'pyodide/pyodide-lock.json';
 
 export class PythonRuntime {
-  public readonly version = `Python 3.12.1 (Pyodide ${PYODIDE_VERSION})`;
+  public readonly version = `Python ${info.python} (Pyodide ${info.version})`;
   private activeSessions = new Map<string, PythonSession>();
   private pidToSession = new Map<number, PythonSession>();
   private maxConcurrentSessions = 5;
 
-  public createSession(commandName = 'python'): PythonSession {
+  public createSession(commandName = 'python', ppid?: number): PythonSession {
     if (this.activeSessions.size >= this.maxConcurrentSessions) {
       throw new Error(`Maximum concurrent Python sessions reached (${this.maxConcurrentSessions})`);
     }
@@ -17,7 +17,7 @@ export class PythonRuntime {
     const session = new PythonSession(commandName, (id, pid) => {
       this.activeSessions.delete(id);
       this.pidToSession.delete(pid);
-    });
+    }, ppid);
 
     this.activeSessions.set(session.id, session);
     this.pidToSession.set(session.pid, session);
@@ -25,7 +25,7 @@ export class PythonRuntime {
   }
 
   public async execute(options: PythonExecutionOptions): Promise<PythonExecutionResult> {
-    const session = this.createSession(`python ${options.filename || 'script.py'}`);
+    const session = this.createSession(`python ${options.filename || 'script.py'}`, options.ppid);
     try {
       return await session.execute(options);
     } finally {

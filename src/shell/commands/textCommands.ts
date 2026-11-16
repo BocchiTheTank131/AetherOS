@@ -218,9 +218,18 @@ export const textCommands: RegisteredCommand[] = [
     name: 'sleep',
     description: 'Delay for a specified amount of time',
     usage: 'sleep <seconds>',
-    execute: async (args): Promise<ExecutionResult> => {
+    execute: async (args, context): Promise<ExecutionResult> => {
       const sec = parseFloat(args[0]) || 1;
-      await new Promise((resolve) => setTimeout(resolve, Math.min(sec * 1000, 10000)));
+      await new Promise<void>((resolve) => {
+        const finish = () => {
+          clearTimeout(timer);
+          context.signal?.removeEventListener('abort', finish);
+          resolve();
+        };
+        const timer = setTimeout(finish, Math.min(sec * 1000, 10000));
+        context.signal?.addEventListener('abort', finish, { once: true });
+        if (context.signal?.aborted) finish();
+      });
       return { stdout: '', stderr: '', exitCode: 0 };
     },
   },

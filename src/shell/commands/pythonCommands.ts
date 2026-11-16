@@ -7,7 +7,7 @@ export const pythonCommands: RegisteredCommand[] = [
   {
     name: 'python',
     description: 'Python 3 programming language interpreter (Pyodide WebAssembly)',
-    usage: 'python [-c cmd | file] [arg] ...',
+    usage: 'python [--package name] [-c cmd | file] [arg] ...',
     manual: `python - an interpreted, interactive, object-oriented programming language
 
 Options:
@@ -15,12 +15,26 @@ Options:
   -V, --version : print the Python version number and exit
   -h, --help    : print this help message and exit`,
     execute: async (args, context, stdin): Promise<ExecutionResult> => {
+      const packages: string[] = [];
+      while (args[0] === '--package') {
+        if (!args[1]) return { stdout: '', stderr: 'python: --package requires a name\n', exitCode: 2 };
+        packages.push(args[1]);
+        args = args.slice(2);
+      }
+      const execution = {
+        packages,
+        cwd: context.cwd,
+        signal: context.signal,
+        ppid: context.pid,
+        onStdout: (chunk: string) => context.stream?.(chunk, 'stdout'),
+        onStderr: (chunk: string) => context.stream?.(chunk, 'stderr'),
+      };
       if (args.length === 0) {
         if (stdin.trim()) {
           const res = await pythonRuntime.execute({
             code: stdin,
             filename: '<stdin>',
-            cwd: context.cwd,
+            ...execution,
           });
           return { stdout: res.stdout, stderr: res.stderr, exitCode: res.exitCode };
         }
@@ -57,7 +71,7 @@ Options:
         const res = await pythonRuntime.execute({
           code: cmd,
           filename: '-c',
-          cwd: context.cwd,
+          ...execution,
           args: scriptArgs,
         });
         return { stdout: res.stdout, stderr: res.stderr, exitCode: res.exitCode };
@@ -81,7 +95,7 @@ Options:
         const res = await pythonRuntime.execute({
           code,
           filename: targetFile,
-          cwd: context.cwd,
+          ...execution,
           args: scriptArgs,
         });
         return { stdout: res.stdout, stderr: res.stderr, exitCode: res.exitCode };

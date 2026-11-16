@@ -11,7 +11,7 @@
 - **AetherCore:** Virtual kernel managing PID processes, signal handlers (`SIGTERM`, `SIGKILL`, `SIGSTOP`, `SIGCONT`), and resource stats.
 - **AetherFS 2.0 (Virtual Filesystem):** Full Linux-compliant filesystem hierarchy (`/bin`, `/etc`, `/home/aether`, `/proc`, `/dev`, etc.) persisted in browser IndexedDB with binary-safe byte operations, POSIX virtual permissions (`checkAccess`), dynamic `/proc/<pid>` introspection, and SHA-256 backup verification.
 - **AetherRuntime:** Isolated WebWorker sandbox execution engine for guest JavaScript with ambient capability lockdown, streaming stdout/stderr, execution timeouts (POSIX exit 124), cancellation, and a guest `aether.fs` bridge.
-- **aesh (Aether Shell):** POSIX-compliant command shell with lexer, recursive descent AST parser, pipelines (`|`), input/output redirections (`>`, `>>`, `<`, `2>`), conditional chaining (`&&`, `||`, `;`), control structures (`if/then/elif/else/fi`, `for`, `while`, `case/esac`), shell functions, background job control (`&`, `jobs`, `fg`, `bg`, `wait`), environment variables, globbing, and 50+ built-in utilities.
+- **aesh (Aether Shell):** POSIX-style command shell with lexer, recursive descent AST parser, pipelines (`|`), input/output redirections (`>`, `>>`, `<`, `2>`), conditional chaining (`&&`, `||`, `;`), control structures (`if/then/elif/else/fi`, `for`, `while`, `case/esac`), shell functions, background job control (`&`, `jobs`, `fg`, `bg`, `wait`), environment variables, globbing, and 50+ built-in utilities.
 - **AetherWM & Desktop:** Multi-window compositor with 8-direction resizing, dragging, snapping, 4 virtual workspaces, dock/taskbar, app launcher, quick runner, and notification drawer.
 - **App Platform & aetherpkg:** Central registry for 14 core system applications, plus an official package manager (`aetherpkg`) supporting installable modules.
 
@@ -19,13 +19,13 @@
 
 ## 2. Technology Stack & Key Commands
 
-- **Language:** TypeScript 5.8+ / 7.0 (Strict mode, ES Modules)
+- **Language:** TypeScript 7 project tooling and TypeScript 6.0 compiler API in the guest worker
 - **Framework:** React 19 + React DOM 19
 - **Bundler & Tooling:** Vite 8, `@vitejs/plugin-react`
 - **Styling:** Tailwind CSS 4 (`@tailwindcss/vite`), Lucide React icons
 - **Audio:** Web Audio API (procedural oscillator synthesizer)
 - **Storage:** Browser IndexedDB (primary persistence) with in-memory VFS caching
-- **Testing:** Vitest 5 (141 passed automated tests across 9 test suites)
+- **Testing:** Vitest 5 and Playwright with Chromium and Firefox
 - **Linter:** Oxlint
 
 ### Essential Commands
@@ -290,32 +290,27 @@ Located at `src/git/GitService.ts` and `src/git/GitFileSystemAdapter.ts`.
 ### 4.9 Real Python Runtime Subsystem (`pythonRuntime`)
 Located at `src/runtimes/python/PythonRuntime.ts`.
 - Powered by Pyodide WebAssembly with isolated WebWorker execution and ambient API stripping.
-- Bidirectional VFS synchronization via `PythonFileBridge`: synchronizes project files to Pyodide MEMFS prior to execution, and synchronizes modified/created files back to `AetherFS` on completion.
+- Bidirectional VFS synchronization via `PythonFileBridge`: synchronizes project files to Pyodide MEMFS prior to execution, and synchronizes modified, created and deleted files back to AetherFS after successful runs. Keep project snapshots bounded and compare the original file bytes before applying changes.
 - Session lifecycle with kernel PID integration, output streaming (stdout/stderr), POSIX timeout handling (exit code 124), and abort signal cancellation.
-- CLI: `python <script.py>`, `python -c "code"`, `python --version`.
+- The browser shell serves pinned Pyodide assets through a trusted bridge. Only explicitly supported, checksum-verified wheels are provided to the worker. Guest browser network access stays blocked.
 
-### 4.10 TypeScript Compiler & Intelligence Subsystem
-Located at `src/runtimes/typescript/TypeScriptCompiler.ts` and `TypeScriptService.ts`.
-- `typeScriptCompiler.transpile(code)`: Fast in-browser AST transpile stripping types, interfaces, enums, type assertions, and decorators.
-- `typeScriptCompiler.typeCheck(filename, code)`: Semantic analyzer detecting undeclared variables (`TS2304`), type mismatch assignments (`TS2322`), and syntax errors (`TS1005`).
-- `typeScriptCompiler.bundleProject(entryPath)`: Multi-file module bundler resolving relative ES imports and building a self-contained runtime bundle in `dist/main.js`.
-- `typeScriptService.getCompletions(code, line, col)`: Language intelligence providing keyword and scoped symbol autocompletions.
-- CLI: `tsc <file.ts>`, `tsc --noEmit`, `tsc -p tsconfig.json`.
+### 4.10 TypeScript Compiler & Language Service
 
-### 4.11 Project & Task Management Subsystems
-Located at `src/developer/ProjectManager.ts` and `src/developer/TaskManager.ts`.
-- `projectManager.findProjects(root)`: Discovers projects by inspecting `manifest.json`, `package.json`, `tsconfig.json`, or `.git`.
-- `taskManager.getTasks(projectRoot)`: Extracts tasks defined in `package.json` (`scripts`) or `manifest.json`.
-- `taskManager.runTask(task, onOutput)`: Executes build/test/run tasks via `shellExecutor` with real-time output streaming.
+- `typeScriptCompiler.compile(options, overlays?, signal?)` snapshots authorized VFS inputs, sends them to a module worker and validates output paths before writing. The TypeScript Language Service reuses unchanged snapshots. esbuild-wasm bundles runnable entry points inside the worker.
+- `typeScriptService` provides asynchronous completions, quick info and definitions. Use one-based lines and columns and cancel obsolete editor requests. Keep VFS I/O and source execution outside the compiler worker.
+- Run `tsc --noEmit` for diagnostics, `tsc -p tsconfig.json` for project compilation and `tsc file.ts` for a standalone file.
 
-### 4.12 Code Studio 2.0 & Syntax Highlighting Engine
-Located at `src/apps/codeStudio/CodeStudioApp.tsx` and `src/editor/EditorHost.tsx`.
-- Activity Bar with 5 workbench modes: Files Explorer, Git Source Control, Full-text Search, Problems / Diagnostics, and Build Tasks.
-- Multi-tab file editor with dirty state indicator dots and split editing (horizontal and vertical).
-- `EditorHost`: Syntax highlighting for TypeScript, JavaScript, Python, HTML, CSS, JSON, Shell, Markdown, and Plain text; active line highlight, line number gutter, auto-indent, bracket closing, `Ctrl+F` find/replace modal, `Ctrl+G` go-to-line modal.
-- Integrated `StudioTerminal`: Full `aesh` shell instance bound to project root directory.
-- `StudioDiffViewer`: Unified diff inspector with green addition and red deletion line coloring.
-- Direct packaging to `.aepkg` with host download and one-click desktop installation.
+### 4.11 Project & Task Management
+
+- `projectManager.findProjectRoot(file)` finds the nearest supported project marker. `taskManager.getTasksForProject(root)` reads scripts and tasks from manifest, package and Aether configuration.
+- `taskManager.runTask(root, task, onOutput?, onState?, ppid?)` uses virtual kernel PIDs and shell cancellation. Preserve output redirection when streaming. `taskManager.cancel(pid)` interrupts the selected task.
+
+### 4.12 Code Studio 3.0
+
+- Reuse `EditorHost` for syntax, find and replace, navigation and keyboard shortcuts. Large buffers use a plain editable surface to cap highlight work.
+- Keep unsaved edits separate from their last disk version. Validate all targets before a save batch and use the window close guard for dirty buffers.
+- Keep previews sandboxed with an opaque origin. Preview diagnostics pass through the SDK channel. Preview sessions have no installed app permissions.
+- Persist project tabs, split files, preview dimensions and autosave through `workspaceState.ts`.
 
 ### 4.13 System Dialog Service (`dialogService`)
 Located at `src/core/dialog.ts` and `src/desktop/components/DialogHost.tsx`.
@@ -408,7 +403,7 @@ Never attach a global `window.addEventListener('keydown', ...)` inside an applic
 - When dragging or resizing windows or displaying modals across embedded `<iframe>` views (`AppHost`, `CodeStudioApp`, `WebBrowserApp`), render an active pointer overlay mask (`fixed inset-0 z-[99999] cursor-move select-none`) to prevent embedded iframe documents from swallowing mouse events.
 
 ### ⚠️ Invariant 18: Elevated System Context for Package Staging
-- The package installer (`packageInstaller.ts`) and system daemons operate with root privileges when staging application files into `/opt/aether/apps`. Always pass `{ context: { user: 'root', uid: 0 } }` to `vfs.mkdir` and `vfs.writeBytes` so that POSIX virtual permission checks allow system-level installation into root-owned paths.
+- The package installer (`packageInstaller.ts`) and system daemons operate with root privileges when staging application files into `/opt/aether/apps`. Pass `{ context: { user: 'root', uid: 0 } }` to package staging mutations so that POSIX virtual permission checks allow system-level installation into root-owned paths.
 
 ---
 
@@ -517,11 +512,11 @@ For a complete catalog of all 44 identified issues, root cause analyses, and lin
 
 ## 8. Verification & QA Protocol
 
-Before submitting or committing any code changes:
+Before submitting or committing code changes:
 1. Run `npm test` to ensure all existing unit and integration tests pass.
 2. Run `npm run lint` (`oxlint`) to ensure no new warnings or errors are introduced.
 3. Run `npm run build` (`tsc -b && vite build`) to confirm zero TypeScript compilation errors.
-4. Manually test in the browser:
+4. Run `npm run test:e2e` against the built app. For manual coverage:
    - Launch Terminal, type commands (`ls`, `cd`, `cat`, `top`, `aetherpkg list`).
    - Launch Calculator, 2048, and Text Editor simultaneously; verify that typing in the Text Editor is not intercepted by background apps.
    - Install a package via Software Center, refresh the browser, and confirm the package remains installed.

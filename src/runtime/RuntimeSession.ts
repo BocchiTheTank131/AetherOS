@@ -21,6 +21,7 @@ export interface RuntimeExecutionResult {
 
 export interface RuntimeSessionOptions {
   sessionId?: string;
+  ppid?: number;
   commandName?: string;
   args?: string[];
   permissions: RuntimePermissions;
@@ -42,12 +43,14 @@ export class RuntimeSession {
   private permissions: RuntimePermissions;
   private limits: RuntimeLimits;
   private startTime = 0;
+  private streams: Pick<RuntimeSessionOptions, 'onStdout' | 'onStderr'>;
   private resolveExecution?: (res: RuntimeExecutionResult) => void;
   private onComplete?: (sessionId: string, pid: number) => void;
 
   constructor(options: RuntimeSessionOptions) {
     this.id = options.sessionId || `session_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     this.permissions = options.permissions;
+    this.streams = { onStdout: options.onStdout, onStderr: options.onStderr };
     this.limits = { ...DEFAULT_RUNTIME_LIMITS, ...options.limits };
     this.onComplete = options.onComplete;
 
@@ -56,6 +59,7 @@ export class RuntimeSession {
       name: options.commandName || 'js-runtime',
       command: options.commandName || 'js-runtime',
       user: 'aether',
+      ppid: options.ppid,
       cleanup: (code) => this.cancel(code),
     });
     this.pid = proc.pid;
@@ -74,7 +78,11 @@ export class RuntimeSession {
         this.handleTimeout();
       }, this.limits.timeoutMs);
 
-      this.runInWorker(code, options);
+      this.runInWorker(code, {
+        ...options,
+        onStdout: options?.onStdout ?? this.streams.onStdout,
+        onStderr: options?.onStderr ?? this.streams.onStderr,
+      });
     });
   }
 

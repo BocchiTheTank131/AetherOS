@@ -5,6 +5,7 @@ import { shellExecutor } from '../../shell/executor';
 import { createDefaultShellContext } from '../../shell/environment';
 import { commandRegistry } from '../../shell/registry';
 import { vfs } from '../../vfs/vfs';
+import { virtualKernel } from '../../core/kernel';
 import { AETHER_VERSION } from '../../core/version';
 import { Plus, X } from 'lucide-react';
 
@@ -41,6 +42,11 @@ export const TerminalApp: React.FC<AppProps> = ({ setTitle, initialProps }) => {
   const [inputVal, setInputVal] = useState(
     typeof initialProps?.initialCommand === 'string' ? initialProps.initialCommand : ''
   );
+  const running = useRef(new Map<string, AbortController>());
+  useEffect(() => {
+    const commands = running.current;
+    return () => { for (const controller of commands.values()) controller.abort(143); };
+  }, []);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -64,7 +70,7 @@ export const TerminalApp: React.FC<AppProps> = ({ setTitle, initialProps }) => {
   }, [activeTab?.context.cwd, activeTab, setTitle]);
 
   const handleExecute = useCallback(async () => {
-    if (!activeTab) return;
+    if (!activeTab || running.current.has(activeTabId)) return;
     const cmd = inputVal;
     setInputVal('');
 
@@ -102,22 +108,34 @@ export const TerminalApp: React.FC<AppProps> = ({ setTitle, initialProps }) => {
     }
 
     const targetTabId = activeTabId;
+    const controller = new AbortController();
+    running.current.set(targetTabId, controller);
+    const context = {
+      ...activeTab.context,
+      aliases: { ...activeTab.context.aliases },
+      env: { ...activeTab.context.env },
+      history: [...activeTab.context.history],
+      functions: { ...activeTab.context.functions },
+      jobs: new Map(activeTab.context.jobs),
+      signal: controller.signal,
+    };
     try {
-      const res = await shellExecutor.execute(cmd, activeTab.context);
+      const res = await shellExecutor.execute(cmd, context);
 
       setTabs((prev) =>
         prev.map((t) => {
           if (t.id !== targetTabId) return t;
           const newHist = [...t.history];
           if (res.stdout) {
-            newHist.push({ type: 'output', text: res.stdout });
+            newHist.push({ type: 'output', text: res.stdout.slice(-256 * 1024) });
           }
           if (res.stderr) {
-            newHist.push({ type: 'error', text: res.stderr });
+            newHist.push({ type: 'error', text: res.stderr.slice(-256 * 1024) });
           }
           return {
             ...t,
-            history: newHist,
+            history: newHist.slice(-350),
+            context: { ...context, signal: undefined },
           };
         })
       );
@@ -131,6 +149,9 @@ export const TerminalApp: React.FC<AppProps> = ({ setTitle, initialProps }) => {
           };
         })
       );
+    }
+    finally {
+      running.current.delete(targetTabId);
     }
   }, [activeTab, activeTabId, inputVal]);
 
@@ -156,6 +177,7 @@ export const TerminalApp: React.FC<AppProps> = ({ setTitle, initialProps }) => {
     // Ctrl+C (Interrupt)
     if (e.ctrlKey && (e.key === 'c' || e.key === 'C')) {
       e.preventDefault();
+      running.current.get(activeTabId)?.abort(130);
       const shortCwd = activeTab.context.cwd.replace(/^\/home\/aether/, '~');
       setTabs((prev) =>
         prev.map((t) =>
@@ -325,7 +347,10 @@ export const TerminalApp: React.FC<AppProps> = ({ setTitle, initialProps }) => {
   };
 
   const closeTab = (id: string, e: React.MouseEvent) => {
+    running.current.get(id)?.abort(143);
     e.stopPropagation();
+    const closing = tabs.find((tab) => tab.id === id);
+    for (const job of closing?.context.jobs?.values() ?? []) virtualKernel.kill(job.pid, 'SIGTERM');
     if (tabs.length <= 1) return;
     const remaining = tabs.filter((t) => t.id !== id);
     setTabs(remaining);

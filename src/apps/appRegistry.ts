@@ -4,7 +4,6 @@ import type { AppDefinition, AppProps } from './types';
 import { TerminalApp } from './terminal/TerminalApp';
 import { FileManagerApp } from './fileManager/FileManagerApp';
 import { TextEditorApp } from './textEditor/TextEditorApp';
-import { CodeStudioApp } from './codeStudio/CodeStudioApp';
 import { WebBrowserApp } from './webBrowser/WebBrowserApp';
 import { SettingsApp } from './settings/SettingsApp';
 import { SystemMonitorApp } from './systemMonitor/SystemMonitorApp';
@@ -23,6 +22,9 @@ import { AudioRecorderApp } from './audioRecorder/AudioRecorderApp';
 import { packageManager } from '../pkg/packageManager';
 import { dynamicAppRegistry, type InstalledAppRecord } from '../appPlatform/DynamicAppRegistry';
 import { AppHost } from '../appPlatform/AppHost';
+
+const CodeStudioApp = React.lazy(() =>
+  import('./codeStudio/CodeStudioApp').then(({ CodeStudioApp }) => ({ default: CodeStudioApp })));
 
 export class AppRegistry {
   private apps = new Map<string, AppDefinition>();

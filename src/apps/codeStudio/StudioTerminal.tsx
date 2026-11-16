@@ -1,21 +1,25 @@
 // AetherOS - Code Studio Integrated Terminal
 import React, { useState, useRef, useEffect } from 'react';
 import { shellExecutor } from '../../shell/executor';
+import { createDefaultShellContext } from '../../shell/environment';
+import { AETHER_VERSION } from '../../core/version';
 import { virtualKernel } from '../../core/kernel';
 import { Terminal as TerminalIcon, Trash2 } from 'lucide-react';
 
 export interface StudioTerminalProps {
   cwd: string;
-  onCwdChange?: (newCwd: string) => void;
 }
 
-export const StudioTerminal: React.FC<StudioTerminalProps> = ({ cwd, onCwdChange: _onCwdChange }) => {
+export const StudioTerminal: React.FC<StudioTerminalProps> = ({ cwd }) => {
   const [history, setHistory] = useState<string[]>([
-    'AetherOS Developer Terminal (aesh v1.4.0)',
+    `AetherOS Developer Terminal (${AETHER_VERSION.shell})`,
     `Project workspace: ${cwd}`,
     'Type "help" for a list of commands, "python", "tsc", "git", or "aetherpkg".',
     '',
   ]);
+  const [context] = useState(() => ({ ...createDefaultShellContext(), cwd }));
+  const [workingDir, setWorkingDir] = useState(cwd);
+  const running = useRef<number | null>(null);
   const [currentInput, setCurrentInput] = useState('');
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -26,8 +30,14 @@ export const StudioTerminal: React.FC<StudioTerminalProps> = ({ cwd, onCwdChange
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    bottomRef.current?.scrollIntoView({ block: 'nearest' });
   }, [history]);
+
+  useEffect(() => () => {
+    const pid = running.current;
+    if (pid) virtualKernel.kill(pid, 'SIGTERM');
+    for (const job of context.jobs?.values() ?? []) virtualKernel.kill(job.pid, 'SIGTERM');
+  }, [context]);
 
   const handleKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
     // History Navigation
@@ -56,6 +66,7 @@ export const StudioTerminal: React.FC<StudioTerminalProps> = ({ cwd, onCwdChange
     // Ctrl+C cancellation
     if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
       if (activePid) {
+        e.preventDefault();
         virtualKernel.kill(activePid, 'SIGINT');
         setHistory((prev) => [...prev, '^C']);
       }
@@ -64,12 +75,12 @@ export const StudioTerminal: React.FC<StudioTerminalProps> = ({ cwd, onCwdChange
     }
 
     // Execute command
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && !running.current) {
       const cmd = currentInput.trim();
       setCurrentInput('');
       setHistoryIndex(-1);
 
-      const promptLine = `aether@aetheros:${cwd.replace('/home/aether', '~')}$ ${cmd}`;
+      const promptLine = `aether@aetheros:${workingDir.replace('/home/aether', '~')}$ ${cmd}`;
       setHistory((prev) => [...prev, promptLine]);
 
       if (!cmd) return;
@@ -82,39 +93,47 @@ export const StudioTerminal: React.FC<StudioTerminalProps> = ({ cwd, onCwdChange
       }
 
       setIsRunning(true);
+      const controller = new AbortController();
+      let finished = false;
       const proc = virtualKernel.spawn({
         name: cmd.split(' ')[0],
         command: cmd,
         user: 'aether',
+        cleanup: (code) => { if (!finished) controller.abort(code); },
       });
+      running.current = proc.pid;
       setActivePid(proc.pid);
 
+      let queued = '';
+      let streamed = false;
+      let frame: number | undefined;
+      const flush = () => {
+        if (frame !== undefined) cancelAnimationFrame(frame);
+        frame = undefined;
+        const output = queued.trimEnd();
+        queued = '';
+        if (output) setHistory((previous) => [...previous, output].slice(-300));
+      };
+      const stream = (chunk: string) => {
+        if (!chunk) return;
+        streamed = true;
+        queued = (queued + chunk).slice(-64 * 1024);
+        frame ??= requestAnimationFrame(flush);
+      };
+      let exitCode = 1;
       try {
-        const res = await shellExecutor.execute(cmd, {
-          cwd,
-          env: { PATH: '/bin:/usr/bin', HOME: '/home/aether' },
-          user: 'aether',
-          hostname: 'aether-box',
-          aliases: {},
-          history: [],
-          exitCode: 0,
-        });
-
-        virtualKernel.exit(proc.pid, res.exitCode);
-
-        const linesToAdd: string[] = [];
-        if (res.stdout) {
-          linesToAdd.push(...res.stdout.split('\n').filter((l, idx, arr) => idx < arr.length - 1 || l));
-        }
-        if (res.stderr) {
-          linesToAdd.push(...res.stderr.split('\n').filter((l, idx, arr) => idx < arr.length - 1 || l));
-        }
-
-        setHistory((prev) => [...prev, ...linesToAdd]);
-      } catch (err) {
-        virtualKernel.exit(proc.pid, 1);
-        setHistory((prev) => [...prev, `shell error: ${(err as Error).message}`]);
+        Object.assign(context, { signal: controller.signal, pid: proc.pid, onOutput: stream });
+        const result = await shellExecutor.execute(cmd, context);
+        exitCode = result.exitCode;
+        if (!streamed) stream(result.stdout + result.stderr);
+      } catch (error) {
+        stream(`shell error: ${String(error)}`);
       } finally {
+        flush();
+        finished = true;
+        virtualKernel.exit(proc.pid, exitCode);
+        running.current = null;
+        setWorkingDir(context.cwd);
         setIsRunning(false);
         setActivePid(null);
       }
@@ -159,7 +178,7 @@ export const StudioTerminal: React.FC<StudioTerminalProps> = ({ cwd, onCwdChange
         {/* Active prompt row */}
         <div className="flex items-center gap-1 leading-5">
           <span className="text-cyan-400 select-none">
-            aether@aetheros:{cwd.replace('/home/aether', '~')}$
+            aether@aetheros:{workingDir.replace('/home/aether', '~')}$
           </span>
           <input
             ref={inputRef}
@@ -167,7 +186,8 @@ export const StudioTerminal: React.FC<StudioTerminalProps> = ({ cwd, onCwdChange
             value={currentInput}
             onChange={(e) => setCurrentInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            disabled={isRunning}
+            aria-label="Project terminal command"
+            readOnly={isRunning}
             spellCheck={false}
             autoFocus
             className="flex-1 bg-transparent text-white outline-none caret-cyan-400 border-none p-0 text-xs"

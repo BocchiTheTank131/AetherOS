@@ -112,6 +112,10 @@ export interface ShellContext {
   user: string;
   hostname: string;
   aborted?: boolean;
+  signal?: AbortSignal;
+  pid?: number;
+  onOutput?: (chunk: string, stream: 'stdout' | 'stderr') => void;
+  stream?: ShellContext['onOutput'];
   scriptName?: string;
   positionalArgs?: string[];
   jobs?: Map<number, ShellJob>;

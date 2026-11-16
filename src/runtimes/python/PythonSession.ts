@@ -2,7 +2,8 @@ import { createIsolatedWorker } from '../../runtime/workers/isolatedWorker';
 // AetherOS - Python Execution Session Manager (Pyodide & AetherFS)
 import { virtualKernel } from '../../core/kernel';
 import { systemLogger } from '../../core/logger';
-import { PYODIDE_CDN_BASE, PYTHON_WORKER_CODE } from './pythonWorkerSource';
+import { getPythonAssets } from './pythonAssets';
+import { PYTHON_WORKER_CODE } from './pythonWorkerSource';
 import { PythonFileBridge } from './PythonFileBridge';
 import type { PythonExecutionOptions, PythonExecutionResult, PythonHostMessage } from './types';
 
@@ -17,12 +18,12 @@ export class PythonSession {
   private stderrBuffer = '';
   private modifiedFiles: Record<string, Uint8Array> = {};
   private signal?: AbortSignal;
-  private abort = () => this.cancel();
+  private abort = () => this.cancel(Number(this.signal?.reason) || 130);
   private startTime = 0;
   private resolveExecution?: (res: PythonExecutionResult) => void;
   private onComplete?: (sessionId: string, pid: number) => void;
 
-  constructor(commandName = 'python', onComplete?: (id: string, pid: number) => void) {
+  constructor(commandName = 'python', onComplete?: (id: string, pid: number) => void, ppid?: number) {
     this.id = `py_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     this.onComplete = onComplete;
 
@@ -30,6 +31,7 @@ export class PythonSession {
       name: 'python',
       command: commandName,
       user: 'aether',
+      ppid,
       cleanup: (code) => this.cancel(code),
     });
     this.pid = proc.pid;
@@ -45,29 +47,33 @@ export class PythonSession {
 
     return new Promise((resolve) => {
       this.resolveExecution = resolve;
+      this.signal = options.signal;
       if (options.signal?.aborted) {
-        this.cancel();
+        this.abort();
         return;
       }
       options.signal?.addEventListener('abort', this.abort, { once: true });
-      this.signal = options.signal;
 
       this.timer = setTimeout(() => {
         this.handleTimeout();
       }, timeoutMs);
 
-      this.runInWorker(options, cwd, filename);
+      void this.runInWorker(options, cwd, filename);
     });
   }
 
-  private runInWorker(options: PythonExecutionOptions, cwd: string, filename: string): void {
+  private async runInWorker(options: PythonExecutionOptions, cwd: string, filename: string): Promise<void> {
     try {
-      this.worker = createIsolatedWorker(PYTHON_WORKER_CODE, new URL(PYODIDE_CDN_BASE).origin);
+      options.onStatus?.('Loading Pyodide runtime assets...');
+      const cachedAssets = await getPythonAssets(options.packages);
+      if (this.status !== 'running') return;
+      const assets = cachedAssets && Object.fromEntries(Object.entries(cachedAssets)
+        .map(([name, bytes]) => [name, bytes.slice(0)]));
+      const baseline = PythonFileBridge.loadProjectFiles(cwd);
+      const projectFiles = options.files ? PythonFileBridge.validateFiles(options.files) : baseline;
+      this.worker = createIsolatedWorker(PYTHON_WORKER_CODE, true);
 
-      // Load files from AetherFS
-      const projectFiles = options.files || PythonFileBridge.loadProjectFiles(cwd);
-
-      this.worker.onmessage = async (e: MessageEvent<PythonHostMessage>) => {
+      this.worker.onmessage = (e: MessageEvent<PythonHostMessage>) => {
         if (this.status !== 'running') return;
         const msg = e.data;
         if (!msg) return;
@@ -86,9 +92,11 @@ export class PythonSession {
           let exitCode = msg.exitCode ?? 1;
           if (exitCode === 0) {
             try {
-              await PythonFileBridge.commitFiles(cwd, this.modifiedFiles);
+              this.modifiedFiles = PythonFileBridge.commitFiles(cwd, projectFiles, this.modifiedFiles, baseline);
             } catch (error) {
-              this.stderrBuffer += String(error) + '\n';
+              const message = String(error) + '\n';
+              this.stderrBuffer += message;
+              options.onStderr?.(message);
               exitCode = 1;
             }
           }
@@ -115,9 +123,14 @@ export class PythonSession {
         args: options.args || [],
         cwd,
         files: projectFiles,
-      });
+        assets,
+        packages: options.packages,
+      }, assets ? Object.values(assets) : []);
     } catch (error) {
-      this.stderrBuffer += `Python runtime unavailable: ${String(error)}\n`;
+      if (this.status !== 'running') return;
+      const message = `Python runtime unavailable: ${String(error)}\n`;
+      this.stderrBuffer += message;
+      options.onStderr?.(message);
       this.status = 'error';
       this.cleanup();
       this.finish(1);

@@ -84,6 +84,7 @@ export interface SystemTheme {
 export interface SystemEvents {
   'system:ready': { timestamp: number };
   'system:shutdown': { timestamp: number };
+  'system:stopping': { timestamp: number };
   'system:restart': { timestamp: number };
   'process:started': { process: Process };
   'process:terminated': { pid: number; exitCode: number };

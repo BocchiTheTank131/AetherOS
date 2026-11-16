@@ -15,12 +15,13 @@ export interface TaskDefinition {
   name: string;
   command: string;
   description?: string;
+  timeoutMs?: number;
 }
 
 export interface TaskExecution {
   taskId: string;
   pid: number;
-  status: 'running' | 'completed' | 'failed' | 'cancelled';
+  status: 'running' | 'completed' | 'failed' | 'cancelled' | 'timed-out';
   startTime: number;
   endTime?: number;
   exitCode?: number;

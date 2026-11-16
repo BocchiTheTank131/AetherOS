@@ -1,7 +1,7 @@
 // AetherOS - Hardened Pyodide WebWorker Sandbox Source (Pyodide v0.27.2)
 
 export const PYODIDE_VERSION = '0.27.2';
-export const PYODIDE_CDN_BASE = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`;
+const PYODIDE_BASE = 'https://python.aether.invalid/';
 
 export const PYTHON_WORKER_CODE = `
 (function() {
@@ -29,10 +29,40 @@ export const PYTHON_WORKER_CODE = `
     }
   }
 
+  const importTrustedScript = self.importScripts.bind(self);
+  function installRuntimeAssets(assets) {
+    if (!assets) return;
+    const base = '${PYODIDE_BASE}';
+    const get = (url) => {
+      const href = new URL(typeof url === 'string' ? url : url.url || url.href, base).href;
+      const key = href.startsWith(base) && href.slice(base.length);
+      if (!key || !Object.prototype.hasOwnProperty.call(assets, key)) throw new Error('Asset is outside the Python runtime');
+      return assets[key];
+    };
+    self.fetch = async (url) => {
+      const type = String(url).endsWith('.wasm') ? 'application/wasm' : 'application/octet-stream';
+      return new Response(get(url), { headers: { 'Content-Type': type } });
+    };
+    self.importScripts = (...urls) => {
+      for (const url of urls) {
+        const script = URL.createObjectURL(new Blob([get(url)], { type: 'text/javascript' }));
+        try { importTrustedScript(script); } finally { URL.revokeObjectURL(script); }
+      }
+    };
+  }
+
+  let remainingOutput = 2 * 1024 * 1024;
+  function output(type, text) {
+    if (remainingOutput <= 0) return;
+    text = text.slice(0, remainingOutput);
+    remainingOutput -= text.length + 64;
+    post({ type, text: text + '\\n' });
+  }
+
   let pyodideInstance = null;
   let isInitializing = false;
 
-  async function getPyodide() {
+  async function getPyodide(assets) {
     if (pyodideInstance) return pyodideInstance;
     if (isInitializing) {
       while (isInitializing) {
@@ -43,14 +73,14 @@ export const PYTHON_WORKER_CODE = `
 
     isInitializing = true;
     try {
-      post({ type: 'status', message: 'Downloading Pyodide WebAssembly runtime (v${PYODIDE_VERSION})...' });
-      importScripts('${PYODIDE_CDN_BASE}pyodide.js');
+      installRuntimeAssets(assets);
+      importScripts('${PYODIDE_BASE}pyodide.js');
       post({ type: 'status', message: 'Initializing Python WebAssembly environment...' });
 
       pyodideInstance = await self.loadPyodide({
-        indexURL: '${PYODIDE_CDN_BASE}',
-        stdout: (text) => post({ type: 'stdout', text: text + '\\n' }),
-        stderr: (text) => post({ type: 'stderr', text: text + '\\n' }),
+        indexURL: '${PYODIDE_BASE}',
+        stdout: (text) => output('stdout', text),
+        stderr: (text) => output('stderr', text),
       });
 
       // Initialize workspace directory in MEMFS
@@ -75,7 +105,7 @@ export const PYTHON_WORKER_CODE = `
 
     if (data.type === 'init') {
       try {
-        await getPyodide();
+        await getPyodide(data.assets);
       } catch {}
       return;
     }
@@ -83,7 +113,11 @@ export const PYTHON_WORKER_CODE = `
     if (data.type === 'execute' && !started) {
       started = true;
       try {
-        const py = await getPyodide();
+        const py = await getPyodide(data.assets);
+        if (data.packages && data.packages.length) {
+          post({ type: 'status', message: 'Loading verified Pyodide packages...' });
+          await py.loadPackage(data.packages);
+        }
         lockBrowserCapabilities();
         const code = data.code || '';
         const args = data.args || [];
@@ -117,7 +151,7 @@ del _aether_argv_json
 \`);
 
         // Execute code
-        await py.runPythonAsync(code);
+        await py.runPythonAsync(code, { filename });
 
         // Scan /workspace for modified or created files to sync back to host
         const syncedFiles = Object.create(null);
@@ -126,11 +160,12 @@ del _aether_argv_json
         function scanDir(dir, prefix, depth = 0) {
           if (depth > 32) throw new Error('Python output directory nesting limit exceeded');
           for (const entry of py.FS.readdir(dir)) {
-            if (entry.startsWith('.') || entry === 'dist' || entry === '__pycache__') continue;
+            if (entry.startsWith('.') || entry === 'dist' || entry === '__pycache__' || entry === 'node_modules') continue;
             if (++count > 1000) throw new Error('Python output file count limit exceeded');
             const fullPath = dir + '/' + entry;
             const relPath = prefix ? prefix + '/' + entry : entry;
             const stat = py.FS.lstat(fullPath);
+            if (py.FS.isLink(stat.mode)) throw new Error('Symbolic links cannot be synced from Python: ' + relPath);
             if (py.FS.isDir(stat.mode)) {
               scanDir(fullPath, relPath, depth + 1);
             } else if (py.FS.isFile(stat.mode)) {

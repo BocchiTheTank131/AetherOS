@@ -16,7 +16,9 @@ export interface EditorHostProps {
   diagnostics?: TSDiagnostic[];
   onSave?: () => void;
   onCursorChange?: (line: number, col: number) => void;
-  highlightLine?: number;
+  jump?: { line: number; col?: number };
+  onComplete?: () => void;
+  onDefinition?: () => void;
 }
 
 export const EditorHost: React.FC<EditorHostProps> = ({
@@ -31,13 +33,16 @@ export const EditorHost: React.FC<EditorHostProps> = ({
   diagnostics = [],
   onSave,
   onCursorChange,
-  highlightLine,
+  jump,
+  onComplete,
+  onDefinition,
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const gutterRef = useRef<HTMLDivElement>(null);
+  const mirrorRef = useRef<HTMLDivElement>(null);
+  const appliedJump = useRef<typeof jump>(undefined);
 
   const [activeLine, setActiveLine] = useState(1);
-  const [_activeCol, setActiveCol] = useState(1);
   const [findOpen, setFindOpen] = useState(false);
   const [goToLineOpen, setGoToLineOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -67,12 +72,21 @@ export const EditorHost: React.FC<EditorHostProps> = ({
     const colNum = pos - textBefore.lastIndexOf('\n');
 
     setActiveLine(lineNum);
-    setActiveCol(colNum);
     onCursorChange?.(lineNum, colNum);
   }, [value, onCursorChange]);
 
   // Auto-indentation and bracket closing
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if ((e.ctrlKey || e.metaKey) && e.code === 'Space' && onComplete) {
+      e.preventDefault();
+      onComplete();
+      return;
+    }
+    if (e.key === 'F12' && onDefinition) {
+      e.preventDefault();
+      onDefinition();
+      return;
+    }
     // Ctrl+S: Save
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {
       e.preventDefault();
@@ -261,24 +275,23 @@ export const EditorHost: React.FC<EditorHostProps> = ({
     }
   };
 
-  // Jump to highlight line prop if provided
   useEffect(() => {
-    if (highlightLine && highlightLine >= 1 && highlightLine <= lines.length && textareaRef.current) {
-      let charPos = 0;
-      for (let i = 0; i < highlightLine - 1; i++) {
-        charPos += lines[i].length + 1;
-      }
-      textareaRef.current.focus();
-      textareaRef.current.setSelectionRange(charPos, charPos);
-      handleSelect();
-    }
-  }, [highlightLine, lines, handleSelect]);
+    if (!jump || appliedJump.current === jump || !textareaRef.current ||
+        jump.line < 1 || jump.line > lines.length) return;
+    appliedJump.current = jump;
+    const before = lines.slice(0, jump.line - 1).reduce((offset, line) => offset + line.length + 1, 0);
+    const position = before + Math.min(Math.max((jump.col ?? 1) - 1, 0), lines[jump.line - 1].length);
+    textareaRef.current.focus();
+    textareaRef.current.setSelectionRange(position, position);
+    textareaRef.current.scrollTop = Math.max(0, (jump.line - 3) * fontSize * 1.5);
+    handleSelect();
+  }, [jump, lines, fontSize, handleSelect]);
 
   // Detect language from filename if not specified
   const effectiveLang = useMemo(() => {
     if (filename.endsWith('.py')) return 'python';
-    if (filename.endsWith('.ts') || filename.endsWith('.tsx')) return 'typescript';
-    if (filename.endsWith('.js') || filename.endsWith('.jsx')) return 'javascript';
+    if (/\.[cm]?tsx?$/.test(filename)) return 'typescript';
+    if (/\.[cm]?jsx?$/.test(filename)) return 'javascript';
     if (filename.endsWith('.json')) return 'json';
     if (filename.endsWith('.html')) return 'html';
     if (filename.endsWith('.css')) return 'css';
@@ -287,9 +300,13 @@ export const EditorHost: React.FC<EditorHostProps> = ({
     return language;
   }, [filename, language]);
 
+  const highlighted = useMemo(() =>
+    !wordWrap && value.length <= 200_000 && lines.length <= 1800
+      ? lines.map((line) => tokenizeLine(line, effectiveLang))
+      : null, [wordWrap, value.length, lines, effectiveLang]);
+
   return (
     <div
-      ref={containerRef}
       className="relative flex flex-col h-full w-full bg-[#0d1117] text-gray-200 font-mono select-text overflow-hidden"
       style={{ fontSize: `${fontSize}px`, lineHeight: `${fontSize * 1.5}px` }}
     >
@@ -409,8 +426,8 @@ export const EditorHost: React.FC<EditorHostProps> = ({
       {/* Editor Body Area: Gutter + Syntax Surface */}
       <div className="flex-1 flex overflow-hidden relative">
         {/* Line Numbers Gutter */}
-        <div className="bg-[#0b0e14] border-r border-gray-800 py-3 select-none flex flex-col text-right text-gray-600 font-mono pr-2.5 pl-3 min-w-[42px] overflow-hidden">
-          {lines.map((_, idx) => {
+        {highlighted && <div className="bg-[#0b0e14] border-r border-gray-800 py-3 select-none flex flex-col text-right text-gray-600 font-mono pr-2.5 pl-3 min-w-[42px] overflow-hidden">
+          <div ref={gutterRef}>{lines.map((_, idx) => {
             const lineNum = idx + 1;
             const isCurr = lineNum === activeLine;
             const lineDiags = diagnosticsByLine.get(lineNum);
@@ -429,35 +446,26 @@ export const EditorHost: React.FC<EditorHostProps> = ({
                 <span>{lineNum}</span>
               </div>
             );
-          })}
-        </div>
+          })}</div>
+        </div>}
 
         {/* Syntax Render Layer & Interactive Textarea */}
         <div className="flex-1 relative overflow-auto">
-          {/* Active Line Background Indicator */}
-          <div
-            className="absolute left-0 right-0 pointer-events-none bg-cyan-950/20 border-y border-cyan-800/20"
-            style={{
-              top: `${(activeLine - 1) * fontSize * 1.5 + 12}px`,
-              height: `${fontSize * 1.5}px`,
-            }}
-          />
-
           {/* Syntax Highlighted Mirror Layer */}
-          <div
+          {highlighted && <div
+            ref={mirrorRef}
             className={`p-3 absolute inset-0 pointer-events-none font-mono ${
               wordWrap ? 'whitespace-pre-wrap break-words' : 'whitespace-pre'
             }`}
             style={{ fontSize: `${fontSize}px`, lineHeight: `${fontSize * 1.5}px` }}
             aria-hidden="true"
           >
-            {lines.map((lineText, lineIdx) => {
+            {highlighted.map((tokens, lineIdx) => {
               const lineNum = lineIdx + 1;
-              const tokens = tokenizeLine(lineText, effectiveLang);
               const lineDiags = diagnosticsByLine.get(lineNum);
 
               return (
-                <div key={lineIdx} className="leading-[inherit] relative">
+                <div key={lineIdx} className={`leading-[inherit] relative min-h-[1lh] ${lineNum === activeLine ? 'bg-cyan-950/30' : ''}`}>
                   {tokens.map((tok, tokIdx) => {
                     let colorClass = 'text-gray-300';
                     if (tok.type === 'keyword') colorClass = 'text-purple-400 font-semibold';
@@ -485,12 +493,18 @@ export const EditorHost: React.FC<EditorHostProps> = ({
                 </div>
               );
             })}
-          </div>
+          </div>}
 
           {/* Actual Input Textarea */}
           <textarea
             ref={textareaRef}
+            aria-label={`Edit ${filename}`}
             value={value}
+            onScroll={(event) => {
+              const { scrollTop, scrollLeft } = event.currentTarget;
+              if (gutterRef.current) gutterRef.current.style.transform = `translateY(${-scrollTop}px)`;
+              if (mirrorRef.current) mirrorRef.current.style.transform = `translate(${-scrollLeft}px, ${-scrollTop}px)`;
+            }}
             onChange={(e) => onChange(e.target.value)}
             onSelect={handleSelect}
             onClick={handleSelect}
@@ -501,7 +515,7 @@ export const EditorHost: React.FC<EditorHostProps> = ({
             autoCapitalize="off"
             autoComplete="off"
             autoCorrect="off"
-            className={`w-full h-full p-3 bg-transparent text-transparent caret-cyan-400 outline-none resize-none font-mono ${
+            className={`w-full h-full p-3 bg-transparent caret-cyan-400 outline-none resize-none font-mono ${highlighted ? 'text-transparent' : 'text-gray-200'} ${
               wordWrap ? 'whitespace-pre-wrap break-words' : 'whitespace-pre'
             }`}
             style={{ fontSize: `${fontSize}px`, lineHeight: `${fontSize * 1.5}px` }}

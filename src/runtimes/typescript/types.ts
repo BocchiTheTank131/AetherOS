@@ -11,6 +11,8 @@ export interface TSDiagnostic {
 
 export interface TSCompileOptions {
   entryFile?: string;
+  files?: string[];
+  bundle?: boolean;
   sourceCode?: string;
   cwd?: string;
   noEmit?: boolean;

@@ -374,14 +374,16 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({ window: win }) => {
       <div className={`flex-1 overflow-hidden relative ${isLight ? 'bg-slate-50 text-slate-900' : 'bg-[#0f141f] text-gray-200'}`}>
         {AppComponent ? (
           <AppErrorBoundary appId={win.appId} windowId={win.id} onClose={handleClose}>
-            <AppComponent
+            <React.Suspense fallback={<div className="p-4 text-sm text-gray-400">Loading application...</div>}>
+              <AppComponent
               windowId={win.id}
               pid={win.pid}
               initialProps={win.props}
               isFocused={win.isFocused}
               onClose={handleClose}
               setTitle={handleSetTitle}
-            />
+              />
+            </React.Suspense>
           </AppErrorBoundary>
         ) : (
           <div className="p-4 text-xs text-red-400">Application component not found.</div>

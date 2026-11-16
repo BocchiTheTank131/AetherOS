@@ -203,18 +203,29 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const changePower = async (restart: boolean) => {
       if (powerTransition.current) return;
       powerTransition.current = true;
-      const session = sessionRef.current;
-      if (session.booted) SessionManager.saveSession(session.activeWorkspace, session.windows);
-      setBooted(false);
-      setIsPoweredOff(!restart);
-      setWindows([]);
-      virtualKernel.shutdown();
-      await vfs.flush();
-      if (restart && mounted) {
-        virtualKernel.start();
-        await init();
+      try {
+        const session = sessionRef.current;
+        if (session.booted) {
+          for (const guard of closeGuards.current.values()) {
+            if (!await guard()) return;
+          }
+          SessionManager.saveSession(session.activeWorkspace, session.windows);
+        }
+        systemEventBus.emit('system:stopping', { timestamp: Date.now() });
+        setBooted(false);
+        setIsPoweredOff(!restart);
+        setWindows([]);
+        virtualKernel.shutdown();
+        await vfs.flush();
+        if (restart && mounted) {
+          virtualKernel.start();
+          await init();
+        }
+      } catch (error) {
+        systemLogger.error('boot', 'System power transition failed: ' + String(error));
+      } finally {
+        powerTransition.current = false;
       }
-      powerTransition.current = false;
     };
 
     const unsubRestart = systemEventBus.on('system:restart', () => void changePower(true));
@@ -435,10 +446,29 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     openWindowRef.current = openWindow;
   }, [openWindow]);
 
+  const closeGuards = React.useRef(new Map<string, () => boolean | Promise<boolean>>());
+  const pendingCloses = React.useRef(new Set<string>());
+  const registerCloseGuard = useCallback((id: string, guard: () => boolean | Promise<boolean>) => {
+    closeGuards.current.set(id, guard);
+    return () => { if (closeGuards.current.get(id) === guard) closeGuards.current.delete(id); };
+  }, []);
+
   // Close Window (terminates process in kernel)
   const closeWindow = useCallback(
-    (id: string) => {
-      const target = windows.find((w) => w.id === id);
+    async (id: string) => {
+      if (pendingCloses.current.has(id)) return;
+      const guard = closeGuards.current.get(id);
+      if (guard) {
+        pendingCloses.current.add(id);
+        try {
+          if (!await guard()) return;
+        } catch {
+          return;
+        } finally {
+          pendingCloses.current.delete(id);
+        }
+      }
+      const target = sessionRef.current.windows.find((w) => w.id === id);
       if (target) {
         if (target.state === 'normal') {
           savedWindowPositions.current[target.appId] = {
@@ -474,7 +504,7 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       systemEventBus.emit('window:closed', { windowId: id });
       audioService.playClick();
     },
-    [windows, activeWorkspace]
+    [activeWorkspace]
   );
 
   // Minimize Window
@@ -564,6 +594,15 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     },
     []
   );
+
+  const updateWindowMinimum = useCallback((id: string, width: number, height: number) => {
+    const minWidth = Math.min(Math.max(100, Math.ceil(width)), Math.max(100, window.innerWidth - 20));
+    const minHeight = Math.min(Math.max(80, Math.ceil(height)), Math.max(80, window.innerHeight - 50));
+    setWindows((previous) => previous.map((win) => win.id !== id ||
+      (win.minWidth === minWidth && win.minHeight === minHeight) ? win : {
+      ...win, minWidth, minHeight, width: Math.max(win.width, minWidth), height: Math.max(win.height, minHeight),
+    }));
+  }, []);
 
   const updateWindowTitle = useCallback((id: string, title: string) => {
     setWindows((prev) => {
@@ -704,12 +743,14 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       windows,
       openWindow,
       closeWindow,
+      registerCloseGuard,
       focusWindow,
       minimizeWindow,
       maximizeWindow,
       snapWindow,
       updateWindowPosition,
       updateWindowSize,
+      updateWindowMinimum,
       updateWindowTitle,
       recentApps,
       activeWorkspace,
@@ -741,12 +782,14 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       windows,
       openWindow,
       closeWindow,
+      registerCloseGuard,
       focusWindow,
       minimizeWindow,
       maximizeWindow,
       snapWindow,
       updateWindowPosition,
       updateWindowSize,
+      updateWindowMinimum,
       updateWindowTitle,
       recentApps,
       activeWorkspace,

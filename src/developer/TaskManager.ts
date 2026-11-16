@@ -1,10 +1,12 @@
 // AetherOS - Developer Task Manager & Build Runner
 import { shellExecutor } from '../shell/executor';
+import { virtualKernel } from '../core/kernel';
+import { createDefaultShellContext } from '../shell/environment';
 import { vfs } from '../vfs/vfs';
 import type { TaskDefinition, TaskExecution } from './types';
 
 export class TaskManager {
-  private activeTasks = new Map<string, TaskExecution>();
+  private activeTasks = new Map<number, TaskExecution>();
 
   /**
    * Retrieves available tasks for a given project root.
@@ -13,29 +15,24 @@ export class TaskManager {
     const norm = vfs.normalizePath(projectDir);
     const tasks: TaskDefinition[] = [];
 
-    // Check aether.json or package.json
-    let scripts: Record<string, string> = {};
-    const aetherConfig = `${norm}/aether.json`;
-    const pkgConfig = `${norm}/package.json`;
-
-    if (vfs.exists(aetherConfig)) {
+    const scripts: Record<string, unknown> = Object.create(null);
+    for (const file of ['manifest.json', 'package.json', 'aether.json']) {
       try {
-        const parsed = JSON.parse(vfs.readFile(aetherConfig));
-        if (parsed.scripts) scripts = { ...scripts, ...parsed.scripts };
-      } catch {}
-    } else if (vfs.exists(pkgConfig)) {
-      try {
-        const parsed = JSON.parse(vfs.readFile(pkgConfig));
-        if (parsed.scripts) scripts = { ...scripts, ...parsed.scripts };
+        const config = JSON.parse(vfs.readFile(`${norm}/${file}`));
+        Object.assign(scripts, config.scripts, config.tasks);
       } catch {}
     }
 
-    for (const [name, command] of Object.entries(scripts)) {
+    for (const [name, script] of Object.entries(scripts)) {
+      if (!name || name.length > 64) continue;
+      const command = typeof script === 'string' ? script : script && typeof script === 'object' && 'command' in script ? script.command : undefined;
+      if (typeof command !== 'string' || !command.trim()) continue;
+      const timeout = script && typeof script === 'object' && 'timeoutMs' in script ? script.timeoutMs : undefined;
       tasks.push({
         id: name,
         name,
         command,
-        description: `Run script: ${command}`,
+        timeoutMs: typeof timeout === 'number' && Number.isFinite(timeout) ? Math.max(1, Math.min(timeout, 300_000)) : undefined,
       });
     }
 
@@ -45,7 +42,7 @@ export class TaskManager {
         tasks.push({
           id: 'build',
           name: 'build',
-          command: 'tsc -p tsconfig.json',
+          command: vfs.exists(`${norm}/tsconfig.json`) ? 'tsc -p tsconfig.json' : 'tsc',
           description: 'Compile TypeScript project',
         });
       }
@@ -55,7 +52,7 @@ export class TaskManager {
       tasks.push({
         id: 'package',
         name: 'package',
-        command: `aetherpkg build ${norm}`,
+        command: 'aether build .',
         description: 'Package into .aepkg application archive',
       });
     }
@@ -81,61 +78,69 @@ export class TaskManager {
     return tasks;
   }
 
-  /**
-   * Executes a task in the project context.
-   */
+  public cancel(pid: number): boolean {
+    return this.activeTasks.has(pid) && virtualKernel.kill(pid, 'SIGINT');
+  }
+
   public async runTask(
     projectDir: string,
     task: TaskDefinition,
-    onOutput?: (chunk: string) => void
+    onOutput?: (chunk: string) => void,
+    onState?: (execution: TaskExecution) => void,
+    ppid?: number,
   ): Promise<TaskExecution> {
+    if (this.activeTasks.size >= 8) throw new Error('Eight tasks are already running');
+    const controller = new AbortController();
+    const process = virtualKernel.spawn({
+      name: task.name,
+      command: task.command,
+      ppid,
+      cleanup: (exitCode) => controller.abort(exitCode),
+    });
     const execution: TaskExecution = {
-      taskId: task.id,
-      pid: 1000 + Math.floor(Math.random() * 500),
-      status: 'running',
-      startTime: Date.now(),
-      output: [],
+      taskId: task.id, pid: process.pid, status: 'running', startTime: Date.now(), output: [],
+    };
+    this.activeTasks.set(execution.pid, execution);
+    const timer = setTimeout(() => virtualKernel.exit(execution.pid, 124), task.timeoutMs ?? 60_000);
+    let remaining = 256 * 1024;
+    const output = (chunk: string) => {
+      if (!chunk || remaining <= 0) return;
+      const part = chunk.slice(0, remaining);
+      remaining -= part.length;
+      execution.output.push(part);
+      onOutput?.(part);
     };
 
-    this.activeTasks.set(task.id, execution);
-
-    onOutput?.(`[Task: ${task.name}] Running: ${task.command} (PID ${execution.pid})...\n`);
-
+    let exitCode = 1;
     try {
-      const res = await shellExecutor.execute(task.command, {
+      onState?.({ ...execution });
+      onOutput?.(`[Task: ${task.name}] ${task.command} (PID ${execution.pid})\n`);
+      const result = await shellExecutor.execute(task.command, {
+        ...createDefaultShellContext(),
         cwd: projectDir,
-        env: { PATH: '/bin:/usr/bin', HOME: '/home/aether' },
-        user: 'aether',
-        hostname: 'aether-box',
-        aliases: {},
-        history: [],
-        exitCode: 0,
+        pid: execution.pid,
+        signal: controller.signal,
+        onOutput: output,
       });
-
-      if (res.stdout) {
-        execution.output.push(res.stdout);
-        onOutput?.(res.stdout);
+      if (!execution.output.length) {
+        output(result.stdout);
+        output(result.stderr);
       }
-      if (res.stderr) {
-        execution.output.push(res.stderr);
-        onOutput?.(res.stderr);
-      }
-
-      execution.status = res.exitCode === 0 ? 'completed' : 'failed';
-      execution.exitCode = res.exitCode;
-      execution.endTime = Date.now();
-      onOutput?.(`[Task: ${task.name}] Finished with exit code ${res.exitCode} (${execution.endTime - execution.startTime}ms)\n`);
-    } catch (err) {
-      execution.status = 'failed';
-      execution.exitCode = 1;
-      execution.endTime = Date.now();
-      const errText = `Task execution error: ${(err as Error).message}\n`;
-      execution.output.push(errText);
-      onOutput?.(errText);
+      exitCode = result.exitCode;
+    } catch (error) {
+      output(`Task failed: ${String(error)}\n`);
     } finally {
-      this.activeTasks.delete(task.id);
+      clearTimeout(timer);
+      const aborted = controller.signal.aborted;
+      if (aborted) exitCode = Number(controller.signal.reason) || 130;
+      execution.exitCode = exitCode;
+      execution.endTime = Date.now();
+      execution.status = exitCode === 124 ? 'timed-out' : aborted ? 'cancelled' : exitCode === 0 ? 'completed' : 'failed';
+      this.activeTasks.delete(execution.pid);
+      virtualKernel.exit(execution.pid, exitCode);
+      onState?.({ ...execution });
+      onOutput?.(`[Task: ${task.name}] ${execution.status} (exit ${exitCode}, ${execution.endTime - execution.startTime}ms)\n`);
     }
-
     return execution;
   }
 }

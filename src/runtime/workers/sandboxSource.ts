@@ -12,6 +12,9 @@ export const SANDBOX_WORKER_CODE = `
   const listen = self.addEventListener.bind(self);
   const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
   const stringify = JSON.stringify;
+  const parse = JSON.parse;
+  const slice = Function.call.bind(String.prototype.slice);
+  const toString = String;
   const limit = 2 * 1024 * 1024;
   let remaining = limit;
   function log(type, prefix, args) {
@@ -19,9 +22,12 @@ export const SANDBOX_WORKER_CODE = `
     let text = prefix;
     for (const arg of args) {
       if (text.length >= remaining) break;
-      text += (typeof arg === 'object' ? stringify(arg) : String(arg)).slice(0, remaining - text.length) + ' ';
+      let formatted;
+      try { formatted = typeof arg === 'object' ? stringify(arg) : toString(arg); }
+      catch { formatted = '[unserializable]'; }
+      text += slice(formatted || '', 0, remaining - text.length) + ' ';
     }
-    text = text.trimEnd() + '\\n';
+    text = slice(text, 0, -1) + '\\n';
     remaining -= text.length + 64;
     postToHost({ type, text });
   }
@@ -72,6 +78,10 @@ export const SANDBOX_WORKER_CODE = `
 
   function sendFsRequest(method, params) {
     return new Promise((resolve, reject) => {
+      if (typeof params.path !== 'string' || params.path.length > 1024 ||
+          (params.content !== undefined && (typeof params.content !== 'string' || params.content.length > limit))) {
+        return reject(new Error('Invalid or oversized filesystem request'));
+      }
       if (pendingRequests.size >= 64 || reqSeq >= 4096) return reject(new Error('Filesystem request limit exceeded'));
       const id = 'req_' + (++reqSeq);
       pendingRequests.set(id, { resolve, reject });
@@ -149,11 +159,13 @@ export const SANDBOX_WORKER_CODE = `
         // Wrapped with strict mode and sandboxed arguments
         const fn = new AsyncFunction('aether', 'args', 'console', '"use strict";\\n' + msg.code);
         const result = await fn(guestAether, msg.args || [], guestConsole);
-        postToHost({ type: 'exit', exitCode: 0, result });
+        const serialized = stringify(result);
+        if (serialized && serialized.length > limit) throw new Error('Execution result exceeds output limit');
+        postToHost({ type: 'exit', exitCode: 0, result: serialized === undefined ? undefined : parse(serialized) });
       } catch (err) {
         postToHost({
           type: 'stderr',
-          text: (err && err.stack ? err.stack : (err && err.message ? err.message : String(err))) + '\\n'
+          text: slice(toString(err && (err.stack || err.message) || err), 0, 65536) + '\\n'
         });
         postToHost({ type: 'exit', exitCode: 1 });
       }

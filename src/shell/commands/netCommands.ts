@@ -7,7 +7,7 @@ export const netCommands: RegisteredCommand[] = [
     name: 'ping',
     description: 'Test network host reachability using HTTP probe (browser sandbox mode)',
     usage: 'ping [-c count] <host>',
-    execute: async (args): Promise<ExecutionResult> => {
+    execute: async (args, context): Promise<ExecutionResult> => {
       let count = 4;
       let host = '';
 
@@ -40,7 +40,7 @@ export const netCommands: RegisteredCommand[] = [
         } else {
           try {
             const url = host.startsWith('http') ? host : `https://${host}`;
-            await fetch(url, { method: 'HEAD', mode: 'no-cors', signal: AbortSignal.timeout(2000) });
+            await fetch(url, { method: 'HEAD', mode: 'no-cors', signal: context.signal ? AbortSignal.any([context.signal, AbortSignal.timeout(2000)]) : AbortSignal.timeout(2000) });
             const time = (performance.now() - start).toFixed(2);
             lines.push(`seq=${seq} target=${host} probe=HTTP-HEAD status=reachable (opaque/no-cors) time=${time} ms`);
             reachableCount++;
@@ -81,7 +81,7 @@ export const netCommands: RegisteredCommand[] = [
 
       try {
         const targetUrl = url.startsWith('http') ? url : `https://${url}`;
-        const res = await fetch(targetUrl);
+        const res = await fetch(targetUrl, { signal: context.signal });
         const text = await res.text();
 
         if (outputTarget) {
@@ -126,7 +126,7 @@ export const netCommands: RegisteredCommand[] = [
         const inferredName = filename || targetUrl.split('/').pop() || 'download.html';
         const dest = vfs.resolve(context.cwd, inferredName);
 
-        const res = await fetch(targetUrl);
+        const res = await fetch(targetUrl, { signal: context.signal });
         const text = await res.text();
         vfs.writeFile(dest, text, { owner: context.user });
 

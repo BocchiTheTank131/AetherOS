@@ -1,3 +1,4 @@
+import { shellExecutor } from '../executor';
 // AetherOS - aesh Scripting & Job Control Commands (test, [, jobs, fg, bg, wait, source, .)
 import type { RegisteredCommand, ExecutionResult } from '../types';
 import { vfs } from '../../vfs/vfs';
@@ -264,7 +265,6 @@ export const scriptCommands: RegisteredCommand[] = [
       }
 
       const scriptContent = vfs.readFile(targetPath);
-      const { shellExecutor } = await import('../executor');
       return await shellExecutor.executeScript(scriptContent, context, args.slice(1), targetPath);
     },
   },
@@ -284,7 +284,6 @@ export const scriptCommands: RegisteredCommand[] = [
       }
 
       const scriptContent = vfs.readFile(targetPath);
-      const { shellExecutor } = await import('../executor');
       return await shellExecutor.executeScript(scriptContent, context, args.slice(1), targetPath);
     },
   },

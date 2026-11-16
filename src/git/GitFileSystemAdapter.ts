@@ -97,7 +97,7 @@ export class GitFileSystemAdapter {
       const stats = vfs.stat(norm);
       const isDir = stats.isDirectory();
       const isSym = stats.isSymbolicLink();
-      const mode = isDir ? 0o040755 : isSym ? 0o120777 : 0o100644;
+      const mode = isDir ? 0o040755 : isSym ? 0o120777 : (stats.permissions & 0o111) ? 0o100755 : 0o100644;
 
       return {
         isFile: () => !isDir && !isSym,
@@ -125,7 +125,7 @@ export class GitFileSystemAdapter {
       const stats = vfs.lstat(norm);
       const isDir = stats.isDirectory();
       const isSym = stats.isSymbolicLink();
-      const mode = isDir ? 0o040755 : isSym ? 0o120777 : 0o100644;
+      const mode = isDir ? 0o040755 : isSym ? 0o120777 : (stats.permissions & 0o111) ? 0o100755 : 0o100644;
 
       return {
         isFile: () => !isDir && !isSym,

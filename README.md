@@ -12,15 +12,15 @@
 
 **A high-fidelity, Linux-inspired virtual operating environment engineered natively for modern web standards.**
 
-[![AetherOS Version](https://img.shields.io/badge/AetherOS-v1.4.1%20Stability%20%26%20Security-00f2fe?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/BocchiTheTank131/AetherOS)
+[![AetherOS Version](https://img.shields.io/badge/AetherOS-v1.5.0%20Developer%20Workstation-00f2fe?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/BocchiTheTank131/AetherOS)
 [![React](https://img.shields.io/badge/React-19.3-61dafb?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-7.0-3178c6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-4.3-38bdf8?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![Vite](https://img.shields.io/badge/Vite-8.3-646cff?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
-[![Vitest](https://img.shields.io/badge/Tests-141%20Passed-34d399?style=for-the-badge&logo=vitest&logoColor=black)](https://vitest.dev/)
+[![CI](https://github.com/BocchiTheTank131/AetherOS/actions/workflows/verify.yml/badge.svg)](https://github.com/BocchiTheTank131/AetherOS/actions/workflows/verify.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-amber?style=for-the-badge)](LICENSE)
 
-[Architecture](#-architectural-overview) • [What's New in v1.4.0](#-whats-new-in-v140-developer-workstation) • [Subsystems](#-subsystem-deep-dive) • [Applications](#-native-application-suite) • [Shell CLI](#-shell-command-reference-50-utilities) • [Quickstart](#-getting-started) • [Contributing](#-developer-guides)
+[Architecture](#-architectural-overview) • [Developer Workstation](#developer-workstation) • [Subsystems](#-subsystem-deep-dive) • [Applications](#-native-application-suite) • [Shell CLI](#-shell-command-reference-50-utilities) • [Quickstart](#-getting-started) • [Contributing](#-developer-guides)
 
 </div>
 
@@ -28,20 +28,20 @@
 
 ## Releases
 
-See [CHANGELOG.md](CHANGELOG.md) for v1.4.1 stability, security and storage changes.
+See [CHANGELOG.md](CHANGELOG.md) for v1.4.1 and v1.5.0.
 
 ## 🌟 Executive Summary
 
 Rather than emulating hardware CPU instructions through slow x86 or ARM virtualization, **AetherOS** implements genuine operating system paradigms directly on modern web standards:
 
-- **Developer Workstation Suite (`Code Studio 2.0`)**: Full-featured in-browser development environment with multi-file tabbed editor, syntax highlighting for 9 languages, line gutter, active-line highlight, search & replace (`Ctrl+F`), go-to-line (`Ctrl+G`), auto-closing pairs, horizontal & vertical split views, and integrated terminal (`aesh`).
+- **Developer Workstation Suite (`Code Studio 3.0`)**: Full-featured in-browser development environment with multi-file tabbed editor, syntax highlighting for 9 languages, line gutter, active-line highlight, search & replace (`Ctrl+F`), go-to-line (`Ctrl+G`), auto-closing pairs, horizontal & vertical split views, and integrated terminal (`aesh`).
 - **Real Python 3 Execution (Pyodide WebAssembly)**: Sandboxed WebWorker Python execution with Pyodide v0.27.2, dynamic VFS <-> MEMFS synchronization (`PythonFileBridge`), standard library support (`math`, `json`, `sys`, `pathlib`, `collections`), POSIX timeouts (exit 124), cancellation, and shell CLI (`python`, `python3`).
-- **TypeScript Compiler & Tooling (`tsc`)**: In-browser TypeScript AST transpilation, semantic type checking (`TS2304`, `TS2322`, `TS1005`), multi-file module bundling targeting `dist/main.js`, and autocomplete services.
+- **TypeScript Compiler & Tooling (`tsc`)**: Official TypeScript compiler and incremental language service in a dedicated worker, with AetherFS project configuration and runnable browser bundles.
 - **Local Git Version Control (`isomorphic-git`)**: Browser-native Git version control operating directly on `AetherFS 2.0` with 10-method POSIX filesystem adapter, staging index, commit history, unified line-by-line diffs (`git diff`), branch switching (`git checkout`), and shell CLI (`git`).
 - **Task & Project Management Subsystem**: Automatic workspace project discovery, project task runner (`package.json` scripts and manifest tasks), and real-time execution log streaming.
 - **Extensible Application Platform (`AetherAppPlatform`)**: Opaque-origin sandboxed `<iframe>` execution (`sandbox="allow-scripts"` without `allow-same-origin`), isolated `MessageChannel` RPC, full Aether App SDK (`window.aether`), granular capability permissions (`/var/lib/aetherpkg/permissions.json`), and private app storage quotas.
 - **Genuine Package Management Subsystem (`.aepkg`)**: Binary-safe compressed Zip archives via `fflate`, SHA-256 cryptographic verification (`integrity.json`), semver resolution, atomic staging (`/opt/aether/apps/`), version rollback, and uninstallation with data purge.
-- **Preemptive Virtual Kernel (`AetherCore`)**: PID process allocation starting at PID 100, POSIX signal handlers (`SIGTERM`, `SIGKILL`, `SIGSTOP`, `SIGCONT`), and measured resource telemetry based on active execution and browser JS heap limits.
+- **Virtual Kernel (`AetherCore`)**: PID process allocation starting at PID 100, POSIX signal handlers (`SIGTERM`, `SIGKILL`, `SIGSTOP`, `SIGCONT`), and measured resource telemetry based on active execution and browser JS heap limits.
 - **POSIX-style Filesystem (`AetherFS 2.0`)**: Complete Linux directory tree (`/bin`, `/etc`, `/home/aether`, `/proc`, `/dev`, `/var`, `/opt`) persisted in browser **IndexedDB v2** with binary-safe byte arrays (`Uint8Array`), POSIX virtual access control (`r/w/x`), relative symlinks, and SHA-256 verified backup and restore.
 - **Secure Aether Runtime**: Isolated Web Worker execution sandbox for running untrusted user JavaScript, featuring process tracking, console streaming, timeout enforcement (exit code 124), cancellation, and a guest `aether.fs` VFS bridge.
 - **Authentic Command Shell (`aesh`)**: Lexer tokenizer, POSIX-style scripting AST (`if/then/elif/else/fi`, `for/do/done`, `while`, `case/esac`, functions, positional parameters `$0..$9`, `$#`, `$@`), pipelines (`|`), input/output redirections (`>`, `>>`, `<`, `2>`), conditionals (`&&`, `||`, `;`), job control (`&`, `jobs`, `fg`, `bg`, `wait`), and 50+ built-in utilities.
@@ -49,50 +49,19 @@ Rather than emulating hardware CPU instructions through slow x86 or ARM virtuali
 
 ---
 
-## 🚀 What's New in v1.4.0: Developer Workstation
+## Developer Workstation
 
-AetherOS v1.4.0 evolves AetherOS into a **professional browser-native developer workstation**:
+**Code Studio 3.0.** Open an AetherFS project directory or create one from a template. The editor remembers tabs, the selected files in split views, autosave and preview size. Use Ctrl+S to save, Ctrl+F to find or replace, Ctrl+G to jump to a line, Ctrl+Space for completions, and F12 or the Definition button to follow a symbol. Code Studio checks on-disk files before saving so edits from a shell, Python run, or another editor window can be reviewed before overwriting.
 
-- 💻 **Code Studio 2.0 (Pro IDE)**:
-  - **Activity Bar**: Fast switching between Files Explorer, Git Source Control, Full-text Search, Problems/Diagnostics, and Build Tasks.
-  - **Editor Host**: Multi-language syntax highlighting (TypeScript, JavaScript, Python, HTML, CSS, JSON, Shell, Markdown), active-line highlight, line numbers, automatic bracket pair matching, auto-indentation, floating Search & Replace modal (`Ctrl+F`), and Go-to-Line modal (`Ctrl+G`).
-  - **Multi-Tab & Split Editor**: Tab bar with dirty-state indicator dots, and horizontal or vertical split editing for side-by-side source code review.
-  - **Integrated Terminal**: Seamless `aesh` shell instance docked inside the IDE, pre-configured to the project root directory.
-  - **Unified Diff Viewer**: Visual side-by-side diffing of modified files showing staged and unstaged line additions and deletions.
-  - **Project Templates**: 6 pre-configured templates: "Hello Aether" GUI app, "CLI Tool", "TypeScript Application", "Python Script", "Python CLI", and "HTML5 Game".
+**TypeScript.** `tsc -p tsconfig.json` checks a project and emits files using its configuration. `tsc --noEmit` checks without writing outputs. Standalone files can be compiled with `tsc main.ts`. The guest uses Microsoft's TypeScript 6.0 compiler API and esbuild for standalone browser bundles, typically at `dist/main.js`. Run them with `js dist/main.js`. Use relative imports or dependencies available in the virtual project. Host Node.js built-ins, npm package installation, references to projects outside the selected root and runnable top-level-await bundles are outside the supported guest workflow.
 
-- 🐍 **Real Python Execution (Pyodide & WebAssembly)**:
-  - Genuine Python 3.12+ execution inside an isolated WebWorker using Pyodide WebAssembly.
-  - Bidirectional filesystem bridge (`PythonFileBridge`): automatically synchronizes project files between AetherFS and Pyodide MEMFS before execution, and persists outputs back to AetherFS upon completion.
-  - Full Python standard library support (`sys`, `math`, `json`, `pathlib`, `collections`, etc.).
-  - Kernel process allocation, output streaming (stdout/stderr), POSIX execution timeouts (exit code 124), and cancellation.
-  - Shell CLI integration: `python <script.py>`, `python -c "code"`, `python --version`, and argument forwarding.
+**Web preview.** Open a project with an HTML entry, local CSS and JavaScript. The preview reloads on file changes, offers desktop, tablet and mobile viewport sizes, and shows guest console output and runtime exceptions. Plain HTML projects work without a package manifest. External network resources and runtime module graphs in preview HTML may require bundling into a local script first. Preview frames have an opaque origin and receive no application filesystem, storage or notification grants.
 
-- ⚡ **TypeScript Tooling & Compiler Subsystem**:
-  - In-browser AST transpiler stripping type annotations, interfaces, enums, and decorators.
-  - Semantic type-checker validating variable scope, undeclared symbols (`TS2304`), and type-mismatch assignments (`TS2322`).
-  - Multi-file module bundler resolving relative imports into a single standalone bundle at `dist/main.js`.
-  - Language services delivering identifier and keyword completions.
-  - Shell CLI integration: `tsc <file.ts>`, `tsc --noEmit`, `tsc -p tsconfig.json`.
+**Python.** `python script.py` and `python -c 'print(2 ** 16)'` execute real Python 3.12.7 with Pyodide 0.27.2. The production build ships the interpreter assets and caches them after first use. Each execution gets fresh Python state in a worker. Only changed, created and deleted files sync back after successful execution. The bridge rejects symlink transfers and conflicting edits. The workspace transfer limit is 20 MiB and 1,000 paths. Use `python --package mpmath -c 'import mpmath; print(mpmath.pi)'` for optional packages. The supported packages are `mpmath`, `numpy`, `packaging`, `pytz` and `typing-extensions`. The first fetch of each wheel uses the pinned Pyodide release and verifies the file against its lockfile.
 
-- 🐙 **Browser-Native Git Version Control (`isomorphic-git`)**:
-  - 100% browser-based Git version control operating over `AetherFS 2.0` with full POSIX filesystem adapter.
-  - Shell CLI `git` command supporting `init`, `status`, `add`, `commit`, `log`, `diff`, `branch`, `checkout`, and `restore`.
-  - Integrated Git Source Control panel in Code Studio with visual commit log, staged changes, and single-click commit.
+**Tasks.** Use a `scripts` object in `package.json` or define scripts and tasks in `aether.json`. A task value can be a shell command string or an object such as `{"command":"tsc --noEmit","timeoutMs":30000}`. Code Studio shows active PIDs, elapsed time and the exit status. Up to eight tasks run independently with streamed output and cancellation.
 
-- 🛡️ **Binary-Safe Subsystem Hardening**:
-  - `devCommands.ts`: `sha256sum`, `md5sum`, and `base64` now compute directly from raw `Uint8Array` bytes via `vfs.readBytes()`, eliminating UTF-8 character conversion corruption for binary images and WASM binaries.
-  - `packageArchive.ts` & `pkgCommands.ts`: Package builder recursively traverses directory trees and packages binary assets safely.
-  - `vfs.ts`: Added POSIX `readlink` support for symbolic link introspection.
-
-- 🪟 **Desktop Quality & Compositor Hardening**:
-  - **System Dialog Service (`dialogService` & `DialogHost`)**: Completely replaces native browser `alert()`, `confirm()`, and `prompt()` modals with themed, accessible desktop dialogs featuring Tab/Shift+Tab focus traps, validation callbacks, and promise-based resolution.
-  - **Application Crash Boundary (`AppErrorBoundary`)**: Per-window crash recovery boundary catching child component errors, logging to `systemLogger.error('app', ...)`, and offering restart options without taking down the desktop.
-  - **Pointer Masking for Framed Applications**: Added active pointer capture mask during window dragging and resizing over `<iframe>` components, eliminating mouse-drop stutter.
-  - **Interactive File Manager Address Bar**: Toggle between breadcrumb trails and direct destination path input via `Ctrl+L` or clicking the address bar.
-  - **Desktop Keyboard Shortcuts**: Added `Alt+1..4` (workspace switching), `Alt+Left/Right` (half-snapping), `Alt+Up/Down` (maximize/restore), and `Alt+W` (close window).
-
----
+**Git.** Repositories use standard Git structures inside AetherFS. Stage and unstage changes, inspect staged and working diffs, restore from the index, commit, and create or switch branches. Branch switching requires a clean tracked tree. Remote Git and host filesystem integration are outside the supported AetherOS workflow.
 
 ## 🏛 Architectural Overview
 
@@ -137,7 +106,7 @@ AetherOS v1.4.0 evolves AetherOS into a **professional browser-native developer 
   - `SIGKILL` (9, uncatchable immediate termination, exit code 137)
   - `SIGSTOP` (19, transitions process state to `stopped`)
   - `SIGCONT` (18, resumes process state back to `running`)
-- **Resource Accounting & Performance Service (`performanceService`)**: Centralized telemetry provider tracking live host memory (`performance.memory` where supported), aggregate virtual kernel footprint, real CPU utilization, active Web Worker instances, and sliding 60-sample historical buffers. Timers pause automatically when idle to eliminate CPU overhead.
+- **Resource Accounting & Performance Service (`performanceService`)**: Centralized telemetry provider tracking live host memory (`performance.memory` where supported), aggregate virtual kernel footprint, virtual CPU accounting, active Web Worker instances, and sliding 60-sample historical buffers. Timers pause automatically when idle to eliminate CPU overhead.
 - **Typed System Event Bus (`systemEventBus`)**: Pub/Sub bus handling OS-wide events (`process:started`, `process:terminated`, `filesystem:changed`, `package:installed`, `theme:changed`, `window:opened`, etc.).
 - **Structured System Logger (`systemLogger`)**: 1,000-entry in-memory circular ring buffer capturing `debug`, `info`, `warn`, and `error` events with timestamps and subsystem tags. Powers `dmesg`, `journalctl`, and the GUI Log Viewer.
 
@@ -157,7 +126,7 @@ AetherOS v1.4.0 evolves AetherOS into a **professional browser-native developer 
   - `/dev/random` & `/dev/urandom`: Cryptographically secure pseudorandom byte streams via Web Crypto `crypto.getRandomValues()`.
 - **Node Metadata & Permissions**: Octal permissions (`0755`, `0644`, `0777`), owner (`root`, `aether`), group, creation/modification timestamps, and file size tracking.
 - **Reactive Watchers (`vfs.watch`)**: Subscribes UI components and desktop views to directory changes with automatic updates.
-- **Snapshots & Backups**: Complete filesystem export to downloadable JSON snapshots and one-click atomic restore.
+- **Snapshots & Backups**: Complete filesystem export to downloadable JSON snapshots and transactional restore.
 
 ### 3. aesh (Aether Shell & Terminal Runtime)
 - **Lexer Tokenizer**: Tokenizes commands, preserving single (`'...'`) and double quotes (`"..."`) with whitespace and backslash escapes (`\n`, `\t`, `\ `, `\"`).
@@ -327,10 +296,10 @@ AetherOS includes **19 desktop applications** spanning 7 categories:
 - `git add <file...>` — Stage file contents for the next commit.
 - `git commit -m <message>` — Record changes to the repository with author and timestamp.
 - `git log [-n count]` — Display commit history with SHA-1 hashes and commit metadata.
-- `git diff [file]` — Inspect unified line-by-line diffs showing additions and deletions.
+- `git diff [--staged] [file]` — Inspect unified line-by-line diffs showing additions and deletions.
 - `git branch [name]` — List branches or create a new branch.
 - `git checkout <branch|file>` / `git switch <branch>` — Switch branches or restore working tree files.
-- `git restore <file...>` — Restore modified working tree files to HEAD state.
+- `git restore [--staged] <file...>` — Restore working files from the index or reset selected index paths to HEAD.
 - `python` / `python3 [-c code] [script.py] [args...]` — Execute real Python 3 programs via Pyodide WebAssembly with standard library support.
 - `tsc [--noEmit] [-p config] [file.ts]` — Transpile, type-check, or bundle TypeScript source files into `dist/main.js`.
 - `aether <create|validate|build|run|inspect>` — Developer CLI for scaffolding, testing, and building `.aepkg` packages.
@@ -441,7 +410,7 @@ Navigate to `http://localhost:5173/`. AetherOS will execute its Linux systemd bo
 
 ### 3. Run Automated Tests
 ```bash
-# Run Vitest test suite (34 unit & integration tests)
+# Run unit and integration tests with Vitest
 npm test
 ```
 
@@ -461,6 +430,16 @@ npm run preview
 ```
 
 ---
+
+### 6. Browser validation
+
+```bash
+npx playwright install chromium firefox
+npm run build
+npm run test:e2e
+```
+
+The Vitest runner uses a Node worker adapter and fake IndexedDB for focused tests. Playwright exercises the production build with real browser workers, IndexedDB, service workers and iframe isolation. Node.js 24 is the CI baseline.
 
 ## 🛠 Developer Guides
 
@@ -557,7 +536,9 @@ AetherOS adheres strictly to an **honest execution model** respecting browser sa
 - **Client-Side Sandbox**: Operates entirely within the browser. It never falsely claims or simulates host operating system compromise.
 - **Iframe Isolation**: When code executes in **Code Studio** or renders in **Web Browser**, previews run inside isolated `<iframe>` sandboxes (`sandbox="allow-scripts"`) preventing guest code from mutating host or parent OS state.
 - **Network Boundaries**: `curl`, `wget`, and `ping` perform real HTTP requests via browser `fetch`. Network queries respect browser CORS boundaries; `ping` measures real round-trip latency to remote servers.
-- **Persistent Storage Isolation**: Files, configurations, and packages are confined to origin-isolated browser IndexedDB stores (`aetheros-vfs-db`), ensuring data privacy and persistence.
+- **Persistent storage** uses the origin-scoped `AetherOS_DB` IndexedDB database. AetherFS detects stale tab writes and reports durability failures. Export work before reloading a conflicting tab. Browser quota, eviction and termination can affect uncommitted work.
+- **Sandbox limits.** Browsers manage guest memory and scheduling. The desktop adds transfer, output and execution limits. An application iframe can navigate itself, and capabilities end with the authenticated guest channel. AetherOS provides POSIX-style behavior within its virtual environment.
+- **SDK.** See [Application SDK](src/appPlatform/sdk/README.md) for permissions, supported calls and package assets.
 
 ---
 

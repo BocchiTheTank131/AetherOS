@@ -1,12 +1,51 @@
 // AetherOS - Local Git Service Engine
 import { Buffer } from 'buffer';
-import git from 'isomorphic-git';
 import { gitFsAdapter } from './GitFileSystemAdapter';
+import { isWithin, withoutSymlinks } from '../vfs/safePath';
 import { vfs } from '../vfs/vfs';
 import { computeLineDiff, type FileDiffResult } from './GitDiff';
 
-// isomorphic-git's browser entry expects the Node-compatible Buffer global.
-if (typeof globalThis.Buffer === 'undefined') Object.defineProperty(globalThis, 'Buffer', { value: Buffer });
+let engine: Promise<typeof import('isomorphic-git').default> | undefined;
+function getGit() {
+  if (typeof globalThis.Buffer === 'undefined') Object.defineProperty(globalThis, 'Buffer', { value: Buffer });
+  return engine ??= import('isomorphic-git').then((module) => module.default);
+}
+
+function repoPath(root: string, file: string): string {
+  const path = vfs.resolve(root, file);
+  if (!isWithin(path, root) || path === root || isWithin(path, vfs.resolve(root, '.git'))) {
+    throw new Error(`Path is outside the Git working tree: ${file}`);
+  }
+  return path.slice(root === '/' ? 1 : root.length + 1);
+}
+
+async function readIndexFile(dir: string, path: string): Promise<{ bytes: Uint8Array; mode: number } | undefined> {
+  const git = await getGit();
+  return await git.walk({
+    fs: gitFsAdapter, dir, trees: [git.STAGE()],
+    map: async (filepath, [entry]) => {
+      if (filepath === path && entry && await entry.type() === 'blob') {
+        const { blob } = await git.readBlob({ fs: gitFsAdapter, dir, oid: await entry.oid() });
+        return { bytes: blob, mode: await entry.mode() };
+      }
+      if (filepath !== '.' && !path.startsWith(filepath + '/')) return null;
+    },
+    reduce: (value, children) => Promise.resolve(value ?? children.find(Boolean)),
+  });
+}
+
+function textOf(bytes: Uint8Array): string | undefined {
+  if (bytes.length > 512 * 1024 || bytes.includes(0)) return undefined;
+  try {
+    const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    let lines = 0;
+    for (let i = text.indexOf('\n'); i !== -1; i = text.indexOf('\n', i + 1)) {
+      if (++lines > 12_000) return undefined;
+    }
+    return text;
+  }
+  catch { return undefined; }
+}
 
 export interface GitFileStatus {
   filepath: string;
@@ -47,6 +86,7 @@ export class GitService {
    * Initializes a new Git repository in the specified directory.
    */
   public async init(dir: string, defaultBranch = 'main'): Promise<void> {
+    const git = await getGit();
     const norm = vfs.normalizePath(dir);
     if (!vfs.exists(norm)) {
       vfs.mkdir(norm, { recursive: true });
@@ -62,6 +102,7 @@ export class GitService {
    * Returns current branch name or 'HEAD (detached)'
    */
   public async currentBranch(dir: string): Promise<string> {
+    const git = await getGit();
     const norm = vfs.normalizePath(dir);
     try {
       const branch = await git.currentBranch({
@@ -69,7 +110,9 @@ export class GitService {
         dir: norm,
         fullname: false,
       });
-      return branch || 'main';
+      if (branch) return branch;
+      const head = vfs.exists(norm + '/.git/HEAD') ? vfs.readText(norm + '/.git/HEAD').trim() : '';
+      return head.startsWith('ref: refs/heads/') ? head.slice(16) : 'HEAD (detached)';
     } catch {
       return 'main';
     }
@@ -79,6 +122,7 @@ export class GitService {
    * Computes status matrix for files in the repository.
    */
   public async status(dir: string): Promise<GitStatusSummary> {
+    const git = await getGit();
     const norm = vfs.normalizePath(dir);
     const branch = await this.currentBranch(norm);
 
@@ -97,59 +141,15 @@ export class GitService {
     const untracked: GitFileStatus[] = [];
 
     for (const [filepath, head, workdir, stage] of matrix) {
-      // Clean unmodified: [1, 1, 1]
-      if (head === 1 && workdir === 1 && stage === 1) {
-        continue;
-      }
-
-      // Untracked: [0, 2, 0]
-      if (head === 0 && workdir === 2 && stage === 0) {
+      if (head === 0 && workdir !== 0 && stage === 0) {
         untracked.push({ filepath, staged: false, status: 'untracked' });
         continue;
       }
-
-      // Staged added: [0, 2, 2]
-      if (head === 0 && workdir === 2 && stage === 2) {
-        staged.push({ filepath, staged: true, status: 'added' });
-        continue;
+      if (head !== stage) {
+        staged.push({ filepath, staged: true, status: stage === 0 ? 'deleted' : head === 0 ? 'added' : 'modified' });
       }
-
-      // Staged deleted: [1, 0, 0]
-      if (head === 1 && workdir === 0 && stage === 0) {
-        staged.push({ filepath, staged: true, status: 'deleted' });
-        continue;
-      }
-
-      // Unstaged deleted in working tree: [1, 0, 1]
-      if (head === 1 && workdir === 0 && stage === 1) {
-        unstaged.push({ filepath, staged: false, status: 'deleted' });
-        continue;
-      }
-
-      // Modified in working tree (unstaged): [1, 2, 1]
-      if (head === 1 && workdir === 2 && stage === 1) {
-        unstaged.push({ filepath, staged: false, status: 'modified' });
-        continue;
-      }
-
-      // Staged modified: [1, 2, 2]
-      if (head === 1 && workdir === 2 && stage === 2) {
-        staged.push({ filepath, staged: true, status: 'modified' });
-        continue;
-      }
-
-      // Staged but also modified in workdir: [1, 2, 3]
-      if (head === 1 && workdir === 2 && stage === 3) {
-        staged.push({ filepath, staged: true, status: 'modified' });
-        unstaged.push({ filepath, staged: false, status: 'modified' });
-        continue;
-      }
-
-      // Fallback
-      if (stage > 0) {
-        staged.push({ filepath, staged: true, status: 'modified' });
-      } else {
-        unstaged.push({ filepath, staged: false, status: 'modified' });
+      if (workdir !== stage) {
+        unstaged.push({ filepath, staged: false, status: workdir === 0 ? 'deleted' : stage === 0 ? 'added' : 'modified' });
       }
     }
 
@@ -169,33 +169,43 @@ export class GitService {
    */
   public async add(dir: string, filepath: string | string[]): Promise<void> {
     const norm = vfs.normalizePath(dir);
-    const files = Array.isArray(filepath) ? filepath : [filepath];
-
-    if (files.includes('.')) {
-      const summary = await this.status(norm);
-      const toAdd = [
-        ...summary.untracked.map((u) => u.filepath),
-        ...summary.unstaged.map((u) => u.filepath),
-      ];
-      for (const f of toAdd) {
-        await git.add({ fs: gitFsAdapter, dir: norm, filepath: f });
+    const git = await getGit();
+    const inputs = Array.isArray(filepath) ? filepath : [filepath];
+    const summary = await this.status(norm);
+    const changes = [...summary.untracked, ...summary.unstaged];
+    const targets = new Set<string>();
+    for (const input of inputs) {
+      const path = vfs.resolve(norm, input);
+      if (path === norm) {
+        for (const change of changes) targets.add(change.filepath);
+      } else {
+        const relative = repoPath(norm, input);
+        if (vfs.exists(path) && vfs.lstat(path).isDirectory()) {
+          for (const change of changes) if (isWithin(change.filepath, relative)) targets.add(change.filepath);
+        } else targets.add(relative);
       }
-      return;
     }
-
-    for (const f of files) {
-      const cleanPath = f.replace(norm, '').replace(/^\/+/, '');
-      await git.add({ fs: gitFsAdapter, dir: norm, filepath: cleanPath });
+    for (const file of targets) {
+      if (vfs.exists(vfs.resolve(norm, file))) await git.add({ fs: gitFsAdapter, dir: norm, filepath: file });
+      else if (changes.some((change) => change.filepath === file && change.status === 'deleted')) {
+        await git.remove({ fs: gitFsAdapter, dir: norm, filepath: file });
+      } else throw new Error(`Pathspec did not match a working file: ${file}`);
     }
   }
 
-  /**
-   * Stages removal of a file.
-   */
   public async remove(dir: string, filepath: string): Promise<void> {
     const norm = vfs.normalizePath(dir);
-    const cleanPath = filepath.replace(norm, '').replace(/^\/+/, '');
-    await git.remove({ fs: gitFsAdapter, dir: norm, filepath: cleanPath });
+    const git = await getGit();
+    await git.remove({ fs: gitFsAdapter, dir: norm, filepath: repoPath(norm, filepath) });
+  }
+
+  public async unstage(dir: string, file: string): Promise<void> {
+    const norm = vfs.normalizePath(dir);
+    const path = repoPath(norm, file);
+    const git = await getGit();
+    const head = await git.resolveRef({ fs: gitFsAdapter, dir: norm, ref: 'HEAD' }).catch(() => undefined);
+    if (head) await git.resetIndex({ fs: gitFsAdapter, dir: norm, filepath: path });
+    else await git.remove({ fs: gitFsAdapter, dir: norm, filepath: path });
   }
 
   /**
@@ -206,6 +216,7 @@ export class GitService {
     message: string,
     author = { name: 'Aether Developer', email: 'dev@aetheros.internal' }
   ): Promise<string> {
+    const git = await getGit();
     const norm = vfs.normalizePath(dir);
     return await git.commit({
       fs: gitFsAdapter,
@@ -219,6 +230,7 @@ export class GitService {
    * Retrieves commit history log.
    */
   public async log(dir: string, depth = 20): Promise<GitCommitRecord[]> {
+    const git = await getGit();
     const norm = vfs.normalizePath(dir);
     try {
       const commits = await git.log({
@@ -238,61 +250,48 @@ export class GitService {
         },
         parent: c.commit.parent || [],
       }));
-    } catch {
-      return [];
+    } catch (error) {
+      if ((error as { code?: string }).code === 'NotFoundError') return [];
+      throw error;
     }
   }
 
   /**
    * Computes diff between HEAD and working directory.
    */
-  public async diff(dir: string, targetFile?: string): Promise<FileDiffResult[]> {
+  public async diff(dir: string, targetFile?: string, mode: 'combined' | 'staged' | 'unstaged' = 'combined'): Promise<FileDiffResult[]> {
     const norm = vfs.normalizePath(dir);
+    const git = await getGit();
     const summary = await this.status(norm);
-    const candidateFiles = new Set<string>();
-
-    if (targetFile) {
-      candidateFiles.add(targetFile.replace(norm, '').replace(/^\/+/, ''));
-    } else {
-      for (const s of summary.staged) candidateFiles.add(s.filepath);
-      for (const u of summary.unstaged) candidateFiles.add(u.filepath);
-      for (const t of summary.untracked) candidateFiles.add(t.filepath);
-    }
-
+    const candidates = mode === 'staged' ? summary.staged :
+      mode === 'unstaged' ? [...summary.unstaged, ...summary.untracked] :
+      [...summary.staged, ...summary.unstaged, ...summary.untracked];
+    const paths = targetFile ? [repoPath(norm, targetFile)] : [...new Set(candidates.map((file) => file.filepath))];
+    const commit = mode === 'unstaged' ? undefined :
+      await git.resolveRef({ fs: gitFsAdapter, dir: norm, ref: 'HEAD' }).catch(() => undefined);
+    const empty = new Uint8Array();
     const results: FileDiffResult[] = [];
-
-    for (const relPath of candidateFiles) {
-      const absPath = `${norm}/${relPath}`;
-      let oldText = '';
-      let newText = '';
-
-      // Try reading HEAD version
-      try {
-        const commitOid = await git.resolveRef({ fs: gitFsAdapter, dir: norm, ref: 'HEAD' });
-        const { blob } = await git.readBlob({
-          fs: gitFsAdapter,
-          dir: norm,
-          oid: commitOid,
-          filepath: relPath,
-        });
-        oldText = new TextDecoder().decode(blob);
-      } catch {
-        // File does not exist in HEAD (e.g. newly added or untracked)
-        oldText = '';
-      }
-
-      // Read current working directory version
-      try {
-        if (vfs.exists(absPath)) {
-          newText = vfs.readFile(absPath);
-        }
-      } catch {
-        newText = '';
-      }
-
-      results.push(computeLineDiff(relPath, oldText, newText));
+    for (const filepath of paths) {
+      const abs = vfs.resolve(norm, filepath);
+      const index = mode === 'combined' ? undefined : await readIndexFile(norm, filepath);
+      const head = commit ? await git.readBlob({ fs: gitFsAdapter, dir: norm, oid: commit, filepath })
+        .then(({ blob }) => blob).catch((error: { code?: string }) => {
+          if (error.code !== 'NotFoundError') throw error;
+          return empty;
+        }) : empty;
+      const worktree = mode === 'staged' || !vfs.exists(abs) ? empty :
+        vfs.lstat(abs).isSymbolicLink() ? new TextEncoder().encode(vfs.readlink(abs)) : vfs.readBytes(abs);
+      const before = mode === 'unstaged' ? index?.bytes ?? empty : head;
+      const after = mode === 'staged' ? index?.bytes ?? empty : worktree;
+      if (before.length === after.length && before.every((byte, i) => after[i] === byte)) continue;
+      const oldText = textOf(before);
+      const newText = textOf(after);
+      if (oldText === undefined || newText === undefined) {
+        const isBinary = before.includes(0) || after.includes(0) || vfs.getNodeRaw(abs)?.isBinary === true;
+        results.push({ filepath, additions: 0, deletions: 0, lines: [], isBinary,
+          patch: `${isBinary ? 'Binary file' : 'Large or non-UTF-8 file'} ${filepath} differs (${before.length} → ${after.length} bytes)\n` });
+      } else results.push(computeLineDiff(filepath, oldText, newText));
     }
-
     return results;
   }
 
@@ -300,6 +299,7 @@ export class GitService {
    * Creates a new branch.
    */
   public async branch(dir: string, name: string): Promise<void> {
+    const git = await getGit();
     const norm = vfs.normalizePath(dir);
     await git.branch({
       fs: gitFsAdapter,
@@ -312,6 +312,7 @@ export class GitService {
    * Lists all local branches.
    */
   public async listBranches(dir: string): Promise<string[]> {
+    const git = await getGit();
     const norm = vfs.normalizePath(dir);
     return await git.listBranches({
       fs: gitFsAdapter,
@@ -324,7 +325,12 @@ export class GitService {
    */
   public async checkout(dir: string, ref: string): Promise<void> {
     const norm = vfs.normalizePath(dir);
-    await git.checkout({
+    const summary = await this.status(norm);
+    if (summary.branch === ref) return;
+    if (summary.staged.length || summary.unstaged.length) {
+      throw new Error('Commit or restore tracked changes before switching branches');
+    }
+    await (await getGit()).checkout({
       fs: gitFsAdapter,
       dir: norm,
       ref,
@@ -336,12 +342,16 @@ export class GitService {
    */
   public async restore(dir: string, filepath: string): Promise<void> {
     const norm = vfs.normalizePath(dir);
-    const cleanPath = filepath.replace(norm, '').replace(/^\/+/, '');
-    await git.checkout({
-      fs: gitFsAdapter,
-      dir: norm,
-      filepaths: [cleanPath],
-      force: true,
+    const relative = repoPath(norm, filepath);
+    const path = vfs.resolve(norm, relative);
+    withoutSymlinks(path.slice(0, path.lastIndexOf('/')) || '/');
+    const index = await readIndexFile(norm, relative);
+    if (!index) throw new Error(`Path is not in the index: ${relative}`);
+    vfs.atomicBatch(() => {
+      if (vfs.exists(path)) vfs.unlink(path);
+      vfs.mkdir(path.slice(0, path.lastIndexOf('/')) || '/', { recursive: true });
+      if (index.mode === 0o120000) vfs.symlink(new TextDecoder().decode(index.bytes), path);
+      else vfs.writeBytesSync(path, index.bytes, { permissions: index.mode & 0o777 });
     });
   }
 }

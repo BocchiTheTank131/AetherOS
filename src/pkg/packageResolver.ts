@@ -34,7 +34,19 @@ export function compareSemver(v1: string, v2: string): number {
   if (!p1.prerelease && p2.prerelease) return 1;
   if (p1.prerelease && !p2.prerelease) return -1;
   if (p1.prerelease && p2.prerelease) {
-    return p1.prerelease.localeCompare(p2.prerelease);
+    const left = p1.prerelease.split('.');
+    const right = p2.prerelease.split('.');
+    for (let i = 0; i < Math.min(left.length, right.length); i++) {
+      const a = left[i];
+      const b = right[i];
+      if (a === b) continue;
+      const aNumeric = /^\d+$/.test(a);
+      const bNumeric = /^\d+$/.test(b);
+      if (aNumeric && bNumeric) return Number(a) - Number(b);
+      if (aNumeric !== bNumeric) return aNumeric ? -1 : 1;
+      return a < b ? -1 : 1;
+    }
+    return left.length - right.length;
   }
 
   return 0;
@@ -51,7 +63,8 @@ export function satisfiesSemver(version: string, range: string): boolean {
   if (cleanRange.startsWith('^')) {
     const target = parseSemver(cleanRange.slice(1));
     if (!target) return false;
-    if (parsed.major !== target.major) return false;
+    if (parsed.major !== target.major || (target.major === 0 && parsed.minor !== target.minor) ||
+        (target.major === 0 && target.minor === 0 && parsed.patch !== target.patch)) return false;
     return compareSemver(version, cleanRange.slice(1)) >= 0;
   }
 
@@ -63,22 +76,17 @@ export function satisfiesSemver(version: string, range: string): boolean {
     return compareSemver(version, cleanRange.slice(1)) >= 0;
   }
 
-  // >=, >, <=, <
-  if (cleanRange.startsWith('>=')) {
-    return compareSemver(version, cleanRange.slice(2).trim()) >= 0;
+  const comparison = /^(>=|<=|>|<|=)?(.*)$/.exec(cleanRange);
+  const expected = comparison?.[2].trim();
+  if (!expected || !parseSemver(expected)) return false;
+  const order = compareSemver(version, expected);
+  switch (comparison?.[1]) {
+    case '>=': return order >= 0;
+    case '>': return order > 0;
+    case '<=': return order <= 0;
+    case '<': return order < 0;
+    default: return order === 0;
   }
-  if (cleanRange.startsWith('>')) {
-    return compareSemver(version, cleanRange.slice(1).trim()) > 0;
-  }
-  if (cleanRange.startsWith('<=')) {
-    return compareSemver(version, cleanRange.slice(2).trim()) <= 0;
-  }
-  if (cleanRange.startsWith('<')) {
-    return compareSemver(version, cleanRange.slice(1).trim()) < 0;
-  }
-
-  // Exact version
-  return compareSemver(version, cleanRange) === 0;
 }
 
 export interface DependencyCheckResult {

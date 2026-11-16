@@ -164,6 +164,7 @@ describe('AetherOS v1.3.0: Application Ecosystem', () => {
       expect(compareSemver('1.2.0', '1.0.0')).toBe(1);
       expect(compareSemver('1.0.0', '2.0.0')).toBe(-1);
       expect(compareSemver('1.0.1', '1.0.0')).toBe(1);
+      expect(compareSemver('1.0.0-beta.10', '1.0.0-beta.2')).toBeGreaterThan(0);
       expect(compareSemver('1.0.0', '1.0.1')).toBe(-1);
     });
 

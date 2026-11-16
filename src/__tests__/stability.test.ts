@@ -56,6 +56,27 @@ it('retains queued writes during IndexedDB commits and rejects stale cross-tab w
   }
 });
 
+it('keeps retryable data after an IndexedDB transaction aborts', async () => {
+  vi.stubGlobal('indexedDB', indexedDB);
+  try {
+    const storage = new IndexedDBStorage();
+    await storage.init();
+    await storage.loadAll();
+    const node = { ...vfs.getNodeRaw('/home/aether')!, type: 'file' as const, path: '/retry.txt', name: 'retry.txt', parentPath: '/' };
+    storage.queueSave({ ...node, content: 'kept' });
+    const uncloneable = { ...node, path: '/invalid.txt', name: 'invalid.txt', invalid: () => {} };
+    storage.queueSave(uncloneable);
+    expect(await storage.flush()).toBe(false);
+    expect(storage.getPersistenceStatus()).toBe('error');
+    expect((await storage.loadAll()).get(node.path)).toBeUndefined();
+    storage.queueDelete('/invalid.txt');
+    expect(await storage.flush()).toBe(true);
+    expect((await storage.loadAll()).get(node.path)?.content).toBe('kept');
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
 it('does not execute guest code without a worker and terminates running guests on SIGKILL', async () => {
   vi.stubGlobal('Worker', undefined);
   try {
@@ -69,4 +90,14 @@ it('does not execute guest code without a worker and terminates running guests o
   const running = session.execute('while (true) {}');
   expect(virtualKernel.kill(session.pid, 'SIGKILL')).toBe(true);
   expect((await running).exitCode).toBe(137);
+});
+
+
+it('bounds JavaScript result and filesystem transfer sizes before posting them to the host', async () => {
+  const output = await runtimeManager.execute('return "x".repeat(3 * 1024 * 1024)');
+  expect(output.exitCode).toBe(1);
+  expect(output.stderr).toContain('result exceeds');
+  const write = await runtimeManager.execute('await aether.fs.writeText("/tmp/oversized", "x".repeat(3 * 1024 * 1024))');
+  expect(write.exitCode).toBe(1);
+  expect(vfs.exists('/tmp/oversized')).toBe(false);
 });

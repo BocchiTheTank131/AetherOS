@@ -47,6 +47,13 @@ export class SessionManager {
           value === null || ['string', 'boolean', 'number'].includes(typeof value))),
       }));
 
+      if (vfs.exists(SESSION_FILE)) {
+        try {
+          const previous = JSON.parse(vfs.readText(SESSION_FILE)) as SavedSession;
+          if (previous.version === 1 && previous.activeWorkspace === activeWorkspace &&
+              JSON.stringify(previous.windows) === JSON.stringify(validWindows)) return;
+        } catch {}
+      }
       const sessionData: SavedSession = {
         version: 1,
         activeWorkspace,

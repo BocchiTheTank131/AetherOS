@@ -34,12 +34,13 @@ export const StudioDiffViewer: React.FC<StudioDiffViewerProps> = ({ diff, onClos
         </button>
       </div>
 
+      {diff.lines.length > 4000 && <div className="px-3 py-1 text-gray-400">Showing the first 4,000 diff lines. Use git diff for the full patch.</div>}
       {/* Diff Content Area */}
       <div className="flex-1 overflow-auto p-2 font-mono text-xs">
         {diff.lines.length === 0 ? (
-          <div className="text-gray-500 italic p-4 text-center">No changes in this file.</div>
+          <div className="text-gray-500 italic p-4 text-center">{diff.patch || 'No changes in this file.'}</div>
         ) : (
-          diff.lines.map((line, idx) => {
+          diff.lines.slice(0, 4000).map((line, idx) => {
             let rowBg = '';
             let prefix = ' ';
             let textClass = 'text-gray-300';

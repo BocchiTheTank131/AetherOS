@@ -1,10 +1,23 @@
 // AetherOS - Developer Project Manager
 import { vfs } from '../vfs/vfs';
+import { withoutSymlinks } from '../vfs/safePath';
 import { gitService } from '../git/GitService';
 import type { ProjectConfig, ProjectInfo } from './types';
 
 export class ProjectManager {
   public static readonly PROJECTS_DIR = '/home/aether/Projects';
+
+  public findProjectRoot(file: string): string {
+    const path = withoutSymlinks(file);
+    const start = vfs.exists(path) && vfs.stat(path).isDirectory() ? path : path.slice(0, path.lastIndexOf('/')) || '/';
+    let dir = start;
+    while (dir !== '/') {
+      const markers = ['.git', 'aether.json', 'package.json', 'tsconfig.json', 'manifest.json'];
+      if (markers.some((name) => vfs.exists(vfs.resolve(dir, name)))) return dir;
+      dir = dir.slice(0, dir.lastIndexOf('/')) || '/';
+    }
+    return start;
+  }
 
   /**
    * Scans a directory to determine project metadata and language.
@@ -24,13 +37,14 @@ export class ProjectManager {
     if (vfs.exists(aetherConfigPath)) {
       try {
         config = JSON.parse(vfs.readFile(aetherConfigPath));
-        if (config?.language) language = config.language;
+        if (config && ['typescript', 'javascript', 'python', 'html'].includes(config.language)) language = config.language;
       } catch {}
-    } else if (hasTsConfig || vfs.exists(`${norm}/src/main.ts`) || vfs.exists(`${norm}/main.ts`)) {
+    }
+    if (!config?.language && (hasTsConfig || vfs.exists(`${norm}/src/main.ts`) || vfs.exists(`${norm}/main.ts`))) {
       language = 'typescript';
-    } else if (vfs.exists(`${norm}/main.py`) || vfs.exists(`${norm}/app.py`)) {
+    } else if (!config?.language && (vfs.exists(`${norm}/main.py`) || vfs.exists(`${norm}/app.py`))) {
       language = 'python';
-    } else if (vfs.exists(`${norm}/index.html`)) {
+    } else if (!config?.language && vfs.exists(`${norm}/index.html`)) {
       language = 'html';
     }
 

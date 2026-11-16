@@ -58,12 +58,17 @@ export class IndexedDBStorage {
     }
     return new Promise<boolean>((resolve) => {
       const req = indexedDB.open(DB_NAME, 3);
+      let abandoned = false;
       req.onupgradeneeded = () => {
         const db = req.result;
         if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME, { keyPath: 'path' });
         if (!db.objectStoreNames.contains(META_STORE)) db.createObjectStore(META_STORE);
       };
       req.onsuccess = () => {
+        if (abandoned) {
+          req.result.close();
+          return;
+        }
         this.db = req.result;
         this.db.onversionchange = () => {
           this.db?.close();
@@ -73,6 +78,7 @@ export class IndexedDBStorage {
         resolve(true);
       };
       req.onerror = req.onblocked = () => {
+        abandoned = true;
         this.setStatus('unavailable');
         systemLogger.warn('vfs', 'IndexedDB could not open. Close older AetherOS tabs and reload.');
         resolve(false);

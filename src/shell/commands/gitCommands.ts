@@ -20,7 +20,7 @@ Commands:
   branch [name]            List, create, or delete branches
   checkout <branch>        Switch branches or restore working tree files
   switch <branch>          Switch branches
-  restore <file>           Restore working tree files`,
+  restore [--staged] <file>           Restore working tree files`,
     execute: async (args, context): Promise<ExecutionResult> => {
       const subcommand = args[0];
       const cwd = context.cwd;
@@ -90,7 +90,7 @@ Commands:
           }
 
           if (summary.unstaged.length > 0) {
-            out += '\nChanges not staged for commit:\n  (use "git add <file>..." to update what will be committed)\n  (use "git restore <file>..." to discard changes in working directory)\n';
+            out += '\nChanges not staged for commit:\n  (use "git add <file>..." to update what will be committed)\n  (use "git restore [--staged] <file>..." to discard changes in working directory)\n';
             for (const u of summary.unstaged) {
               const label = u.status === 'deleted' ? 'deleted:    ' : 'modified:   ';
               out += `\t\x1b[31m${label}${u.filepath}\x1b[0m\n`;
@@ -180,9 +180,10 @@ Commands:
 
       // git diff [file]
       if (subcommand === 'diff') {
-        const file = args[1];
+        const staged = args.includes('--staged') || args.includes('--cached');
+        const file = args.slice(1).find((arg) => !arg.startsWith('-'));
         try {
-          const diffs = await gitService.diff(cwd, file);
+          const diffs = await gitService.diff(cwd, file, staged ? 'staged' : 'combined');
           let out = '';
           for (const d of diffs) {
             if (d.patch) {
@@ -234,17 +235,18 @@ Commands:
         }
       }
 
-      // git restore <file>
       if (subcommand === 'restore') {
-        const file = args[1];
-        if (!file) {
-          return { stdout: '', stderr: 'fatal: you must specify path(s) to restore\n', exitCode: 128 };
-        }
+        const staged = args.includes('--staged');
+        const files = args.slice(1).filter((arg) => !arg.startsWith('-'));
+        if (!files.length) return { stdout: '', stderr: 'fatal: specify path(s) to restore\n', exitCode: 128 };
         try {
-          await gitService.restore(cwd, file);
+          for (const file of files) {
+            if (staged) await gitService.unstage(cwd, file);
+            else await gitService.restore(cwd, file);
+          }
           return { stdout: '', stderr: '', exitCode: 0 };
-        } catch (err) {
-          return { stdout: '', stderr: `fatal: ${(err as Error).message}\n`, exitCode: 128 };
+        } catch (error) {
+          return { stdout: '', stderr: `fatal: ${String(error)}\n`, exitCode: 128 };
         }
       }
 
