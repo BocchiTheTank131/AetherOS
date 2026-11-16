@@ -8,7 +8,7 @@ export async function computeSha256(data: Uint8Array | string): Promise<string> 
   const bytes = typeof data === 'string' ? strToU8(data) : data;
 
   if (typeof crypto !== 'undefined' && crypto.subtle && crypto.subtle.digest) {
-    const rawBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+    const rawBuffer = bytes.buffer instanceof ArrayBuffer ? bytes as Uint8Array<ArrayBuffer> : Uint8Array.from(bytes);
     const hashBuffer = await crypto.subtle.digest('SHA-256', rawBuffer);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -114,7 +114,7 @@ function sha256Fallback(bytes: Uint8Array): string {
 export async function generateIntegrityManifest(
   files: Map<string, Uint8Array>
 ): Promise<Record<string, string>> {
-  const result: Record<string, string> = {};
+  const result: Record<string, string> = Object.create(null);
   for (const [path, content] of files.entries()) {
     if (path === 'integrity.json') continue;
     result[path] = await computeSha256(content);
@@ -128,8 +128,16 @@ export async function verifyIntegrityManifest(
 ): Promise<{ valid: boolean; mismatched: string[]; missing: string[] }> {
   const mismatched: string[] = [];
   const missing: string[] = [];
+  if (!expected || typeof expected !== 'object' || Array.isArray(expected)) throw new Error('Invalid integrity manifest');
+  for (const path of files.keys()) {
+    if (path !== 'integrity.json' && !Object.hasOwn(expected, path)) missing.push(path);
+  }
 
   for (const [path, expectedHash] of Object.entries(expected)) {
+    if (path === 'integrity.json' || typeof expectedHash !== 'string' || !/^[a-f0-9]{64}$/i.test(expectedHash)) {
+      mismatched.push(path);
+      continue;
+    }
     const fileBytes = files.get(path);
     if (!fileBytes) {
       missing.push(path);

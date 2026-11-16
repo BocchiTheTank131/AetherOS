@@ -1,13 +1,16 @@
 // AetherOS - Transactional Package Installer & Lifecycle Orchestrator
 import { PackageArchive } from './packageArchive';
 import { PackageValidator } from './packageValidator';
-import { PackageResolver, compareSemver } from './packageResolver';
+import { PackageResolver, compareSemver, satisfiesSemver } from './packageResolver';
 import { PackageRollback } from './packageRollback';
 import { dynamicAppRegistry } from '../appPlatform/DynamicAppRegistry';
 import { permissionManager } from '../appPlatform/PermissionManager';
 import { appStorage } from '../appPlatform/AppStorage';
 import { fileAssociations } from '../appPlatform/FileAssociations';
 import { AETHER_VERSION } from '../core/version';
+import { isAppId } from '../appPlatform/AppManifest';
+import { isWithin, withoutSymlinks } from '../vfs/safePath';
+import { idbStorage } from '../vfs/idbStorage';
 import { vfs } from '../vfs/vfs';
 import { systemLogger } from '../core/logger';
 import { systemEventBus } from '../core/eventBus';
@@ -88,74 +91,59 @@ export class PackageInstaller {
         }
       }
 
-      // Check if updating an existing version
       const existing = dynamicAppRegistry.get(pkgId);
-      if (existing) {
-        // Record current version in rollback history
-        PackageRollback.recordVersion(pkgId, {
-          version: existing.version,
-          manifest: existing.manifest,
-          installedAt: existing.installedAt,
-          installDir: existing.installDir,
-        });
-      }
-
-      report('Staging files...');
-      const installDir = `${APPS_INSTALL_ROOT}/${pkgId}/${version}`;
-      const systemCtx = { user: 'root', uid: 0 };
-      if (!vfs.exists(installDir)) {
-        vfs.mkdir(installDir, { recursive: true, context: systemCtx, owner: 'aether', group: 'aether', permissions: 0o775 });
-      }
-
-      // Write all archive files into install directory
-      for (const [relPath, content] of files.entries()) {
-        const destPath = `${installDir}/${relPath}`;
-        const dir = destPath.substring(0, destPath.lastIndexOf('/'));
-        if (!vfs.exists(dir)) {
-          vfs.mkdir(dir, { recursive: true, context: systemCtx, owner: 'aether', group: 'aether', permissions: 0o775 });
+      for (const dependent of dynamicAppRegistry.getAll()) {
+        const range = dependent.manifest.dependencies?.[pkgId];
+        if (range && !satisfiesSemver(version, range)) {
+          throw new Error(`${dependent.id} requires ${pkgId}@${range}`);
         }
-        await vfs.writeBytes(destPath, content, { context: systemCtx, owner: 'aether', group: 'aether', permissions: 0o755 });
       }
 
-      report('Registering permissions and security boundaries...');
-      if (manifest.permissions) {
-        permissionManager.registerApp(pkgId, manifest.permissions, options?.autoGrantLowRisk ?? true);
-      }
-
-      report('Registering application metadata...');
+      report('Staging files and metadata...');
+      const versionDir = withoutSymlinks(`${APPS_INSTALL_ROOT}/${pkgId}/${version}`);
+      const installDir = vfs.exists(versionDir) ? versionDir + '-' + crypto.randomUUID() : versionDir;
+      const systemCtx = { user: 'root', uid: 0 };
       const now = new Date().toISOString();
-      dynamicAppRegistry.register({
-        id: pkgId,
-        packageId: pkgId,
-        name: manifest.name,
-        version: manifest.version,
-        description: manifest.description,
-        author: manifest.author,
-        type: manifest.type,
-        entry: manifest.entry,
-        icon: manifest.icon,
-        installDir,
-        manifest,
-        installedAt: existing ? existing.installedAt : now,
-        updatedAt: now,
-        source: options?.source || 'local',
+      vfs.atomicBatch(() => {
+        vfs.mkdir(installDir, { recursive: true, context: systemCtx });
+        for (const [relPath, content] of files) {
+          const destPath = `${installDir}/${relPath}`;
+          const dir = destPath.slice(0, destPath.lastIndexOf('/'));
+          vfs.mkdir(dir, { recursive: true, context: systemCtx });
+          vfs.writeBytesSync(destPath, content, { context: systemCtx, permissions: 0o644 });
+        }
+
+        dynamicAppRegistry.register({
+          id: pkgId,
+          packageId: pkgId,
+          name: manifest.name,
+          version,
+          description: manifest.description,
+          author: manifest.author,
+          type: manifest.type,
+          entry: manifest.entry,
+          icon: manifest.icon,
+          installDir,
+          manifest,
+          installedAt: existing?.installedAt ?? now,
+          updatedAt: now,
+          source: options?.source ?? 'local',
+        });
+
+        permissionManager.registerApp(pkgId, manifest.permissions ?? [], options?.autoGrantLowRisk ?? true);
+        if (existing) PackageRollback.recordVersion(pkgId, existing);
       });
 
-      if (manifest.fileAssociations) {
-        fileAssociations.registerAssociations(pkgId, manifest.fileAssociations);
+      if (existing) systemEventBus.emit('app:close_requested', { appId: pkgId });
+      fileAssociations.unregisterAssociations(pkgId);
+      fileAssociations.registerAssociations(pkgId, manifest.fileAssociations ?? []);
+      const persisted = await vfs.flush();
+      const warnings = [...(validation.warnings ?? [])];
+      if (!persisted && (typeof window !== 'undefined' || idbStorage.getPersistenceStatus() !== 'unavailable')) {
+        warnings.push('Package is installed in this tab, but AetherFS could not persist the installation.');
       }
-
-      report('Completed');
-      systemEventBus.emit(existing ? 'package:updated' : 'package:installed', {
-        packageId: pkgId,
-        version,
-      });
-
-      return {
-        success: true,
-        packageId: pkgId,
-        version,
-      };
+      systemEventBus.emit(existing ? 'package:updated' : 'package:installed', { packageId: pkgId, version });
+      return { success: true, packageId: pkgId, version, warnings };
     } catch (err) {
       const msg = (err as Error).message || String(err);
       systemLogger.error('installer', `Installation error: ${msg}`);
@@ -176,34 +164,22 @@ export class PackageInstaller {
     }
 
     try {
-      // 1. Emit window close request for this application
-      systemEventBus.emit('app:close_requested', { appId: packageId });
-
-      // 2. Unregister from dynamic registry
-      dynamicAppRegistry.unregister(packageId);
-
-      // 3. Unregister file associations
-      fileAssociations.unregisterAssociations(packageId);
-
-      // 4. Remove program files from /opt/aether/apps/<packageId>/
-      const basePkgDir = `${APPS_INSTALL_ROOT}/${packageId}`;
-      if (vfs.exists(basePkgDir)) {
-        try {
-          vfs.rmdir(basePkgDir, { recursive: true });
-        } catch (err) {
-          systemLogger.warn('installer', `Failed to remove ${basePkgDir}: ${String(err)}`);
+      if (!isAppId(packageId)) throw new Error('Invalid package identifier');
+      const dependent = dynamicAppRegistry.getAll().find((app) => Object.hasOwn(app.manifest.dependencies ?? {}, packageId));
+      if (dependent) throw new Error(`${dependent.id} depends on ${packageId}`);
+      const basePkgDir = withoutSymlinks(`${APPS_INSTALL_ROOT}/${packageId}`);
+      vfs.atomicBatch(() => {
+        if (vfs.exists(basePkgDir)) vfs.rmdir(basePkgDir, { recursive: true });
+        if (options?.purgeData) {
+          appStorage.purgeAppData(packageId);
+          permissionManager.unregisterApp(packageId);
         }
-      }
-
-      // 5. Purge app data if requested
-      if (options?.purgeData) {
-        appStorage.purgeAppData(packageId);
-        permissionManager.unregisterApp(packageId);
-      }
-
-      // 6. Clear rollback history
-      PackageRollback.clearHistory(packageId);
-
+        PackageRollback.clearHistory(packageId);
+        dynamicAppRegistry.unregister(packageId);
+      });
+      systemEventBus.emit('app:close_requested', { appId: packageId });
+      fileAssociations.unregisterAssociations(packageId);
+      await vfs.flush();
       systemEventBus.emit('package:removed', { packageId });
       systemLogger.info('installer', `Successfully uninstalled package: ${packageId}`);
       return { success: true };
@@ -226,15 +202,25 @@ export class PackageInstaller {
       return { success: false, error: `No rollback version available for package '${packageId}'` };
     }
 
-    if (!vfs.exists(prev.installDir)) {
+    if (!isAppId(packageId) || !isWithin(prev.installDir, `${APPS_INSTALL_ROOT}/${packageId}`) ||
+        withoutSymlinks(prev.installDir) !== prev.installDir || !vfs.exists(prev.installDir)) {
       return {
         success: false,
         error: `Previous version files at '${prev.installDir}' are missing`,
       };
     }
 
-    // Restore dynamic app registry record
-    dynamicAppRegistry.register({
+    const deps = PackageResolver.verifyDependencies(prev.manifest.dependencies ?? {}, (id) => dynamicAppRegistry.get(id)?.version);
+    if (!deps.satisfied) return { success: false, error: 'The rollback version has unmet dependencies' };
+    for (const dependent of dynamicAppRegistry.getAll()) {
+      const range = dependent.manifest.dependencies?.[packageId];
+      if (range && !satisfiesSemver(prev.version, range)) {
+        return { success: false, error: `${dependent.id} requires ${packageId}@${range}` };
+      }
+    }
+
+    vfs.atomicBatch(() => {
+      dynamicAppRegistry.register({
       id: packageId,
       packageId,
       name: prev.manifest.name,
@@ -249,7 +235,13 @@ export class PackageInstaller {
       installedAt: current.installedAt,
       updatedAt: new Date().toISOString(),
       source: current.source,
+      });
+      PackageRollback.recordVersion(packageId, current);
     });
+    fileAssociations.unregisterAssociations(packageId);
+    fileAssociations.registerAssociations(packageId, prev.manifest.fileAssociations ?? []);
+    systemEventBus.emit('app:close_requested', { appId: packageId });
+    await vfs.flush();
 
     systemEventBus.emit('package:updated', { packageId, version: prev.version });
     systemLogger.info('installer', `Rolled back package '${packageId}' to v${prev.version}`);

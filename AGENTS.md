@@ -62,7 +62,7 @@ src/
 │   ├── logger.ts          # SystemLogger: structured circular buffer (dmesg / journalctl)
 │   ├── dialog.ts          # Centralized System Dialog Service (alert, confirm, prompt)
 │   ├── audio.ts           # AudioService: Web Audio API procedural sound synthesizer
-│   └── context.tsx        # SystemProvider & useSystem() OS context hook
+│   └── SystemProvider.tsx        # SystemProvider & useSystem() OS context hook
 │
 ├── runtime/               # Secure Isolated Guest Execution Engine
 │   ├── types.ts           # Runtime execution interfaces, options, and events
@@ -352,7 +352,7 @@ Never attach a global `window.addEventListener('keydown', ...)` inside an applic
 
 ### ⚠️ Invariant 3: Window State Updates Must Be Pure
 - Do not mutate `win.title` directly (e.g. `win.title = t;` in `WindowFrame.tsx`). State in React must be updated through the state setters provided by `SystemContext`.
-- Avoid calling `setWindows(...)` inside another `setWindows(...)` updater (see `Alt+Tab` bug in `context.tsx`).
+- Avoid calling `setWindows(...)` inside another `setWindows(...)` updater (see `Alt+Tab` bug in `SystemProvider.tsx`).
 
 ### ⚠️ Invariant 4: Sandbox Isolation for Web Content
 - In `WebBrowserApp.tsx` and `CodeStudioApp.tsx`, **never** combine `allow-scripts` and `allow-same-origin` on an `<iframe>` unless it is hosted on an isolated distinct domain. Doing so allows framed scripts to access `window.parent` and compromise the OS.
@@ -402,7 +402,7 @@ Never attach a global `window.addEventListener('keydown', ...)` inside an applic
 
 ### ⚠️ Invariant 16: Window Title Updates & Callback Memoization
 - Always memoize `onClose` and `setTitle` callbacks passed into window application components (`WindowFrame.tsx`, `AppHost.tsx`).
-- In `context.tsx`, `updateWindowTitle` must guard against identical title assignments (`if (target.title === title) return prev;`) to prevent triggering runaway React state re-render cascades.
+- In `SystemProvider.tsx`, `updateWindowTitle` must guard against identical title assignments (`if (target.title === title) return prev;`) to prevent triggering runaway React state re-render cascades.
 
 ### ⚠️ Invariant 17: Pointer Capture Masking for Framed Applications
 - When dragging or resizing windows or displaying modals across embedded `<iframe>` views (`AppHost`, `CodeStudioApp`, `WebBrowserApp`), render an active pointer overlay mask (`fixed inset-0 z-[99999] cursor-move select-none`) to prevent embedded iframe documents from swallowing mouse events.
@@ -509,12 +509,9 @@ Never attach a global `window.addEventListener('keydown', ...)` inside an applic
 
 For a complete catalog of all 44 identified issues, root cause analyses, and line references, consult [CODE_REVIEW_REPORT.md](file:///c:/Users/Win/Documents/AetherOS/CODE_REVIEW_REPORT.md).
 
-### Top 5 Priority Bugs to Keep in Mind:
-1. `Game2048App.tsx`: Keydown listener must be scoped to window focus to stop swallowing WASD/arrow keys.
-2. `CalculatorApp.tsx`: Keydown effect is missing `[]` and captures global typing.
-3. `App.tsx`: Calling `shutdownSystem` sets `booted=false`, causing immediate re-mount of `BootScreen` (reboot loop).
-4. `context.tsx`: `packageManager.init()` is never called on boot, discarding installed package status on refresh.
-5. `vfs.ts`: `vfs.mkdir` throws `EEXIST` even with `recursive: true`, breaking `mkdir -p` and `vfs.copy`.
+- Use `vfs.flush()` at durability boundaries and handle false results. IndexedDB revision conflicts require exporting pending work and reloading the tab. Respect the transactional snapshot import path.
+- Guest paths must use the boundary helpers in `src/vfs/safePath.ts`. Keep package metadata and other private applications out of filesystem RPC, even for applications granted general filesystem access.
+- Run untrusted programs only in an isolated worker. Unit tests use native worker threads with a browser API adapter. Run `npm run build && npm run test:e2e` for the real browser suite.
 
 ---
 

@@ -2,11 +2,11 @@
 // This script is injected directly into guest iframe HTML environments.
 
 export const SDK_CLIENT_SCRIPT = `
-(function() {
+function(sessionToken) {
   if (window.aether) return;
 
-  var port = null;
-  var sessionToken = null;
+  var channel = new MessageChannel();
+  var port = channel.port1;
   var appId = null;
   var appInfo = null;
   var pendingRequests = new Map();
@@ -35,7 +35,12 @@ export const SDK_CLIENT_SCRIPT = `
           reject(new Error('Aether SDK: Communication port is not available'));
           return;
         }
-        pendingRequests.set(reqId, { resolve: resolve, reject: reject });
+        if (pendingRequests.size >= 100) return reject(new Error('Too many pending requests'));
+        var timer = setTimeout(function() {
+          pendingRequests.delete(reqId);
+          reject(new Error('Aether SDK: Request timed out'));
+        }, 15000);
+        pendingRequests.set(reqId, { resolve: resolve, reject: reject, timer: timer });
         port.postMessage({
           id: reqId,
           type: 'req',
@@ -47,6 +52,7 @@ export const SDK_CLIENT_SCRIPT = `
       };
 
       if (!isReady) {
+        if (queuedCalls.length >= 100) return reject(new Error('Too many pending requests'));
         queuedCalls.push(execute);
       } else {
         execute();
@@ -65,23 +71,22 @@ export const SDK_CLIENT_SCRIPT = `
     }
   }
 
-  window.addEventListener('message', function onInitMessage(e) {
-    var data = e.data;
-    if (data && data.type === 'aether:init' && e.ports && e.ports[0]) {
-      port = e.ports[0];
-      sessionToken = data.sessionToken;
-      appId = data.appId;
-      appInfo = data.appInfo;
-      applyThemeVars(data.theme);
-
-      port.onmessage = function(pe) {
-        var msg = pe.data;
-        if (!msg) return;
-
+  port.onmessage = function(e) {
+    var msg = e.data;
+    if (!msg) return;
+    if (msg.type === 'aether:init' && !isReady) {
+      appId = msg.appId;
+      appInfo = msg.appInfo;
+      applyThemeVars(msg.theme);
+      isReady = true;
+      queuedCalls.splice(0).forEach(function(call) { call(); });
+      emitEvent('ready', { appId: appId });
+    } else if (isReady) {
         if (msg.type === 'res') {
           var pending = pendingRequests.get(msg.id);
           if (pending) {
             pendingRequests.delete(msg.id);
+            clearTimeout(pending.timer);
             if (msg.success) {
               pending.resolve(msg.data);
             } else {
@@ -94,18 +99,8 @@ export const SDK_CLIENT_SCRIPT = `
           }
           emitEvent(msg.event, msg.payload);
         }
-      };
-
-      isReady = true;
-      while (queuedCalls.length > 0) {
-        var fn = queuedCalls.shift();
-        try { fn(); } catch(err) { console.error(err); }
-      }
-
-      emitEvent('ready', { appId: appId });
-      window.removeEventListener('message', onInitMessage);
     }
-  });
+  };
 
   window.aether = {
     app: {
@@ -205,5 +200,6 @@ export const SDK_CLIENT_SCRIPT = `
       if (idx !== -1) list.splice(idx, 1);
     }
   };
-})();
+  parent.postMessage({ type: 'aether:connect', token: sessionToken }, '*', [channel.port2]);
+}
 `;

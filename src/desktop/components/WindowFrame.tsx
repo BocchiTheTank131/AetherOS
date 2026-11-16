@@ -240,10 +240,6 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({ window: win }) => {
     snapWindow,
   ]);
 
-  if (win.state === 'minimized') {
-    return null;
-  }
-
   const isDockTop = theme.dockPosition === 'top';
   const isDockLeft = theme.dockPosition === 'left';
   const topOffset = isDockTop ? 44 : 0;
@@ -317,7 +313,7 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({ window: win }) => {
         />
       )}
       <div
-        style={style}
+        style={win.state === 'minimized' ? { ...style, display: 'none' } : style}
         onMouseDown={() => focusWindow(win.id)}
         className={`flex flex-col rounded-xl overflow-hidden shadow-2xl transition-[box-shadow,border-color] duration-150 ${
           isLight

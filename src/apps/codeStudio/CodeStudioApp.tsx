@@ -203,11 +203,11 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps }) => {
 
   // Initial load and file watching
   useEffect(() => {
-    refreshProject();
+    const initialLoad = setTimeout(refreshProject, 0);
     const unsub = vfs.watch(projectRoot, () => {
       refreshProject();
     });
-    return () => unsub();
+    return () => { clearTimeout(initialLoad); unsub(); };
   }, [projectRoot, refreshProject]);
 
   // Handle Save All

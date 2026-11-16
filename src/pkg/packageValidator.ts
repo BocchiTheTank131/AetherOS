@@ -6,6 +6,7 @@ import { verifyIntegrityManifest } from './packageIntegrity';
 export interface PackageValidationResult {
   valid: boolean;
   errors: string[];
+  warnings?: string[];
   manifest?: AppManifest;
 }
 
@@ -80,6 +81,7 @@ export class PackageValidator {
     return {
       valid: errors.length === 0,
       errors,
+      warnings: integrityBytes ? [] : ['Legacy package has no SHA-256 integrity manifest.'],
       manifest,
     };
   }

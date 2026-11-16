@@ -128,12 +128,11 @@ export const Desktop: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    loadDesktopFiles();
-    loadPositions();
+    const initialLoad = setTimeout(() => { loadDesktopFiles(); loadPositions(); }, 0);
     const unsubscribe = vfs.watch('/home/aether/Desktop', () => {
       loadDesktopFiles();
     });
-    return () => unsubscribe();
+    return () => { clearTimeout(initialLoad); unsubscribe(); };
   }, [loadDesktopFiles, loadPositions]);
 
   const defaultIcons: DesktopIcon[] = [
@@ -459,7 +458,6 @@ export const Desktop: React.FC = () => {
   };
 
   // Filter windows by active workspace
-  const visibleWindows = windows.filter((w) => w.workspaceId === activeWorkspace);
 
   const resolvedWallpaper = useMemo(() => {
     if (theme.wallpaper.startsWith('/')) {
@@ -529,8 +527,10 @@ export const Desktop: React.FC = () => {
       })}
 
       {/* Render Open Windows */}
-      {visibleWindows.map((win) => (
-        <WindowFrame key={win.id} window={win} />
+      {windows.map((win) => (
+        <div key={win.id} hidden={win.workspaceId !== activeWorkspace} style={win.workspaceId === activeWorkspace ? { display: 'contents' } : undefined}>
+          <WindowFrame window={win} />
+        </div>
       ))}
 
       {/* Right Click Desktop Context Menu */}

@@ -2,6 +2,8 @@
 import type { RegisteredCommand, ExecutionResult } from '../types';
 import { packageManager } from '../../pkg/packageManager';
 import { PackageArchive } from '../../pkg/packageArchive';
+import { isAppId } from '../../appPlatform/AppManifest';
+import { generateIntegrityManifest } from '../../pkg/packageIntegrity';
 import { PackageValidator } from '../../pkg/packageValidator';
 import { TEMPLATES } from '../../apps/codeStudio/templates';
 import { permissionManager } from '../../appPlatform/PermissionManager';
@@ -75,8 +77,8 @@ Usage:
           if (!res.success) {
             return { stdout: '', stderr: `E: Installation failed: ${res.error}\n`, exitCode: 1 };
           }
-          const out = `Reading archive: ${target}\nVerifying package manifest and SHA-256 integrity... OK\nStaging package to /opt/aether/apps/${res.packageId}/${res.version}...\nRegistering application capabilities and desktop associations...\n\x1b[1;32mSuccessfully installed ${res.packageId} (v${res.version}).\x1b[0m\n`;
-          return { stdout: out, stderr: '', exitCode: 0 };
+          const out = `Reading archive: ${target}\nValidated package and staged its files.\nRegistering application capabilities and desktop associations...\n\x1b[1;32mSuccessfully installed ${res.packageId} (v${res.version}).\x1b[0m\n`;
+          return { stdout: out, stderr: res.warnings?.map((warning) => warning + '\n').join('') ?? '', exitCode: 0 };
         }
 
         // Target is a repository package
@@ -289,13 +291,15 @@ Usage:
             packFiles.set(rel, vfs.readBytes(filePath));
           }
 
+          packFiles.set('integrity.json', new TextEncoder().encode(JSON.stringify(await generateIntegrityManifest(packFiles))));
           const archiveBytes = await PackageArchive.pack(packFiles);
 
           const distDir = `${targetPath}/dist`;
           if (!vfs.exists(distDir)) {
             vfs.mkdir(distDir, { recursive: true });
           }
-          const outFileName = `${manifest.id || 'package'}.aepkg`;
+          if (!isAppId(manifest.id)) throw new Error('Invalid application identifier');
+          const outFileName = `${manifest.id}.aepkg`;
           const outFilePath = `${distDir}/${outFileName}`;
           await vfs.writeBytes(outFilePath, archiveBytes);
 

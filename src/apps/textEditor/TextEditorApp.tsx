@@ -15,8 +15,16 @@ interface EditorTab {
 
 export const TextEditorApp: React.FC<AppProps> = ({ initialProps, setTitle, isFocused }) => {
   const initialFile = (initialProps?.filePath as string) || '';
-  const [tabs, setTabs] = useState<EditorTab[]>([]);
-  const [activeTabId, setActiveTabId] = useState<string>('');
+  const [tabs, setTabs] = useState<EditorTab[]>(() => {
+    if (initialFile) {
+      try {
+        const content = vfs.readFile(initialFile);
+        return [{ id: 'initial', filePath: initialFile, fileName: initialFile.split('/').pop() || 'file.txt', content, savedContent: content }];
+      } catch {}
+    }
+    return [{ id: 'initial', fileName: 'Untitled', content: '', savedContent: '' }];
+  });
+  const [activeTabId, setActiveTabId] = useState('initial');
   const [showFind, setShowFind] = useState(false);
   const [findText, setFindText] = useState('');
   const [replaceText, setReplaceText] = useState('');
@@ -36,29 +44,6 @@ export const TextEditorApp: React.FC<AppProps> = ({ initialProps, setTitle, isFo
     setTabs((prev) => [...prev, newTab]);
     setActiveTabId(id);
   }, []);
-
-  // Initialize with initial file or new document
-  useEffect(() => {
-    if (initialFile && vfs.exists(initialFile)) {
-      try {
-        const text = vfs.readFile(initialFile);
-        const name = initialFile.split('/').pop() || 'file.txt';
-        const newTab: EditorTab = {
-          id: `tab-${Date.now()}`,
-          filePath: initialFile,
-          fileName: name,
-          content: text,
-          savedContent: text,
-        };
-        setTabs([newTab]);
-        setActiveTabId(newTab.id);
-      } catch {
-        openNewDoc();
-      }
-    } else {
-      openNewDoc();
-    }
-  }, [initialFile, openNewDoc]);
 
   const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
   const isDirty = activeTab ? activeTab.content !== activeTab.savedContent : false;

@@ -1,3 +1,4 @@
+import { createIsolatedWorker } from './workers/isolatedWorker';
 // AetherOS - Runtime Execution Session Management
 import type { RuntimePermissions } from './RuntimePermissions';
 import { checkRuntimePathAccess } from './RuntimePermissions';
@@ -5,6 +6,7 @@ import type { RuntimeLimits } from './RuntimeLimits';
 import { DEFAULT_RUNTIME_LIMITS } from './RuntimeLimits';
 import type { GuestToHostMessage } from './RuntimeProtocol';
 import { SANDBOX_WORKER_CODE } from './workers/sandboxSource';
+import { hasControlCharacters, withoutSymlinks } from '../vfs/safePath';
 import { vfs } from '../vfs/vfs';
 import { virtualKernel } from '../core/kernel';
 import { systemLogger } from '../core/logger';
@@ -33,8 +35,7 @@ export class RuntimeSession {
   public readonly pid: number;
   public status: 'pending' | 'running' | 'completed' | 'timeout' | 'cancelled' | 'error' = 'pending';
 
-  private worker: Worker | null = null;
-  private workerBlobUrl: string | null = null;
+  private worker: ReturnType<typeof createIsolatedWorker> | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private stdoutBuffer = '';
   private stderrBuffer = '';
@@ -55,11 +56,13 @@ export class RuntimeSession {
       name: options.commandName || 'js-runtime',
       command: options.commandName || 'js-runtime',
       user: 'aether',
+      cleanup: (code) => this.cancel(code),
     });
     this.pid = proc.pid;
   }
 
   public async execute(code: string, options?: { args?: string[]; onStdout?: (c: string) => void; onStderr?: (c: string) => void }): Promise<RuntimeExecutionResult> {
+    if (this.status !== 'pending') throw new Error('Runtime sessions are single-use');
     this.status = 'running';
     this.startTime = performance.now();
 
@@ -71,21 +74,13 @@ export class RuntimeSession {
         this.handleTimeout();
       }, this.limits.timeoutMs);
 
-      // Check if Web Worker is available in environment
-      if (typeof Worker !== 'undefined' && typeof Blob !== 'undefined' && typeof URL !== 'undefined') {
-        this.runInWorker(code, options);
-      } else {
-        // Fallback for Node/Vitest test runner environments
-        this.runInFallback(code, options);
-      }
+      this.runInWorker(code, options);
     });
   }
 
   private runInWorker(code: string, options?: { args?: string[]; onStdout?: (c: string) => void; onStderr?: (c: string) => void }): void {
     try {
-      const blob = new Blob([SANDBOX_WORKER_CODE], { type: 'application/javascript' });
-      this.workerBlobUrl = URL.createObjectURL(blob);
-      this.worker = new Worker(this.workerBlobUrl);
+      this.worker = createIsolatedWorker(SANDBOX_WORKER_CODE);
 
       this.worker.onmessage = async (e: MessageEvent<GuestToHostMessage>) => {
         const msg = e.data;
@@ -135,120 +130,16 @@ export class RuntimeSession {
     }
   }
 
-  private async runInFallback(code: string, options?: { args?: string[]; onStdout?: (c: string) => void; onStderr?: (c: string) => void }): Promise<void> {
-    const logs: string[] = [];
-    const errLogs: string[] = [];
-
-    const mockConsole = {
-      log: (...a: unknown[]) => {
-        const text = a.map((x) => (typeof x === 'object' ? JSON.stringify(x, null, 2) : String(x))).join(' ') + '\n';
-        logs.push(text);
-        if (options?.onStdout) options.onStdout(text);
-      },
-      info: (...a: unknown[]) => {
-        const text = '[INFO] ' + a.map((x) => (typeof x === 'object' ? JSON.stringify(x, null, 2) : String(x))).join(' ') + '\n';
-        logs.push(text);
-        if (options?.onStdout) options.onStdout(text);
-      },
-      warn: (...a: unknown[]) => {
-        const text = '[WARN] ' + a.map((x) => (typeof x === 'object' ? JSON.stringify(x, null, 2) : String(x))).join(' ') + '\n';
-        errLogs.push(text);
-        if (options?.onStderr) options.onStderr(text);
-      },
-      error: (...a: unknown[]) => {
-        const text = '[ERROR] ' + a.map((x) => (typeof x === 'object' ? JSON.stringify(x, null, 2) : String(x))).join(' ') + '\n';
-        errLogs.push(text);
-        if (options?.onStderr) options.onStderr(text);
-      },
-    };
-
-    const guestAether = {
-      fs: {
-        readText: (path: string) => {
-          if (!checkRuntimePathAccess(path, 'read', this.permissions)) {
-            throw new Error(`Permission denied: 'filesystem:read' on '${path}'`);
-          }
-          return vfs.readText(path);
-        },
-        writeText: (path: string, content: string) => {
-          if (!checkRuntimePathAccess(path, 'write', this.permissions)) {
-            throw new Error(`Permission denied: 'filesystem:write' on '${path}'`);
-          }
-          return vfs.writeText(path, content);
-        },
-        readBytes: (path: string) => {
-          if (!checkRuntimePathAccess(path, 'read', this.permissions)) {
-            throw new Error(`Permission denied: 'filesystem:read' on '${path}'`);
-          }
-          return vfs.readBytes(path);
-        },
-        writeBytes: (path: string, bytes: Uint8Array) => {
-          if (!checkRuntimePathAccess(path, 'write', this.permissions)) {
-            throw new Error(`Permission denied: 'filesystem:write' on '${path}'`);
-          }
-          return vfs.writeBytes(path, bytes);
-        },
-        exists: (path: string) => vfs.exists(path),
-        stat: (path: string) => vfs.stat(path),
-      },
-    };
-
-    const prevAether = (globalThis as Record<string, unknown>).aether;
-    (globalThis as Record<string, unknown>).aether = guestAether;
-
-    let timedOut = false;
-    let fallbackTimeout: ReturnType<typeof setTimeout> | null = null;
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      fallbackTimeout = setTimeout(() => {
-        timedOut = true;
-        reject(new Error('TIMEOUT_LIMIT_REACHED'));
-      }, this.limits.timeoutMs);
-    });
-
-    try {
-      const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-      const fn = new AsyncFunction('aether', 'args', 'console', '"use strict";\n' + code);
-      const res = await Promise.race([
-        fn(guestAether, options?.args || [], mockConsole),
-        timeoutPromise,
-      ]);
-
-      if (fallbackTimeout) clearTimeout(fallbackTimeout);
-
-      if (performance.now() - this.startTime >= this.limits.timeoutMs) {
-        this.handleTimeout();
-        return;
-      }
-
-      this.cleanup();
-      this.stdoutBuffer = logs.join('');
-      this.stderrBuffer = errLogs.join('');
-      this.status = 'completed';
-      this.finish(0, res);
-    } catch (err) {
-      if (fallbackTimeout) clearTimeout(fallbackTimeout);
-
-      if (timedOut || (err as Error).message === 'TIMEOUT_LIMIT_REACHED' || performance.now() - this.startTime >= this.limits.timeoutMs) {
-        this.handleTimeout();
-        return;
-      }
-
-      this.cleanup();
-      this.stdoutBuffer = logs.join('');
-      const errStr = (err as Error).message || String(err);
-      this.stderrBuffer = errLogs.join('') + `${errStr}\n`;
-      if (options?.onStderr) options.onStderr(`${errStr}\n`);
-      this.status = 'error';
-      this.finish(1);
-    } finally {
-      if (fallbackTimeout) clearTimeout(fallbackTimeout);
-      (globalThis as Record<string, unknown>).aether = prevAether;
-    }
-  }
-
   private async handleFsRequest(req: { id: string; method: string; path: string; content?: string; bytesBase64?: string }): Promise<void> {
     const { id, method, path } = req;
-    const normPath = vfs.normalizePath(path);
+    let normPath: string;
+    try {
+      if (typeof path !== 'string' || !path.startsWith('/') || path.length > 1024 || (path.includes('\\') || hasControlCharacters(path))) throw new Error('Invalid path');
+      normPath = withoutSymlinks(path);
+    } catch (error) {
+      this.worker?.postMessage({ type: 'fs_response', id, error: String(error) });
+      return;
+    }
     const isWrite = method.startsWith('write');
     const allowed = checkRuntimePathAccess(normPath, isWrite ? 'write' : 'read', this.permissions);
 
@@ -262,6 +153,14 @@ export class RuntimeSession {
     }
 
     try {
+      if ((req.content !== undefined && (typeof req.content !== 'string' || req.content.length > this.limits.maxOutputBytes)) ||
+          (req.bytesBase64 !== undefined && (typeof req.bytesBase64 !== 'string' || req.bytesBase64.length > this.limits.maxOutputBytes * 2))) {
+        throw new Error('Filesystem request exceeds payload limit');
+      }
+      if (!isWrite && method !== 'exists' && vfs.stat(normPath).size > this.limits.maxOutputBytes) {
+        throw new Error('File exceeds runtime read limit');
+      }
+      if (isWrite && !vfs.checkAccess(normPath, 'w')) throw new Error('Permission denied by AetherFS');
       let result: unknown = null;
       if (method === 'readText') {
         result = await vfs.readText(normPath);
@@ -286,7 +185,8 @@ export class RuntimeSession {
       } else if (method === 'exists') {
         result = vfs.exists(normPath);
       } else if (method === 'stat') {
-        result = vfs.stat(normPath);
+        const { isDirectory, isFile: _isFile, isSymbolicLink, ...stat } = vfs.stat(normPath);
+        result = { ...stat, type: isDirectory() ? 'dir' : isSymbolicLink() ? 'symlink' : 'file' };
       }
 
       this.worker?.postMessage({
@@ -314,14 +214,14 @@ export class RuntimeSession {
     this.finish(124);
   }
 
-  public cancel(): void {
-    if (this.status !== 'running') return;
+  public cancel(exitCode = 130): void {
+    if (this.status !== 'running' && this.status !== 'pending') return;
     this.status = 'cancelled';
     this.cleanup();
 
     const cancelMsg = '^C\n';
     this.stderrBuffer += cancelMsg;
-    this.finish(130);
+    this.finish(exitCode);
   }
 
   private cleanup(): void {
@@ -335,12 +235,7 @@ export class RuntimeSession {
       } catch {}
       this.worker = null;
     }
-    if (this.workerBlobUrl) {
-      try {
-        URL.revokeObjectURL(this.workerBlobUrl);
-      } catch {}
-      this.workerBlobUrl = null;
-    }
+
   }
 
   private finish(exitCode: number, result?: unknown): void {

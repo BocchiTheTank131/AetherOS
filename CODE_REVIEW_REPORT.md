@@ -17,6 +17,12 @@
 
 ---
 
+## v1.4.1 follow-up
+
+The original audit below is a historical record. v1.4.1 covers private-path collisions and symlink traversal, authenticated guest channels, worker prototype lockdown and removal of main-thread fallback execution, bounded ZIP extraction, persistence conflicts, and workspace component lifetimes. See [the release notes](CHANGELOG.md) for verification scope and browser limits.
+
+Remaining risks include browser-dependent memory limits for guest programs, storage eviction and forced shutdown before commit, indirect runtime compatibility limits, and POSIX differences. Earlier scorecards and test counts describe the audited revision.
+
 ## 📑 Executive Summary
 
 AetherOS has transitioned from a virtual Linux simulation into a robust, extensible web-native operating platform (**v1.3.0**). The system now provides an authenticated, sandboxed guest application platform (`AppHost`), a full transactional `.aepkg` package manager with SHA-256 integrity verification, desktop session persistence across browser reloads, a multi-tab script IDE (`CodeStudio`), and a POSIX-compliant scripting shell with background job control.

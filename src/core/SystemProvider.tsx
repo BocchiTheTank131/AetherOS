@@ -1,7 +1,9 @@
 // AetherOS - Main System React Context & State Provider
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import type { SystemTheme, UserAccount, SystemNotification } from './types';
 import type { WindowInstance, WindowDisplayState } from '../desktop/types';
+import { SystemContext, type SystemContextValue } from './context';
+import { idbStorage } from '../vfs/idbStorage';
 import { vfs } from '../vfs/vfs';
 import { virtualKernel } from './kernel';
 import { systemLogger } from './logger';
@@ -11,7 +13,14 @@ import { appRegistry } from '../apps/appRegistry';
 import { packageManager } from '../pkg/packageManager';
 import { SessionManager } from '../session/SessionManager';
 
-export const DEFAULT_THEME: SystemTheme = {
+function focusWorkspace(windows: WindowInstance[], workspace: number): WindowInstance[] {
+  const top = windows.reduce<WindowInstance | undefined>((focused, win) =>
+    win.workspaceId === workspace && win.state !== 'minimized' && (!focused || win.zIndex > focused.zIndex) ? win : focused,
+    undefined);
+  return windows.map((win) => win.isFocused === (win === top) ? win : { ...win, isFocused: win === top });
+}
+
+const DEFAULT_THEME: SystemTheme = {
   mode: 'dark',
   accentColor: 'cyan',
   accentHex: '#00f2fe',
@@ -24,7 +33,7 @@ export const DEFAULT_THEME: SystemTheme = {
   dockAutoHide: false,
 };
 
-export const DEFAULT_USER: UserAccount = {
+const DEFAULT_USER: UserAccount = {
   username: 'aether',
   displayName: 'Aether Navigator',
   avatar: 'User',
@@ -33,48 +42,6 @@ export const DEFAULT_USER: UserAccount = {
   shell: '/bin/aesh',
 };
 
-interface SystemContextValue {
-  booted: boolean;
-  theme: SystemTheme;
-  setTheme: (theme: Partial<SystemTheme>) => void;
-  user: UserAccount;
-  setUser: (user: Partial<UserAccount>) => void;
-  isLocked: boolean;
-  setIsLocked: (locked: boolean) => void;
-  notifications: SystemNotification[];
-  addNotification: (notif: Omit<SystemNotification, 'id' | 'timestamp' | 'read'>) => void;
-  dismissNotification: (id: string) => void;
-  clearNotifications: () => void;
-  windows: WindowInstance[];
-  openWindow: (appId: string, props?: Record<string, unknown>) => string;
-  closeWindow: (id: string) => void;
-  focusWindow: (id: string) => void;
-  minimizeWindow: (id: string) => void;
-  maximizeWindow: (id: string) => void;
-  snapWindow: (id: string, side: 'left' | 'right' | 'top') => void;
-  updateWindowPosition: (id: string, x: number, y: number) => void;
-  updateWindowSize: (id: string, width: number, height: number, x?: number, y?: number) => void;
-  updateWindowTitle: (id: string, title: string) => void;
-  recentApps: string[];
-  activeWorkspace: number;
-  setActiveWorkspace: (id: number) => void;
-  appLauncherOpen: boolean;
-  setAppLauncherOpen: (open: boolean | ((prev: boolean) => boolean)) => void;
-  quickRunnerOpen: boolean;
-  setQuickRunnerOpen: (open: boolean | ((prev: boolean) => boolean)) => void;
-  quickSettingsOpen: boolean;
-  setQuickSettingsOpen: (open: boolean | ((prev: boolean) => boolean)) => void;
-  notificationCenterOpen: boolean;
-  setNotificationCenterOpen: (open: boolean | ((prev: boolean) => boolean)) => void;
-  topZIndex: number;
-  rebootSystem: () => void;
-  shutdownSystem: () => void;
-  isPoweredOff: boolean;
-  powerOnSystem: () => void;
-}
-
-const SystemContext = createContext<SystemContextValue | null>(null);
-
 export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [booted, setBooted] = useState(false);
   const [isPoweredOff, setIsPoweredOff] = useState(false);
@@ -82,13 +49,12 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [user, setUserState] = useState<UserAccount>(DEFAULT_USER);
   const [isLocked, setIsLocked] = useState(false);
   const [windows, setWindows] = useState<WindowInstance[]>([]);
-  const [activeWorkspace, setActiveWorkspace] = useState(1);
+  const [activeWorkspace, setWorkspace] = useState(1);
   const [notifications, setNotifications] = useState<SystemNotification[]>([]);
   const [appLauncherOpen, setAppLauncherOpen] = useState(false);
   const [quickRunnerOpen, setQuickRunnerOpen] = useState(false);
   const [quickSettingsOpen, setQuickSettingsOpen] = useState(false);
   const [notificationCenterOpen, setNotificationCenterOpen] = useState(false);
-  const [topZIndex, setTopZIndex] = useState(10);
   const [recentApps, setRecentApps] = useState<string[]>([
     'terminal',
     'file-manager',
@@ -99,6 +65,18 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     Record<string, { x: number; y: number; width: number; height: number }>
   >({});
   const openWindowRef = React.useRef<(appId: string, props?: Record<string, unknown>) => string>(() => '');
+
+  const powerTransition = React.useRef(false);
+  const sessionRef = React.useRef({ windows, activeWorkspace, booted });
+  useEffect(() => {
+    sessionRef.current = { windows, activeWorkspace, booted };
+  }, [windows, activeWorkspace, booted]);
+
+  const setActiveWorkspace = useCallback((id: number) => {
+    if (!Number.isInteger(id) || id < 1 || id > 4) return;
+    setWorkspace(id);
+    setWindows((prev) => focusWorkspace(prev, id));
+  }, []);
 
   // Synchronize system theme classes and CSS variables with document root
   useEffect(() => {
@@ -156,6 +134,7 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     async function init() {
       systemLogger.info('boot', 'System startup sequence initiated');
       await vfs.init();
+      if (!mounted) return;
       await packageManager.init();
 
       // Load theme configuration from VFS if available
@@ -172,7 +151,7 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         const savedSession = SessionManager.loadSession((id) => !!appRegistry.get(id));
         if (savedSession && mounted) {
           if (savedSession.activeWorkspace) {
-            setActiveWorkspace(savedSession.activeWorkspace);
+            setWorkspace(savedSession.activeWorkspace);
           }
           if (savedSession.windows.length > 0) {
             const restoredWins: WindowInstance[] = savedSession.windows.map((sw, idx) => {
@@ -197,14 +176,14 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                 minWidth: app?.minWidth || 360,
                 minHeight: app?.minHeight || 280,
                 zIndex: 10 + idx,
-                isFocused: idx === savedSession.windows.length - 1,
+                isFocused: false,
                 state: sw.state,
                 workspaceId: sw.workspace,
+                props: sw.props,
                 pid: proc.pid,
               };
             });
-            setWindows(restoredWins);
-            setTopZIndex(10 + restoredWins.length);
+            setWindows(focusWorkspace(restoredWins, savedSession.activeWorkspace));
           }
         }
       } catch (err) {
@@ -221,29 +200,36 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     init();
 
-    // Listen to system restart/shutdown events
-    const unsubRestart = systemEventBus.on('system:restart', () => {
-      setIsPoweredOff(false);
+    const changePower = async (restart: boolean) => {
+      if (powerTransition.current) return;
+      powerTransition.current = true;
+      const session = sessionRef.current;
+      if (session.booted) SessionManager.saveSession(session.activeWorkspace, session.windows);
       setBooted(false);
+      setIsPoweredOff(!restart);
       setWindows([]);
-      setTimeout(() => init(), 1200);
-    });
+      virtualKernel.shutdown();
+      await vfs.flush();
+      if (restart && mounted) {
+        virtualKernel.start();
+        await init();
+      }
+      powerTransition.current = false;
+    };
 
-    const unsubShutdown = systemEventBus.on('system:shutdown', () => {
-      setBooted(false);
-      setIsPoweredOff(true);
-      setWindows([]);
-    });
-
+    const unsubRestart = systemEventBus.on('system:restart', () => void changePower(true));
+    const unsubShutdown = systemEventBus.on('system:shutdown', () => void changePower(false));
     const unsubAppClose = systemEventBus.on('app:close_requested', (event: unknown) => {
-      const e = event as { appId: string };
-      if (!e?.appId) return;
+      const appId = (event as { appId?: string })?.appId;
+      if (!appId) return;
+      for (const process of virtualKernel.getProcesses()) {
+        if (process.appId === appId && process.windowId) virtualKernel.exit(process.pid, 0);
+      }
+    });
+    const unsubProcess = systemEventBus.on('process:terminated', ({ pid }) => {
       setWindows((prev) => {
-        const matching = prev.filter((w) => w.appId === e.appId);
-        for (const win of matching) {
-          virtualKernel.exit(win.pid, 0);
-        }
-        return prev.filter((w) => w.appId !== e.appId);
+        if (!prev.some((win) => win.pid === pid)) return prev;
+        return focusWorkspace(prev.filter((win) => win.pid !== pid), sessionRef.current.activeWorkspace);
       });
     });
 
@@ -260,17 +246,47 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       unsubShutdown();
       unsubAppClose();
       unsubOpenReq();
+      unsubProcess();
     };
   }, []);
 
-  // Persist session state across browser reloads
   useEffect(() => {
     if (!booted) return;
-    const timer = setTimeout(() => {
-      SessionManager.saveSession(activeWorkspace, windows);
-    }, 1000);
+    const timer = setTimeout(() => SessionManager.saveSession(activeWorkspace, windows), 100);
     return () => clearTimeout(timer);
   }, [windows, activeWorkspace, booted]);
+
+  useEffect(() => {
+    const save = () => {
+      const session = sessionRef.current;
+      if (session.booted && !powerTransition.current) SessionManager.saveSession(session.activeWorkspace, session.windows);
+      void vfs.flush();
+    };
+    const onVisibility = () => { if (document.hidden) save(); };
+    window.addEventListener('pagehide', save);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('pagehide', save);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, []);
+
+  useEffect(() => {
+    const announce = (status: ReturnType<typeof idbStorage.getPersistenceStatus>) => {
+      if (status !== 'error' && status !== 'conflict' && status !== 'unavailable') return;
+      setNotifications((prev) => [...prev.filter((notice) => notice.id !== 'persistence'), {
+        id: 'persistence',
+        title: 'AetherFS persistence',
+        message: status === 'conflict' ? 'Another tab saved changes. Export any work in this tab before reloading.' :
+          status === 'unavailable' ? 'Browser storage is unavailable. Export your work before closing AetherOS.' :
+          'Browser storage could not save changes. Check available storage and export important files.',
+        level: 'warning',
+        read: false,
+        timestamp: Date.now(),
+      }]);
+    };
+    return idbStorage.subscribe(announce);
+  }, []);
 
   // Update theme and persist to VFS
   const setTheme = useCallback((newTheme: Partial<SystemTheme>) => {
@@ -318,14 +334,12 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // Focus Window
   const focusWindow = useCallback((id: string) => {
     const target = windows.find((w) => w.id === id);
-    if (target && target.workspaceId !== activeWorkspace) {
-      setActiveWorkspace(target.workspaceId);
+    if (!target) {
+      const pending = virtualKernel.getProcesses().find((process) => process.windowId === id);
+      if (!pending) return;
+    } else {
+      setWorkspace(target.workspaceId);
     }
-
-    setTopZIndex((prevZ) => {
-      const nextZ = prevZ + 1;
-      return nextZ;
-    });
 
     setWindows((prev) => {
       const highestZ = Math.max(...prev.map((w) => w.zIndex), 0) + 1;
@@ -336,11 +350,12 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       );
     });
     systemEventBus.emit('window:focused', { windowId: id });
-  }, [windows, activeWorkspace]);
+  }, [windows]);
 
   // Open Window (creates process in virtualKernel)
   const openWindow = useCallback(
     (appId: string, props?: Record<string, unknown>): string => {
+      if (!booted || powerTransition.current) return '';
       const app = appRegistry.get(appId);
       if (!app) {
         systemLogger.error('window-manager', `Failed to open window: unknown app '${appId}'`);
@@ -352,13 +367,10 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
       // Check singleton
       if (app.singleton) {
-        const existing = windows.find((w) => w.appId === appId);
-        if (existing) {
-          if (existing.workspaceId !== activeWorkspace) {
-            setActiveWorkspace(existing.workspaceId);
-          }
-          focusWindow(existing.id);
-          return existing.id;
+        const existing = virtualKernel.getProcesses().find((process) => process.appId === appId && process.windowId);
+        if (existing?.windowId) {
+          focusWindow(existing.windowId);
+          return existing.windowId;
         }
       }
 
@@ -371,13 +383,7 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         user: user.username,
         windowId,
         appId,
-        cleanup: () => {
-          // Process termination hook
-        },
       });
-
-      const nextZ = topZIndex + 1;
-      setTopZIndex(nextZ);
 
       // Restore saved position/size if available
       const saved = savedWindowPositions.current[appId];
@@ -407,20 +413,22 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         height: winHeight,
         minWidth: app.minWidth || 350,
         minHeight: app.minHeight || 250,
-        zIndex: nextZ,
+        zIndex: 0,
         state: 'normal',
         workspaceId: activeWorkspace,
         isFocused: true,
         props,
       };
 
-      setWindows((prev) => [...prev.map((w) => ({ ...w, isFocused: false })), newWindow]);
+      setWindows((prev) => [...prev.map((w) => w.isFocused ? { ...w, isFocused: false } : w), {
+        ...newWindow, zIndex: prev.reduce((max, win) => Math.max(max, win.zIndex), 10) + 1,
+      }]);
       systemEventBus.emit('window:opened', { windowId, appId });
       audioService.playClick();
 
       return windowId;
     },
-    [windows, user.username, topZIndex, activeWorkspace, focusWindow]
+    [windows.length, user.username, activeWorkspace, focusWindow, booted]
   );
 
   useEffect(() => {
@@ -571,15 +579,9 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const shutdownSystem = useCallback(() => {
     systemEventBus.emit('system:shutdown', { timestamp: Date.now() });
-    setBooted(false);
-    setIsPoweredOff(true);
-    setWindows([]);
   }, []);
 
   const powerOnSystem = useCallback(() => {
-    setIsPoweredOff(false);
-    setBooted(false);
-    setWindows([]);
     systemEventBus.emit('system:restart', { timestamp: Date.now() });
   }, []);
 
@@ -684,7 +686,7 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [windows, isLocked, focusWindow, closeWindow, openWindow, snapWindow, maximizeWindow, minimizeWindow]);
+  }, [windows, isLocked, focusWindow, closeWindow, openWindow, snapWindow, maximizeWindow, minimizeWindow, setActiveWorkspace]);
 
   const value = useMemo<SystemContextValue>(
     () => ({
@@ -720,7 +722,6 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setQuickSettingsOpen,
       notificationCenterOpen,
       setNotificationCenterOpen,
-      topZIndex,
       rebootSystem,
       shutdownSystem,
       isPoweredOff,
@@ -749,11 +750,11 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       updateWindowTitle,
       recentApps,
       activeWorkspace,
+      setActiveWorkspace,
       appLauncherOpen,
       quickRunnerOpen,
       quickSettingsOpen,
       notificationCenterOpen,
-      topZIndex,
       rebootSystem,
       shutdownSystem,
       isPoweredOff,
@@ -764,10 +765,3 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   return <SystemContext.Provider value={value}>{children}</SystemContext.Provider>;
 };
 
-export const useSystem = () => {
-  const ctx = useContext(SystemContext);
-  if (!ctx) {
-    throw new Error('useSystem must be used within a SystemProvider');
-  }
-  return ctx;
-};

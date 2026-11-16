@@ -58,10 +58,12 @@ export function isValidAppRequest(msg: unknown): msg is AppRequestMessage {
   if (!msg || typeof msg !== 'object') return false;
   const m = msg as Record<string, unknown>;
   return (
-    typeof m.id === 'string' &&
+    typeof m.id === 'string' && m.id.length <= 128 &&
     m.type === 'req' &&
-    typeof m.action === 'string' &&
-    typeof m.sessionToken === 'string' &&
-    typeof m.appId === 'string'
+    typeof m.action === 'string' && m.action.length <= 64 &&
+    typeof m.sessionToken === 'string' && m.sessionToken.length <= 64 &&
+    typeof m.appId === 'string' && m.appId.length <= 128 &&
+    (m.payload === undefined || (m.payload !== null && typeof m.payload === 'object' &&
+      Object.getPrototypeOf(m.payload) === Object.prototype))
   );
 }

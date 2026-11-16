@@ -7,21 +7,17 @@ import { commandRegistry } from '../../shell/registry';
 import { Search, Terminal, FileText, AppWindow, ArrowRight } from 'lucide-react';
 
 export const CommandPalette: React.FC = () => {
-  const { quickRunnerOpen, setQuickRunnerOpen, openWindow, theme } = useSystem();
+  const { quickRunnerOpen } = useSystem();
+  return quickRunnerOpen ? <CommandPaletteContent /> : null;
+};
+
+function CommandPaletteContent() {
+  const { setQuickRunnerOpen, openWindow, theme } = useSystem();
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (quickRunnerOpen) {
-      inputRef.current?.focus();
-    } else {
-      setQuery('');
-      setSelectedIndex(0);
-    }
-  }, [quickRunnerOpen]);
-
-  if (!quickRunnerOpen) return null;
+  useEffect(() => { inputRef.current?.focus(); }, []);
 
   const isLight = theme.mode === 'light';
 
@@ -180,4 +176,4 @@ export const CommandPalette: React.FC = () => {
       </div>
     </div>
   );
-};
+}

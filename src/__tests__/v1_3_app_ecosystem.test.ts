@@ -1,4 +1,5 @@
 // AetherOS v1.3.0 - Application Ecosystem Comprehensive Test Suite
+import { zipSync, strToU8 } from 'fflate';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { vfs } from '../vfs/vfs';
 import { packageManager } from '../pkg/packageManager';
@@ -54,7 +55,8 @@ describe('AetherOS v1.3.0: Application Ecosystem', () => {
       for (let i = 0; i < 505; i++) {
         files.set(`file_${i}.txt`, 'sample');
       }
-      const archiveBytes = await PackageArchive.pack(files);
+      await expect(PackageArchive.pack(files)).rejects.toThrow(/limits/i);
+      const archiveBytes = zipSync(Object.fromEntries([...files].map(([path, content]) => [path, strToU8(content)])));
       await expect(PackageArchive.unpack(archiveBytes)).rejects.toThrow(/file count limit/i);
     });
   });

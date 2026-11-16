@@ -14,6 +14,7 @@ export interface SavedWindowState {
   height: number;
   state: 'normal' | 'minimized' | 'maximized' | 'snapped-left' | 'snapped-right';
   workspace: number;
+  props?: Record<string, unknown>;
 }
 
 export interface SavedSession {
@@ -33,7 +34,7 @@ export class SessionManager {
   public static saveSession(activeWorkspace: number, windows: WindowInstance[]): void {
     try {
       this.ensureConfigDir();
-      const validWindows: SavedWindowState[] = windows.map((w) => ({
+      const validWindows: SavedWindowState[] = [...windows].sort((a, b) => a.zIndex - b.zIndex).map((w) => ({
         appId: w.appId,
         title: w.title,
         x: Math.round(w.x),
@@ -42,6 +43,8 @@ export class SessionManager {
         height: Math.round(w.height),
         state: w.state,
         workspace: w.workspaceId,
+        props: Object.fromEntries(Object.entries(w.props ?? {}).filter(([, value]) =>
+          value === null || ['string', 'boolean', 'number'].includes(typeof value))),
       }));
 
       const sessionData: SavedSession = {
@@ -85,10 +88,10 @@ export class SessionManager {
           continue;
         }
 
-        const clampedX = Math.max(10, Math.min(viewW - 100, typeof w.x === 'number' ? w.x : 100));
-        const clampedY = Math.max(10, Math.min(viewH - 80, typeof w.y === 'number' ? w.y : 100));
-        const clampedW = Math.max(200, Math.min(viewW - 20, typeof w.width === 'number' ? w.width : 700));
-        const clampedH = Math.max(150, Math.min(viewH - 50, typeof w.height === 'number' ? w.height : 480));
+        const clampedX = Math.max(10, Math.min(viewW - 100, Number.isFinite(w.x) ? w.x : 100));
+        const clampedY = Math.max(10, Math.min(viewH - 80, Number.isFinite(w.y) ? w.y : 100));
+        const clampedW = Math.max(200, Math.min(viewW - 20, Number.isFinite(w.width) ? w.width : 700));
+        const clampedH = Math.max(150, Math.min(viewH - 50, Number.isFinite(w.height) ? w.height : 480));
 
         validWindows.push({
           appId: w.appId,
@@ -97,13 +100,14 @@ export class SessionManager {
           y: clampedY,
           width: clampedW,
           height: clampedH,
-          state: w.state || 'normal',
-          workspace: typeof w.workspace === 'number' && w.workspace >= 1 && w.workspace <= 4 ? w.workspace : 1,
+          state: ['normal', 'maximized', 'minimized', 'snapped-left', 'snapped-right'].includes(w.state) ? w.state : 'normal',
+          props: w.props && typeof w.props === 'object' && !Array.isArray(w.props) ? w.props : undefined,
+          workspace: Number.isInteger(w.workspace) && w.workspace >= 1 && w.workspace <= 4 ? w.workspace : 1,
         });
       }
 
       const activeWs =
-        typeof parsed.activeWorkspace === 'number' &&
+        Number.isInteger(parsed.activeWorkspace) &&
         parsed.activeWorkspace >= 1 &&
         parsed.activeWorkspace <= 4
           ? parsed.activeWorkspace

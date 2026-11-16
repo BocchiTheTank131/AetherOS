@@ -1,14 +1,15 @@
 // AetherOS - Isolated Application-Private Storage Manager
 import { vfs } from '../vfs/vfs';
+import { hasControlCharacters, isWithin, withoutSymlinks } from '../vfs/safePath';
 import { systemLogger } from '../core/logger';
 
-const BASE_STORAGE_DIR = '/home/aether/.local/share/aether/apps';
+export const BASE_STORAGE_DIR = '/home/aether/.local/share/aether/apps';
 const DEFAULT_STORAGE_QUOTA_BYTES = 5 * 1024 * 1024; // 5 MB
 
 export class AppStorage {
   private ensureAppDir(appId: string): string {
     this.validateAppId(appId);
-    const dir = `${BASE_STORAGE_DIR}/${appId}`;
+    const dir = withoutSymlinks(`${BASE_STORAGE_DIR}/${appId}`);
     if (!vfs.exists(dir)) {
       vfs.mkdir(dir, { recursive: true });
     }
@@ -16,30 +17,30 @@ export class AppStorage {
   }
 
   public validateAppId(appId: string): void {
-    if (!appId || typeof appId !== 'string') {
+    if (typeof appId !== 'string' || appId.length > 128 ||
+        !/^[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*$/.test(appId)) {
       throw new Error('Invalid application identifier');
-    }
-    if (!/^[a-zA-Z0-9._-]+$/.test(appId) || appId.includes('..')) {
-      throw new Error(`Malicious or invalid appId rejected: ${appId}`);
     }
   }
 
   private getStorageFilePath(appId: string): string {
     const dir = this.ensureAppDir(appId);
-    return `${dir}/storage.json`;
+    return withoutSymlinks(`${dir}/storage.json`);
   }
 
   private loadStore(appId: string): Record<string, unknown> {
     const filePath = this.getStorageFilePath(appId);
     if (!vfs.exists(filePath)) {
-      return {};
+      return Object.create(null);
     }
     try {
       const raw = vfs.readFile(filePath);
-      return JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Invalid storage record');
+      return Object.assign(Object.create(null), parsed);
     } catch (err) {
       systemLogger.warn('storage', `Corrupted storage for ${appId}, resetting: ${String(err)}`);
-      return {};
+      return Object.create(null);
     }
   }
 
@@ -47,9 +48,7 @@ export class AppStorage {
     const filePath = this.getStorageFilePath(appId);
     const serialized = JSON.stringify(store, null, 2);
 
-    if (serialized.length > DEFAULT_STORAGE_QUOTA_BYTES) {
-      throw new Error(`Application storage quota exceeded (${DEFAULT_STORAGE_QUOTA_BYTES} bytes limit)`);
-    }
+    this.checkFileQuota(appId, filePath, new TextEncoder().encode(serialized).length);
 
     vfs.writeFile(filePath, serialized);
   }
@@ -90,6 +89,19 @@ export class AppStorage {
     this.saveStore(appId, {});
   }
 
+  public checkFileQuota(appId: string, path: string, size: number): void {
+    const dirs = [this.ensureAppDir(appId)];
+    for (const dir of dirs) {
+      for (const entry of vfs.readdir(dir)) {
+        if (entry.type === 'dir') dirs.push(entry.path);
+        if (entry.type === 'file' && entry.path !== path) size += entry.size;
+      }
+    }
+    if (size > DEFAULT_STORAGE_QUOTA_BYTES) {
+      throw new Error(`Application storage quota exceeded (${DEFAULT_STORAGE_QUOTA_BYTES} bytes limit)`);
+    }
+  }
+
   public getUsage(appId: string): { bytes: number; keyCount: number } {
     try {
       this.validateAppId(appId);
@@ -100,7 +112,7 @@ export class AppStorage {
       const raw = vfs.readFile(filePath);
       const store = JSON.parse(raw);
       return {
-        bytes: raw.length,
+        bytes: new TextEncoder().encode(raw).length,
         keyCount: Object.keys(store).length,
       };
     } catch {
@@ -110,7 +122,7 @@ export class AppStorage {
 
   public purgeAppData(appId: string): void {
     this.validateAppId(appId);
-    const dir = `${BASE_STORAGE_DIR}/${appId}`;
+    const dir = withoutSymlinks(`${BASE_STORAGE_DIR}/${appId}`);
     if (vfs.exists(dir)) {
       try {
         vfs.rmdir(dir, { recursive: true });
@@ -123,3 +135,17 @@ export class AppStorage {
 }
 
 export const appStorage = new AppStorage();
+
+export function resolveAppFilesystemPath(appId: string, value: unknown): { path: string; isPrivate: boolean } {
+  appStorage.validateAppId(appId);
+  if (typeof value !== 'string' || !value.startsWith('/') || value.length > 1024 || (value.includes('\\') || hasControlCharacters(value))) {
+    throw new Error('Expected an absolute filesystem path');
+  }
+  const path = withoutSymlinks(value);
+  const isPrivate = isWithin(path, `${BASE_STORAGE_DIR}/${appId}`);
+  if ((!isPrivate && isWithin(path, BASE_STORAGE_DIR)) ||
+      isWithin(path, '/var/lib/aetherpkg') || isWithin(path, '/opt/aether/apps')) {
+    throw new Error('Permission denied: protected application data');
+  }
+  return { path, isPrivate };
+}

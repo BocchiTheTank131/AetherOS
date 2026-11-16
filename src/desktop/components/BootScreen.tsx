@@ -32,7 +32,8 @@ export const BootScreen: React.FC<BootScreenProps> = ({ onComplete }) => {
     let trailingTimeout: ReturnType<typeof setTimeout> | null = null;
     const interval = setInterval(() => {
       if (currentIdx < BOOT_STEPS.length) {
-        setLogs((prev) => [...prev, BOOT_STEPS[currentIdx]]);
+        const step = BOOT_STEPS[currentIdx];
+        setLogs((prev) => [...prev, step]);
         setProgress(Math.round(((currentIdx + 1) / BOOT_STEPS.length) * 100));
         currentIdx++;
       } else {

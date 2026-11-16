@@ -23,7 +23,7 @@ export interface Process {
   windowId?: string;
   appId?: string;
   worker?: Worker;
-  cleanup?: () => void;
+  cleanup?: (exitCode: number) => void;
   exitCode?: number;
 }
 

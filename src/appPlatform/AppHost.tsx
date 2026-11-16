@@ -3,7 +3,11 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { AppProps } from '../apps/types';
 import { dynamicAppRegistry, type InstalledAppRecord } from './DynamicAppRegistry';
 import { permissionManager } from './PermissionManager';
-import { appStorage } from './AppStorage';
+import { appStorage, resolveAppFilesystemPath } from './AppStorage';
+import { isAppId } from './AppManifest';
+import { VALID_PERMISSION_SCOPES, PERMISSION_METADATA, type PermissionScope } from './AppPermissions';
+import { dialogService } from '../core/dialog';
+import { hasControlCharacters, isWithin, relativeFilePath, withoutSymlinks } from '../vfs/safePath';
 import { SDK_CLIENT_SCRIPT } from './sdk/clientSource';
 import {
   type AppRequestMessage,
@@ -35,10 +39,11 @@ export const AppHost: React.FC<AppHostProps> = ({
   const { theme, addNotification } = useSystem();
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [sessionToken, setSessionToken] = useState<string>('');
+  const tokenRef = useRef('');
+  const permissionPrompt = useRef(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const channelRef = useRef<MessageChannel | null>(null);
-  const blobUrlsToRevoke = useRef<string[]>([]);
+  const channelRef = useRef<{ port1: MessagePort } | null>(null);
+  const currentUrl = useRef<string | null>(null);
   const requestCountRef = useRef<number>(0);
   const rateLimitTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const setTitleRef = useRef(setTitle);
@@ -55,8 +60,7 @@ export const AppHost: React.FC<AppHostProps> = ({
 
   const appRecord: InstalledAppRecord | undefined =
     previewRecord ||
-    dynamicAppRegistry.get(effectiveAppId) ||
-    (initialProps?.record as InstalledAppRecord);
+    dynamicAppRegistry.get(effectiveAppId);
 
   // Rate limiter counter reset every second
   useEffect(() => {
@@ -76,61 +80,65 @@ export const AppHost: React.FC<AppHostProps> = ({
         throw new Error(`Application metadata not found for ID '${effectiveAppId}'`);
       }
 
-      const installDir = appRecord.installDir;
-      const entryFile = `${installDir}/${appRecord.entry}`.replace(/\\/g, '/');
-
-      if (!vfs.exists(entryFile)) {
-        throw new Error(`Entry file '${appRecord.entry}' not found in ${installDir}`);
+      if (!isAppId(effectiveAppId) || effectiveAppId !== appRecord.id) {
+        throw new Error('Invalid application identity');
       }
-
-      let html = vfs.readFile(entryFile);
-
-      // Inline local scripts: <script src="..."></script>
-      html = html.replace(/<script\s+[^>]*src=["']([^"']+)["'][^>]*>\s*<\/script>/gi, (match, src) => {
-        if (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('//')) {
-          return match;
+      const installDir = withoutSymlinks(appRecord.installDir);
+      if (!previewRecord && !isWithin(installDir, `/opt/aether/apps/${effectiveAppId}`)) {
+        throw new Error('Application is outside its install directory');
+      }
+      const entryFile = withoutSymlinks(`${installDir}/${relativeFilePath(appRecord.entry)}`);
+      const entryDir = entryFile.slice(0, entryFile.lastIndexOf('/'));
+      let remainingBytes = 24 * 1024 * 1024;
+      const checkAsset = (path: string) => {
+        const stat = vfs.stat(path);
+        if (!stat.isFile() || stat.size > remainingBytes) throw new Error('Application exceeds the launch size limit');
+        remainingBytes -= stat.size;
+        return path;
+      };
+      const readAsset = (src: string) => {
+        if (/^(?:[\w+.-]+:|\/\/)/.test(src)) return undefined;
+        const relative = decodeURIComponent(src.split(/[?#]/, 1)[0]);
+        const base = relative.startsWith('/') ? installDir : entryDir;
+        const path = withoutSymlinks(`${base}/${relative.replace(/^\/+/, '')}`);
+        if (!isWithin(path, installDir) || relative.includes('\\') || hasControlCharacters(relative)) {
+          throw new Error(`Asset is outside the package: ${src}`);
         }
-        const scriptPath = `${installDir}/${src.replace(/^\/+/, '')}`;
-        if (vfs.exists(scriptPath)) {
-          const scriptContent = vfs.readFile(scriptPath);
-          return `<script>\n${scriptContent}\n</script>`;
-        }
-        return match;
+        return vfs.exists(path) ? checkAsset(path) : undefined;
+      };
+
+      let html = vfs.readFile(checkAsset(entryFile));
+      html = html.replace(/(<(?:img|audio|video|source)\s[^>]*?\bsrc=)(["'])([^"']+)\2/gi, (tag, start, quote, src) => {
+        const path = readAsset(src);
+        if (!path) return tag;
+        const mime = vfs.stat(path).mimeType ?? '';
+        if (!/^(?:image|audio|video)\/[a-z0-9.+-]+$/i.test(mime)) return tag;
+        const bytes = vfs.readBytes(path);
+        let binary = '';
+        for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+        return start + quote + 'data:' + mime + ';base64,' + btoa(binary) + quote;
       });
-
-      // Inline local stylesheets: <link rel="stylesheet" href="...">
+      html = html.replace(/<script\s+([^>]*?)\bsrc=["']([^"']+)["']([^>]*)>\s*<\/script>/gi, (match, before, src, after) => {
+        const path = readAsset(src);
+        if (!path) return match;
+        const script = vfs.readFile(path).replace(/<\/script/gi, '<\\/script');
+        return `<script ${before}${after}>\n${script}\n</script>`;
+      });
       html = html.replace(/<link\s+[^>]*rel=["']stylesheet["'][^>]*href=["']([^"']+)["'][^>]*>/gi, (match, href) => {
-        if (href.startsWith('http://') || href.startsWith('https://') || href.startsWith('//')) {
-          return match;
-        }
-        const stylePath = `${installDir}/${href.replace(/^\/+/, '')}`;
-        if (vfs.exists(stylePath)) {
-          const cssContent = vfs.readFile(stylePath);
-          return `<style>\n${cssContent}\n</style>`;
-        }
-        return match;
+        const path = readAsset(href);
+        return path ? `<style>\n${vfs.readFile(path).replace(/<\/style/gi, '<\\/style')}\n</style>` : match;
       });
 
-      // Restrictive CSP Header:
-      // default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' blob:; style-src 'unsafe-inline' blob:; img-src data: blob:;
-      const cspMeta = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' blob:; style-src 'unsafe-inline' blob:; img-src data: blob:; media-src data: blob:; font-src data: blob:; connect-src 'none'; frame-src 'none'; object-src 'none';">`;
-
-      // SDK script to inject into head
-      const sdkTag = `<script>\n${SDK_CLIENT_SCRIPT}\n</script>`;
-
-      if (html.includes('<head>')) {
-        html = html.replace('<head>', `<head>\n${cspMeta}\n${sdkTag}`);
-      } else {
-        html = `<!DOCTYPE html><html><head>${cspMeta}${sdkTag}</head><body>${html}</body></html>`;
-      }
-
-      // Create Blob URL for sandboxed iframe
-      const blob = new Blob([html], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      blobUrlsToRevoke.current.push(url);
-
-      const token = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `token_${Date.now()}_${Math.random()}`;
-      setSessionToken(token);
+      const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' blob:; style-src 'unsafe-inline' blob:; img-src data: blob:; media-src data: blob:; font-src data: blob:; base-uri 'none'; form-action 'none';">`;
+      const token = Array.from(crypto.getRandomValues(new Uint8Array(24)), (n) => n.toString(16).padStart(2, '0')).join('');
+      const sdk = `<script>(${SDK_CLIENT_SCRIPT})(${JSON.stringify(token)})</script>`;
+      html = `<!DOCTYPE html>${csp}${sdk}${html.replace(/^\s*<!doctype[^>]*>/i, '')}`;
+      const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+      channelRef.current?.port1.close();
+      channelRef.current = null;
+      if (currentUrl.current) URL.revokeObjectURL(currentUrl.current);
+      currentUrl.current = url;
+      tokenRef.current = token;
       setBlobUrl(url);
 
       if (appRecord.name) {
@@ -141,24 +149,16 @@ export const AppHost: React.FC<AppHostProps> = ({
       setError(msg);
       systemLogger.error('appHost', `Failed to load app '${effectiveAppId}': ${msg}`);
     }
-  }, [appRecord, effectiveAppId]);
+  }, [appRecord, effectiveAppId, previewRecord]);
 
   useEffect(() => {
-    loadApp();
+    const timer = setTimeout(loadApp, 0);
     return () => {
-      // Cleanup all Blob URLs
-      for (const url of blobUrlsToRevoke.current) {
-        try {
-          URL.revokeObjectURL(url);
-        } catch {}
-      }
-      blobUrlsToRevoke.current = [];
-      if (channelRef.current) {
-        try {
-          channelRef.current.port1.close();
-        } catch {}
-        channelRef.current = null;
-      }
+      clearTimeout(timer);
+      if (currentUrl.current) URL.revokeObjectURL(currentUrl.current);
+      currentUrl.current = null;
+      channelRef.current?.port1.close();
+      channelRef.current = null;
     };
   }, [loadApp]);
 
@@ -196,9 +196,15 @@ export const AppHost: React.FC<AppHostProps> = ({
     }
 
     const { action, payload } = req;
+    if (previewRecord && /^(fs:|storage:|notifications:)/.test(action)) {
+      sendResponse(false, undefined, 'Install the application to grant this capability');
+      return;
+    }
+    if (!previewRecord && dynamicAppRegistry.get(appId) !== appRecord) return;
     const p = (payload || {}) as Record<string, unknown>;
 
     try {
+      if (typeof p.title === 'string' && p.title.length > 256) throw new Error('Title is too long');
       switch (action) {
         case 'app:getInfo': {
           sendResponse(true, {
@@ -234,40 +240,45 @@ export const AppHost: React.FC<AppHostProps> = ({
 
         // Storage Operations
         case 'storage:get': {
-          if (!permissionManager.hasPermission(appId, 'storage:appdata')) {
+          if (typeof p.key !== 'string' || !p.key || p.key.length > 1024) throw new Error('Invalid storage key');
+          if (!appRecord?.manifest.permissions?.includes('storage:appdata') || !permissionManager.hasPermission(appId, 'storage:appdata')) {
             sendResponse(false, undefined, "Permission denied: 'storage:appdata' is required");
             return;
           }
           permissionManager.recordUsage(appId, 'storage:appdata');
-          const value = await appStorage.get(appId, String(p.key));
+          const value = await appStorage.get(appId, p.key);
           sendResponse(true, value);
           break;
         }
 
         case 'storage:set': {
-          if (!permissionManager.hasPermission(appId, 'storage:appdata')) {
+          if (typeof p.key !== 'string' || !p.key || p.key.length > 1024) throw new Error('Invalid storage key');
+          if (!appRecord?.manifest.permissions?.includes('storage:appdata') || !permissionManager.hasPermission(appId, 'storage:appdata')) {
             sendResponse(false, undefined, "Permission denied: 'storage:appdata' is required");
             return;
           }
           permissionManager.recordUsage(appId, 'storage:appdata');
-          await appStorage.set(appId, String(p.key), p.value);
+          const value = JSON.stringify(p.value);
+          if (value === undefined || value.length > PROTOCOL_LIMITS.maxPayloadBytes) throw new Error('Invalid storage value');
+          await appStorage.set(appId, p.key, p.value);
           sendResponse(true);
           break;
         }
 
         case 'storage:delete': {
-          if (!permissionManager.hasPermission(appId, 'storage:appdata')) {
+          if (typeof p.key !== 'string' || !p.key || p.key.length > 1024) throw new Error('Invalid storage key');
+          if (!appRecord?.manifest.permissions?.includes('storage:appdata') || !permissionManager.hasPermission(appId, 'storage:appdata')) {
             sendResponse(false, undefined, "Permission denied: 'storage:appdata' is required");
             return;
           }
           permissionManager.recordUsage(appId, 'storage:appdata');
-          const deleted = await appStorage.delete(appId, String(p.key));
+          const deleted = await appStorage.delete(appId, p.key);
           sendResponse(true, deleted);
           break;
         }
 
         case 'storage:list': {
-          if (!permissionManager.hasPermission(appId, 'storage:appdata')) {
+          if (!appRecord?.manifest.permissions?.includes('storage:appdata') || !permissionManager.hasPermission(appId, 'storage:appdata')) {
             sendResponse(false, undefined, "Permission denied: 'storage:appdata' is required");
             return;
           }
@@ -278,84 +289,57 @@ export const AppHost: React.FC<AppHostProps> = ({
         }
 
         // Filesystem Operations
-        case 'fs:readText': {
-          const filePath = vfs.normalizePath(String(p.path));
-          const appPrivateDir = `/home/aether/.local/share/aether/apps/${appId}`;
-          const isPrivate = filePath === appPrivateDir || filePath.startsWith(appPrivateDir + '/');
-
-          if (!isPrivate && !permissionManager.hasPermission(appId, 'filesystem:read')) {
-            sendResponse(false, undefined, "Permission denied: 'filesystem:read' is required");
-            return;
-          }
-          permissionManager.recordUsage(appId, 'filesystem:read');
-          const text = await vfs.readText(filePath);
-          sendResponse(true, text);
-          break;
-        }
-
-        case 'fs:writeText': {
-          const filePath = vfs.normalizePath(String(p.path));
-          const appPrivateDir = `/home/aether/.local/share/aether/apps/${appId}`;
-          const isPrivate = filePath === appPrivateDir || filePath.startsWith(appPrivateDir + '/');
-
-          if (!isPrivate && !permissionManager.hasPermission(appId, 'filesystem:write')) {
-            sendResponse(false, undefined, "Permission denied: 'filesystem:write' is required");
-            return;
-          }
-          permissionManager.recordUsage(appId, 'filesystem:write');
-          await vfs.writeText(filePath, String(p.content ?? ''));
-          sendResponse(true);
-          break;
-        }
-
-        case 'fs:readBytes': {
-          const filePath = vfs.normalizePath(String(p.path));
-          const appPrivateDir = `/home/aether/.local/share/aether/apps/${appId}`;
-          const isPrivate = filePath === appPrivateDir || filePath.startsWith(appPrivateDir + '/');
-
-          if (!isPrivate && !permissionManager.hasPermission(appId, 'filesystem:read')) {
-            sendResponse(false, undefined, "Permission denied: 'filesystem:read' is required");
-            return;
-          }
-          const bytes = await vfs.readBytes(filePath);
-          let bin = '';
-          const chunkSize = 8192;
-          for (let i = 0; i < bytes.length; i += chunkSize) {
-            const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
-            bin += String.fromCharCode.apply(null, chunk as unknown as number[]);
-          }
-          sendResponse(true, { base64: btoa(bin) });
-          break;
-        }
-
-        case 'fs:writeBytes': {
-          const filePath = vfs.normalizePath(String(p.path));
-          const appPrivateDir = `/home/aether/.local/share/aether/apps/${appId}`;
-          const isPrivate = filePath === appPrivateDir || filePath.startsWith(appPrivateDir + '/');
-
-          if (!isPrivate && !permissionManager.hasPermission(appId, 'filesystem:write')) {
-            sendResponse(false, undefined, "Permission denied: 'filesystem:write' is required");
-            return;
-          }
-          const bin = atob(String(p.bytesBase64 || ''));
-          const bytes = new Uint8Array(bin.length);
-          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-          await vfs.writeBytes(filePath, bytes);
-          sendResponse(true);
-          break;
-        }
-
+        case 'fs:readText':
+        case 'fs:readBytes':
+        case 'fs:writeText':
+        case 'fs:writeBytes':
         case 'fs:exists': {
-          const filePath = vfs.normalizePath(String(p.path));
-          sendResponse(true, vfs.exists(filePath));
+          const { path, isPrivate } = resolveAppFilesystemPath(appId, p.path);
+          const write = action.startsWith('fs:write');
+          const scope = isPrivate ? 'storage:appdata' : write ? 'filesystem:write' : 'filesystem:read';
+          if (!appRecord?.manifest.permissions?.includes(scope) || !permissionManager.hasPermission(appId, scope)) throw new Error(`Permission denied: '${scope}' is required`);
+          if (!vfs.checkAccess(path, write ? 'w' : 'r')) throw new Error('Permission denied by AetherFS');
+          permissionManager.recordUsage(appId, scope);
+          if (action === 'fs:exists') {
+            sendResponse(true, vfs.exists(path));
+          } else if (write) {
+            const content = action === 'fs:writeText' ? p.content : p.bytesBase64;
+            if (typeof content !== 'string' || content.length > PROTOCOL_LIMITS.maxPayloadBytes) {
+              throw new Error('Invalid or oversized file payload');
+            }
+            const bytes = action === 'fs:writeText'
+              ? new TextEncoder().encode(content)
+              : Uint8Array.from(atob(content), (char) => char.charCodeAt(0));
+            if (bytes.length > PROTOCOL_LIMITS.maxPayloadBytes) throw new Error('File payload exceeds byte limit');
+            if (isPrivate) appStorage.checkFileQuota(appId, path, bytes.length);
+            if (action === 'fs:writeText') vfs.writeText(path, content);
+            else vfs.writeBytesSync(path, bytes);
+            sendResponse(true);
+          } else {
+            if (vfs.stat(path).size > PROTOCOL_LIMITS.maxPayloadBytes) throw new Error('File exceeds read limit');
+            if (action === 'fs:readText') {
+              sendResponse(true, vfs.readText(path));
+            } else {
+              const bytes = vfs.readBytes(path);
+              let binary = '';
+              for (let i = 0; i < bytes.length; i += 8192) {
+                binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+              }
+              sendResponse(true, { base64: btoa(binary) });
+            }
+          }
           break;
         }
 
         // Notification Operations
         case 'notifications:show': {
-          if (!permissionManager.hasPermission(appId, 'notifications')) {
+          if (!appRecord?.manifest.permissions?.includes('notifications') || !permissionManager.hasPermission(appId, 'notifications')) {
             sendResponse(false, undefined, "Permission denied: 'notifications' is required");
             return;
+          }
+          if ((p.title !== undefined && typeof p.title !== 'string') ||
+              (p.body !== undefined && (typeof p.body !== 'string' || p.body.length > 4096))) {
+            throw new Error('Invalid notification');
           }
           permissionManager.recordUsage(appId, 'notifications');
           addNotification({
@@ -374,24 +358,34 @@ export const AppHost: React.FC<AppHostProps> = ({
         }
 
         // Permission Query / Request
-        case 'permissions:query': {
-          const scope = String(p.scope);
-          const state = permissionManager.getGrantState(appId, scope as any);
-          sendResponse(true, state);
-          break;
-        }
-
+        case 'permissions:query':
         case 'permissions:request': {
-          const scope = String(p.scope);
-          const state = permissionManager.getGrantState(appId, scope as any);
-          if (state === 'granted') {
-            sendResponse(true, true);
-          } else if (state === 'denied') {
-            sendResponse(true, false);
+          const scope = p.scope as PermissionScope;
+          if (!VALID_PERMISSION_SCOPES.includes(scope)) throw new Error('Unknown permission scope');
+          const declared = appRecord?.manifest.permissions?.includes(scope);
+          const state = declared ? permissionManager.getGrantState(appId, scope) : 'denied';
+          if (action === 'permissions:query') {
+            sendResponse(true, state);
+          } else if (state !== 'prompt' || previewRecord) {
+            sendResponse(true, state === 'granted' && !previewRecord);
           } else {
-            // Prompt grant: auto-grant for prompt in user session
-            permissionManager.grantPermission(appId, scope as any, 'always');
-            sendResponse(true, true);
+            if (permissionPrompt.current) throw new Error('A permission prompt is already open');
+            permissionPrompt.current = true;
+            try {
+              const granted = await dialogService.confirm({
+                title: `Allow ${appRecord?.name} to use ${scope}?`,
+                message: PERMISSION_METADATA[scope].description,
+                confirmText: 'Allow for this session',
+                cancelText: 'Deny',
+              });
+              if (channelRef.current?.port1 !== port || !dynamicAppRegistry.isInstalled(appId)) return;
+              if (granted && permissionManager.getGrantState(appId, scope) === 'prompt') {
+                permissionManager.grantPermission(appId, scope, 'session');
+              }
+              sendResponse(true, permissionManager.hasPermission(appId, scope));
+            } finally {
+              permissionPrompt.current = false;
+            }
           }
           break;
         }
@@ -414,43 +408,28 @@ export const AppHost: React.FC<AppHostProps> = ({
     }
   };
 
-  // Iframe onLoad: Transfer MessagePort and initialize guest SDK
-  const handleIFrameLoad = () => {
-    if (!iframeRef.current || !iframeRef.current.contentWindow) return;
+  useEffect(() => {
+    const connect = (event: MessageEvent) => {
+      if (event.source !== iframeRef.current?.contentWindow || event.origin !== 'null' ||
+          event.data?.type !== 'aether:connect' || event.data?.token !== tokenRef.current ||
+          !event.ports[0] || channelRef.current) return;
 
-    // Create a new dedicated MessageChannel for this session
-    const channel = new MessageChannel();
-    channelRef.current = channel;
-
-    // Listen on host port
-    channel.port1.onmessage = (e) => {
-      const msg = e.data;
-      if (isValidAppRequest(msg)) {
-        handleAppRequest(msg, sessionToken, effectiveAppId, channel.port1);
-      }
-    };
-
-    // Send init message with transferred port2
-    iframeRef.current.contentWindow.postMessage(
-      {
+      const port = event.ports[0];
+      const token = tokenRef.current;
+      channelRef.current = { port1: port };
+      port.onmessage = ({ data }) => {
+        if (isValidAppRequest(data)) void handleAppRequest(data, token, effectiveAppId, port);
+      };
+      port.postMessage({
         type: 'aether:init',
-        sessionToken,
         appId: effectiveAppId,
-        appInfo: {
-          id: appRecord?.id,
-          name: appRecord?.name,
-          version: appRecord?.version,
-          author: appRecord?.author,
-        },
-        theme: {
-          mode: theme.mode,
-          accentColor: theme.accentColor,
-        },
-      },
-      '*',
-      [channel.port2]
-    );
-  };
+        appInfo: { id: appRecord?.id, name: appRecord?.name, version: appRecord?.version, author: appRecord?.author },
+        theme: { mode: theme.mode, accentColor: theme.accentColor },
+      });
+    };
+    window.addEventListener('message', connect);
+    return () => window.removeEventListener('message', connect);
+  });
 
   // Dispatch focus / blur lifecycle events to guest
   useEffect(() => {
@@ -527,7 +506,6 @@ export const AppHost: React.FC<AppHostProps> = ({
       src={blobUrl}
       sandbox="allow-scripts"
       title={appRecord?.name || 'Application'}
-      onLoad={handleIFrameLoad}
       className="w-full h-full border-none bg-transparent"
     />
   );

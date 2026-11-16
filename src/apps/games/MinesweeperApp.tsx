@@ -1,5 +1,5 @@
 // AetherOS - Minesweeper Classic Game
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import type { AppProps } from '../types';
 import { Bomb, Flag, Trophy } from 'lucide-react';
 
@@ -14,38 +14,34 @@ const ROWS = 9;
 const COLS = 9;
 const MINES = 10;
 
+function emptyGrid(): CellState[][] {
+  return Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => ({
+    isMine: false, isRevealed: false, isFlagged: false, neighborMines: 0,
+  })));
+}
+
+function chooseMines(positions: number[]): number[] {
+  for (let i = 0; i < MINES; i++) {
+    const selected = i + Math.floor(Math.random() * (positions.length - i));
+    [positions[i], positions[selected]] = [positions[selected], positions[i]];
+  }
+  return positions.slice(0, MINES);
+}
+
 export const MinesweeperApp: React.FC<AppProps> = () => {
-  const [grid, setGrid] = useState<CellState[][]>([]);
+  const [grid, setGrid] = useState(emptyGrid);
   const [gameOver, setGameOver] = useState(false);
   const [gameWon, setGameWon] = useState(false);
   const [flagsRemaining, setFlagsRemaining] = useState(MINES);
   const [firstClickDone, setFirstClickDone] = useState(false);
 
   const initGame = () => {
-    // Generate empty grid
-    const newGrid: CellState[][] = Array(ROWS)
-      .fill(null)
-      .map(() =>
-        Array(COLS)
-          .fill(null)
-          .map(() => ({
-            isMine: false,
-            isRevealed: false,
-            isFlagged: false,
-            neighborMines: 0,
-          }))
-      );
-
-    setGrid(newGrid);
+    setGrid(emptyGrid());
     setGameOver(false);
     setGameWon(false);
     setFirstClickDone(false);
     setFlagsRemaining(MINES);
   };
-
-  useEffect(() => {
-    initGame();
-  }, []);
 
   const revealCell = (r: number, c: number) => {
     if (gameOver || gameWon || grid[r][c].isRevealed || grid[r][c].isFlagged) return;
@@ -54,14 +50,10 @@ export const MinesweeperApp: React.FC<AppProps> = () => {
     if (!firstClickDone) {
       // Place mines on first click, avoiding the clicked cell
       const minedGrid: CellState[][] = grid.map((row) => row.map((cell) => ({ ...cell })));
-      let placed = 0;
-      while (placed < MINES) {
-        const mr = Math.floor(Math.random() * ROWS);
-        const mc = Math.floor(Math.random() * COLS);
-        if ((mr !== r || mc !== c) && !minedGrid[mr][mc].isMine) {
-          minedGrid[mr][mc].isMine = true;
-          placed++;
-        }
+      const positions = Array.from({ length: ROWS * COLS }, (_, index) => index)
+        .filter((index) => index !== r * COLS + c);
+      for (const index of chooseMines(positions)) {
+        minedGrid[Math.floor(index / COLS)][index % COLS].isMine = true;
       }
 
       // Calculate neighbors

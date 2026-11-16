@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 // AetherOS v1.2.0: Real Computing - Subsystem Test Suite
 import { describe, it, expect, beforeEach } from 'vitest';
 import { vfs } from '../vfs/vfs';
@@ -118,7 +119,7 @@ describe('AetherOS v1.2.0: Real Computing', () => {
         console.log("Result:", a + b);
       `;
       const res = await aetherRuntime.execute(code);
-      expect(res.exitCode).toBe(0);
+      expect(res.exitCode, res.stderr).toBe(0);
       expect(res.stdout).toContain('Result: 35');
     });
 
@@ -128,13 +129,13 @@ describe('AetherOS v1.2.0: Real Computing', () => {
 
       const code = `
         if (typeof globalThis.aether !== 'undefined' && globalThis.aether.fs) {
-          const exists = globalThis.aether.fs.exists('/home/aether/runtime_fs_test.txt');
-          const content = globalThis.aether.fs.readText('/home/aether/runtime_fs_test.txt');
+          const exists = await globalThis.aether.fs.exists('/home/aether/runtime_fs_test.txt');
+          const content = await globalThis.aether.fs.readText('/home/aether/runtime_fs_test.txt');
           console.log('FS_TEST:', exists, content);
         }
       `;
       const res = await aetherRuntime.execute(code);
-      expect(res.exitCode).toBe(0);
+      expect(res.exitCode, res.stderr).toBe(0);
       expect(res.stdout).toContain('FS_TEST: true Hello from VFS');
     });
 
@@ -145,7 +146,7 @@ describe('AetherOS v1.2.0: Real Computing', () => {
         while (Date.now() - start < 1000) {}
       `;
       const res = await aetherRuntime.execute(code, { timeoutMs: 100 });
-      expect(res.exitCode).toBe(124);
+      expect(res.exitCode, res.stderr).toBe(124);
       expect(res.stderr).toContain('timed out');
     });
   });
@@ -158,32 +159,32 @@ describe('AetherOS v1.2.0: Real Computing', () => {
 
       // -f file
       let res = await shellExecutor.execute('[ -f /home/aether/file.txt ]', ctx);
-      expect(res.exitCode).toBe(0);
+      expect(res.exitCode, res.stderr).toBe(0);
 
       // -d dir
       res = await shellExecutor.execute('[ -d /home/aether/dir ]', ctx);
-      expect(res.exitCode).toBe(0);
+      expect(res.exitCode, res.stderr).toBe(0);
 
       // -f dir should fail
       res = await shellExecutor.execute('[ -f /home/aether/dir ]', ctx);
-      expect(res.exitCode).toBe(1);
+      expect(res.exitCode, res.stderr).toBe(1);
 
       // Missing ] syntax error
       res = await shellExecutor.execute('[ -f /home/aether/file.txt', ctx);
-      expect(res.exitCode).toBe(2);
+      expect(res.exitCode, res.stderr).toBe(2);
       expect(res.stderr).toContain("missing ']'");
 
       // String comparison
       res = await shellExecutor.execute('test "abc" = "abc"', ctx);
-      expect(res.exitCode).toBe(0);
+      expect(res.exitCode, res.stderr).toBe(0);
       res = await shellExecutor.execute('test "abc" != "xyz"', ctx);
-      expect(res.exitCode).toBe(0);
+      expect(res.exitCode, res.stderr).toBe(0);
 
       // Numeric comparison
       res = await shellExecutor.execute('[ 10 -gt 5 ]', ctx);
-      expect(res.exitCode).toBe(0);
+      expect(res.exitCode, res.stderr).toBe(0);
       res = await shellExecutor.execute('[ 5 -ge 10 ]', ctx);
-      expect(res.exitCode).toBe(1);
+      expect(res.exitCode, res.stderr).toBe(1);
     });
 
     it('executes if-then-elif-else-fi conditional constructs', async () => {
@@ -199,7 +200,7 @@ describe('AetherOS v1.2.0: Real Computing', () => {
         fi
       `;
       const res = await shellExecutor.execute(script, ctx);
-      expect(res.exitCode).toBe(0);
+      expect(res.exitCode, res.stderr).toBe(0);
       expect(res.stdout.trim()).toBe('matched hello');
     });
 
@@ -211,7 +212,7 @@ describe('AetherOS v1.2.0: Real Computing', () => {
         done
       `;
       const res = await shellExecutor.execute(script, ctx);
-      expect(res.exitCode).toBe(0);
+      expect(res.exitCode, res.stderr).toBe(0);
       expect(res.stdout).toContain('Item 1\nItem 2\nItem 3');
     });
 
@@ -231,7 +232,7 @@ describe('AetherOS v1.2.0: Real Computing', () => {
         done
       `;
       const res = await shellExecutor.execute(script, ctx);
-      expect(res.exitCode).toBe(0);
+      expect(res.exitCode, res.stderr).toBe(0);
       expect(res.stdout).toContain('Loop 0\nLoop 1\nLoop 2');
     });
 
@@ -246,7 +247,7 @@ describe('AetherOS v1.2.0: Real Computing', () => {
         esac
       `;
       const res = await shellExecutor.execute(script, ctx);
-      expect(res.exitCode).toBe(0);
+      expect(res.exitCode, res.stderr).toBe(0);
       expect(res.stdout.trim()).toBe('Unix-like OS');
     });
 
@@ -261,7 +262,7 @@ describe('AetherOS v1.2.0: Real Computing', () => {
         greet Alice Bob
       `;
       const res = await shellExecutor.execute(script, ctx);
-      expect(res.exitCode).toBe(0);
+      expect(res.exitCode, res.stderr).toBe(0);
       expect(res.stdout).toContain('Args count: 2');
       expect(res.stdout).toContain('First: Alice, Second: Bob');
       expect(res.stdout).toContain('All: Alice Bob');
@@ -295,7 +296,7 @@ describe('AetherOS v1.2.0: Real Computing', () => {
       vfs.writeFile(scriptPath, content);
 
       const res = await shellExecutor.execute('./test.sh World', ctx);
-      expect(res.exitCode).toBe(0);
+      expect(res.exitCode, res.stderr).toBe(0);
       expect(res.stdout).toContain('Script: /home/aether/test.sh');
       expect(res.stdout).toContain('Hello World');
     });
@@ -305,7 +306,7 @@ describe('AetherOS v1.2.0: Real Computing', () => {
     it('returns honest network ping output with HTTP reachability diagnostics', async () => {
       const ctx = createMockContext();
       const res = await shellExecutor.execute('ping -c 1 example.com', ctx);
-      expect(res.exitCode).toBe(0);
+      expect(res.exitCode, res.stderr).toBe(0);
       expect(res.stdout).toContain('PING example.com');
       expect(res.stdout).toContain('HTTP reachability');
     });
@@ -313,7 +314,7 @@ describe('AetherOS v1.2.0: Real Computing', () => {
     it('provides honest memory metrics in free command with source notes', async () => {
       const ctx = createMockContext();
       const res = await shellExecutor.execute('free', ctx);
-      expect(res.exitCode).toBe(0);
+      expect(res.exitCode, res.stderr).toBe(0);
       expect(res.stdout).toContain('Mem:');
       expect(res.stdout).toContain('Memory telemetry source:');
     });
@@ -373,10 +374,10 @@ describe('AetherOS v1.2.0: Real Computing', () => {
     });
 
     it('enforces centralized version consistency across AETHER_VERSION', () => {
-      expect(AETHER_VERSION.version).toBe('1.4.0');
-      expect(AETHER_VERSION.codename).toBe('Developer Workstation');
-      expect(vfs.readFile('/proc/version')).toContain('1.4.0');
-      expect(vfs.readFile('/etc/os-release')).toContain('VERSION_ID="1.4.0"');
+      const metadata = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
+      expect(AETHER_VERSION.version).toBe(metadata.version);
+      expect(vfs.readFile('/proc/version')).toContain(AETHER_VERSION.version);
+      expect(vfs.readFile('/etc/os-release')).toContain(`VERSION_ID="${AETHER_VERSION.version}"`);
     });
   });
 });

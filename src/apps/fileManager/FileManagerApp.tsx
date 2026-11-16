@@ -88,12 +88,11 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
   );
 
   useEffect(() => {
-    loadDirectory(currentPath);
-    setPathInput(currentPath);
+    const initialLoad = setTimeout(() => { loadDirectory(currentPath); setPathInput(currentPath); }, 0);
     const unsub = vfs.watch(currentPath, () => {
       loadDirectory(currentPath);
     });
-    return () => unsub();
+    return () => { clearTimeout(initialLoad); unsub(); };
   }, [currentPath, loadDirectory]);
 
   useEffect(() => {

@@ -1,5 +1,6 @@
 // AetherOS - Secure .aepkg Package Archive Compressor & Decompressor
-import { unzipSync, zipSync, strToU8, strFromU8 } from 'fflate';
+import { deflateSync, type Zippable, Unzip, UnzipInflate, unzipSync, zipSync, strToU8, strFromU8 } from 'fflate';
+import { relativeFilePath } from '../vfs/safePath';
 
 export const ARCHIVE_LIMITS = {
   maxFiles: 500,
@@ -19,31 +20,12 @@ export class PackageArchiveError extends Error {
  * Validates whether an archive path is safe from directory traversal.
  */
 export function isSafeArchivePath(rawPath: string): boolean {
-  if (!rawPath || typeof rawPath !== 'string') return false;
-  if (rawPath.includes('\0')) return false;
-
-  const normalized = rawPath.replace(/\\/g, '/');
-
-  // Must not start with / or drive letters
-  if (normalized.startsWith('/') || /^[a-zA-Z]:/.test(normalized)) {
+  try {
+    relativeFilePath(rawPath);
+    return true;
+  } catch {
     return false;
   }
-
-  // Must not contain .. segments
-  const segments = normalized.split('/');
-  for (const seg of segments) {
-    if (seg === '..' || seg === '') {
-      // Empty segment might happen if trailing slash (directory)
-      continue;
-    }
-    if (seg === '.') continue;
-  }
-
-  if (segments.some((s) => s === '..')) {
-    return false;
-  }
-
-  return true;
 }
 
 export class PackageArchive {
@@ -51,84 +33,96 @@ export class PackageArchive {
    * Decompresses and validates a .aepkg ZIP archive buffer into safe relative paths.
    */
   public static async unpack(data: Uint8Array): Promise<Map<string, Uint8Array>> {
-    if (!data || data.byteLength === 0) {
-      throw new PackageArchiveError('Archive data is empty');
+    if (!(data instanceof Uint8Array) || data.byteLength < 22 ||
+        data.byteLength > ARCHIVE_LIMITS.maxTotalBytes + 1024 * 1024) {
+      throw new PackageArchiveError('Invalid or oversized ZIP archive');
     }
 
-    let unzipped: Record<string, Uint8Array>;
-    try {
-      unzipped = unzipSync(data);
-    } catch (err) {
-      throw new PackageArchiveError(`Failed to parse ZIP archive: ${String(err)}`);
-    }
-
-    const fileMap = new Map<string, Uint8Array>();
+    const declared = new Map<string, { size: number; directory: boolean; method: number }>();
     let totalBytes = 0;
-    let fileCount = 0;
+    try {
+      unzipSync(data, { filter: ({ name, size, originalSize, compression }) => {
+        const path = relativeFilePath(name);
+        const directory = name.endsWith('/') || name.endsWith('\\');
+        if (declared.has(path)) throw new PackageArchiveError(`Duplicate archive path: ${path}`);
+        totalBytes += originalSize;
+        if (declared.size >= ARCHIVE_LIMITS.maxFiles) throw new PackageArchiveError('Archive exceeds file count limit');
+        if (totalBytes > ARCHIVE_LIMITS.maxTotalBytes ||
+            originalSize > ARCHIVE_LIMITS.maxSingleFileBytes || size > data.length ||
+            (compression !== 0 && compression !== 8) ||
+            (compression === 0 && size !== originalSize) || (directory && originalSize !== 0) ||
+            (originalSize > 64 * 1024 && originalSize > size * ARCHIVE_LIMITS.maxDecompressionRatio)) {
+          throw new PackageArchiveError(`Archive extraction limit exceeded or unsupported entry: ${name}`);
+        }
+        declared.set(path, { size: originalSize, directory, method: compression });
+        return false;
+      } });
 
-    for (const [rawPath, content] of Object.entries(unzipped)) {
-      // Ignore directory entries ending with /
-      if (rawPath.endsWith('/')) continue;
-
-      const normPath = rawPath.replace(/\\/g, '/').replace(/^\/+/, '');
-
-      if (!isSafeArchivePath(normPath)) {
-        throw new PackageArchiveError(`Archive contains forbidden or unsafe path: '${rawPath}'`);
+      for (const path of declared.keys()) {
+        const parts = path.split('/');
+        for (let i = 1; i < parts.length; i++) {
+          const parent = declared.get(parts.slice(0, i).join('/'));
+          if (parent && !parent.directory) throw new PackageArchiveError(`File shadows an archive directory: ${path}`);
+        }
       }
 
-      fileCount++;
-      if (fileCount > ARCHIVE_LIMITS.maxFiles) {
-        throw new PackageArchiveError(
-          `Archive exceeds maximum file count limit (${ARCHIVE_LIMITS.maxFiles})`
-        );
+      const files = new Map<string, Uint8Array>();
+      const pending = new Map(declared);
+      const unzip = new Unzip((file) => {
+        const path = relativeFilePath(file.name);
+        const info = pending.get(path);
+        if (!info || info.method !== file.compression) throw new PackageArchiveError(`Invalid ZIP entry: ${path}`);
+        pending.delete(path);
+        const output = new Uint8Array(info.size);
+        let offset = 0;
+        file.ondata = (err, bytes, final) => {
+          if (err) throw err;
+          if (offset + bytes.length > output.length) throw new PackageArchiveError(`ZIP entry exceeds its declared size: ${path}`);
+          output.set(bytes, offset);
+          offset += bytes.length;
+          if (final) {
+            if (offset !== info.size) throw new PackageArchiveError(`Truncated ZIP entry: ${path}`);
+            if (!info.directory) files.set(path, output);
+          }
+        };
+        file.start();
+      });
+      unzip.register(UnzipInflate);
+      // Small compressed chunks bound each inflate allocation even when headers lie.
+      for (let i = 0; i < data.length; i += 8192) {
+        const end = Math.min(i + 8192, data.length);
+        unzip.push(data.subarray(i, end), end === data.length);
+        if (i && i % (512 * 1024) === 0) await new Promise((resolve) => setTimeout(resolve, 0));
       }
-
-      const size = content.byteLength;
-      if (size > ARCHIVE_LIMITS.maxSingleFileBytes) {
-        throw new PackageArchiveError(
-          `Archive contains file '${normPath}' exceeding max single file size limit`
-        );
+      if (pending.size || files.size !== Array.from(declared.values()).filter((entry) => !entry.directory).length) {
+        throw new PackageArchiveError('ZIP directory does not match extracted files');
       }
-
-      totalBytes += size;
-      if (totalBytes > ARCHIVE_LIMITS.maxTotalBytes) {
-        throw new PackageArchiveError(
-          `Archive uncompressed size exceeds max limit (${ARCHIVE_LIMITS.maxTotalBytes} bytes)`
-        );
-      }
-
-      fileMap.set(normPath, content);
+      return files;
+    } catch (err) {
+      throw new PackageArchiveError(`Failed to extract ZIP archive: ${String(err)}`);
     }
-
-    // Zip bomb compression ratio guard
-    if (data.byteLength > 0) {
-      const ratio = totalBytes / data.byteLength;
-      if (ratio > ARCHIVE_LIMITS.maxDecompressionRatio && totalBytes > 1024 * 1024) {
-        throw new PackageArchiveError(
-          `Excessive decompression ratio detected (${ratio.toFixed(1)}:1)`
-        );
-      }
-    }
-
-    return fileMap;
   }
 
   /**
    * Packs a map of files into a .aepkg ZIP archive buffer.
    */
   public static async pack(files: Map<string, Uint8Array | string>): Promise<Uint8Array> {
-    const zipEntries: Record<string, Uint8Array> = {};
+    const zipEntries: Zippable = Object.create(null);
 
-    for (const [path, content] of files.entries()) {
-      const normPath = path.replace(/\\/g, '/').replace(/^\/+/, '');
-      if (!isSafeArchivePath(normPath)) {
-        throw new PackageArchiveError(`Cannot pack invalid path: '${path}'`);
+    let totalBytes = 0;
+    for (const [path, content] of files) {
+      const normPath = relativeFilePath(path);
+      if (Object.hasOwn(zipEntries, normPath)) throw new PackageArchiveError(`Duplicate archive path: ${normPath}`);
+      const bytes = typeof content === 'string' ? strToU8(content) : content;
+      totalBytes += bytes.length;
+      if (files.size > ARCHIVE_LIMITS.maxFiles || bytes.length > ARCHIVE_LIMITS.maxSingleFileBytes ||
+          totalBytes > ARCHIVE_LIMITS.maxTotalBytes) {
+        throw new PackageArchiveError('Package exceeds archive limits');
       }
-      if (typeof content === 'string') {
-        zipEntries[normPath] = strToU8(content);
-      } else {
-        zipEntries[normPath] = content;
-      }
+      zipEntries[normPath] = bytes.length > 64 * 1024 &&
+        bytes.length > deflateSync(bytes, { level: 6 }).length * ARCHIVE_LIMITS.maxDecompressionRatio
+        ? [bytes, { level: 0 }]
+        : bytes;
     }
 
     try {
@@ -142,7 +136,7 @@ export class PackageArchive {
    * Extracts text content of a file from an unpacked file map.
    */
   public static readText(files: Map<string, Uint8Array>, filePath: string): string {
-    const norm = filePath.replace(/\\/g, '/').replace(/^\/+/, '');
+    const norm = relativeFilePath(filePath);
     const data = files.get(norm);
     if (!data) {
       throw new PackageArchiveError(`File not found in archive: '${filePath}'`);

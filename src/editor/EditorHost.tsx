@@ -42,8 +42,7 @@ export const EditorHost: React.FC<EditorHostProps> = ({
   const [goToLineOpen, setGoToLineOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [replaceQuery, setReplaceQuery] = useState('');
-  const [searchMatches, setSearchMatches] = useState<number[]>([]);
-  const [activeMatchIndex, setActiveMatchIndex] = useState(0);
+  const [matchIndex, setActiveMatchIndex] = useState(0);
   const [targetLineInput, setTargetLineInput] = useState('');
 
   const lines = useMemo(() => value.split('\n'), [value]);
@@ -196,13 +195,8 @@ export const EditorHost: React.FC<EditorHostProps> = ({
     }
   };
 
-  // Search logic
-  useEffect(() => {
-    if (!searchQuery) {
-      setSearchMatches([]);
-      setActiveMatchIndex(0);
-      return;
-    }
+  const searchMatches = useMemo(() => {
+    if (!searchQuery) return [];
     const matches: number[] = [];
     let pos = 0;
     const lowerQuery = searchQuery.toLowerCase();
@@ -212,9 +206,10 @@ export const EditorHost: React.FC<EditorHostProps> = ({
       matches.push(pos);
       pos += lowerQuery.length;
     }
-    setSearchMatches(matches);
-    setActiveMatchIndex(0);
+    return matches;
   }, [searchQuery, value]);
+
+  const activeMatchIndex = searchMatches.length ? Math.min(matchIndex, searchMatches.length - 1) : 0;
 
   const jumpToMatch = (index: number) => {
     if (searchMatches.length === 0 || !textareaRef.current) return;
@@ -307,7 +302,7 @@ export const EditorHost: React.FC<EditorHostProps> = ({
               <input
                 type="text"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => { setSearchQuery(e.target.value); setActiveMatchIndex(0); }}
                 placeholder="Find in file..."
                 className="bg-transparent text-white outline-none w-full text-xs"
                 autoFocus

@@ -1,4 +1,5 @@
 // AetherOS - Python AetherFS File Bridge
+import { relativeFilePath, withoutSymlinks } from '../../vfs/safePath';
 import { vfs } from '../../vfs/vfs';
 
 export class PythonFileBridge {
@@ -7,7 +8,7 @@ export class PythonFileBridge {
    */
   public static loadProjectFiles(cwd: string): Record<string, Uint8Array> {
     const files: Record<string, Uint8Array> = {};
-    const normCwd = vfs.normalizePath(cwd);
+    const normCwd = withoutSymlinks(cwd);
 
     if (!vfs.exists(normCwd)) return files;
 
@@ -41,12 +42,13 @@ export class PythonFileBridge {
     cwd: string,
     modifiedFiles: Record<string, Uint8Array | string>
   ): Promise<string[]> {
-    const normCwd = vfs.normalizePath(cwd);
+    const normCwd = withoutSymlinks(cwd);
     const saved: string[] = [];
 
     for (const [relPath, content] of Object.entries(modifiedFiles)) {
-      if (relPath.startsWith('.') || relPath.startsWith('dist/')) continue;
-      const targetAbs = `${normCwd}/${relPath}`;
+      const safePath = relativeFilePath(relPath);
+      if (safePath.split('/').some((part) => part.startsWith('.') || part === 'dist' || part === '__pycache__')) continue;
+      const targetAbs = withoutSymlinks(`${normCwd}/${safePath}`);
       const parts = targetAbs.split('/');
       const parentDir = parts.slice(0, -1).join('/') || '/';
 

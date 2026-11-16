@@ -1,4 +1,5 @@
 // AetherOS - Package Rollback & History Manager
+import { relativeFilePath, withoutSymlinks } from '../vfs/safePath';
 import { vfs } from '../vfs/vfs';
 import { systemLogger } from '../core/logger';
 import type { AppManifest } from '../appPlatform/AppManifest';
@@ -21,7 +22,7 @@ export class PackageRollback {
 
   private static getHistoryFilePath(packageId: string): string {
     this.ensureHistoryDir();
-    return `${HISTORY_DIR}/${packageId}.json`;
+    return withoutSymlinks(`${HISTORY_DIR}/${relativeFilePath(packageId)}.json`);
   }
 
   public static getHistory(packageId: string): PackageHistoryEntry[] {

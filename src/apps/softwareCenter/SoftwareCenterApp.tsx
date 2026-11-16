@@ -25,7 +25,7 @@ import {
 
 export const SoftwareCenterApp: React.FC<AppProps> = () => {
   const { addNotification } = useSystem();
-  const [packages, setPackages] = useState<AetherPackage[]>([]);
+  const [packages, setPackages] = useState<AetherPackage[]>(() => packageManager.getAll());
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'explore' | 'installed'>('explore');
@@ -44,7 +44,6 @@ export const SoftwareCenterApp: React.FC<AppProps> = () => {
   };
 
   useEffect(() => {
-    loadPackages();
     const unsub1 = systemEventBus.on('package:installed', () => loadPackages());
     const unsub2 = systemEventBus.on('package:removed', () => loadPackages());
     const unsub3 = systemEventBus.on('package:updated', () => loadPackages());

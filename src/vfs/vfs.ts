@@ -9,7 +9,7 @@ import type {
   VFSBackupData,
 } from './types';
 import { getMimeType } from './mime';
-import { idbStorage } from './idbStorage';
+import { idbStorage, isStoredNode } from './idbStorage';
 import { createDefaultFileSystem } from './initFs';
 import { systemLogger } from '../core/logger';
 import { systemEventBus } from '../core/eventBus';
@@ -38,7 +38,12 @@ async function computeSha256(data: string): Promise<string> {
 export class VirtualFileSystem {
   private nodes = new Map<string, VFSNode>();
   private watchers = new Map<string, Set<VFSWatchCallback>>();
-  private initialized = false;
+  private initialization?: Promise<void>;
+  private replacing = false;
+  private batch?: {
+    changes: Map<string, VFSNode | null>;
+    events: Array<Parameters<VFSWatchCallback>[0]>;
+  };
   private currentContext: VFSUserContext = {
     username: 'aether',
     uid: 1000,
@@ -46,8 +51,15 @@ export class VirtualFileSystem {
     groups: ['aether', 'users'],
   };
 
-  public async init(): Promise<void> {
-    if (this.initialized) return;
+  public init(): Promise<void> {
+    return this.initialization ??= this.load();
+  }
+
+  public flush(): Promise<boolean> {
+    return idbStorage.flush();
+  }
+
+  private async load(): Promise<void> {
 
     try {
       await idbStorage.init();
@@ -55,9 +67,18 @@ export class VirtualFileSystem {
 
       if (storedNodes.size > 0 && storedNodes.has('/')) {
         this.nodes = storedNodes;
+        const osRelease = storedNodes.get('/etc/os-release');
+        if (osRelease?.type === 'file' && osRelease.content?.startsWith('NAME="AetherOS"') &&
+            !osRelease.content.includes(`VERSION_ID="${AETHER_VERSION.version}"`)) {
+          const current = createDefaultFileSystem().get('/etc/os-release')!;
+          const updated = { ...osRelease, content: current.content, size: current.size, binaryContent: undefined, modifiedAt: Date.now() };
+          this.nodes.set(updated.path, updated);
+          this.queueChange(updated.path, updated);
+        }
         systemLogger.info('vfs', `Restored existing VFS with ${this.nodes.size} nodes`);
       } else {
         this.nodes = createDefaultFileSystem();
+        for (const [path, node] of storedNodes) this.nodes.set(path, node);
         systemLogger.info('vfs', `Created fresh Linux VFS skeleton with ${this.nodes.size} nodes`);
         // Persist default structure
         for (const node of this.nodes.values()) {
@@ -65,12 +86,40 @@ export class VirtualFileSystem {
         }
         await idbStorage.flush();
       }
-      this.initialized = true;
     } catch (err) {
       systemLogger.error('vfs', `VFS initialization failed: ${String(err)}`);
       this.nodes = createDefaultFileSystem();
-      this.initialized = true;
     }
+  }
+
+  public atomicBatch<T>(operation: () => T): T {
+    this.assertWritable();
+    if (this.batch) throw new Error('A filesystem batch is already active');
+    const previous = new Map(this.nodes);
+    const batch = { changes: new Map<string, VFSNode | null>(), events: [] as Array<Parameters<VFSWatchCallback>[0]> };
+    this.batch = batch;
+    let result: T;
+    try {
+      result = operation();
+    } catch (error) {
+      this.nodes = previous;
+      throw error;
+    } finally {
+      this.batch = undefined;
+    }
+    for (const [path, node] of batch.changes) this.queueChange(path, node);
+    for (const event of batch.events) this.notifyWatchers(event.path, event.operation);
+    return result;
+  }
+
+  private queueChange(path: string, node: VFSNode | null): void {
+    if (this.batch) this.batch.changes.set(path, node);
+    else if (node) idbStorage.queueSave(node);
+    else idbStorage.queueDelete(path);
+  }
+
+  private assertWritable(): void {
+    if (this.replacing) throw new Error('AetherFS is restoring a snapshot');
   }
 
   public setContext(context: VFSUserContext): void {
@@ -617,6 +666,7 @@ export class VirtualFileSystem {
   }
 
   public writeBytesSync(path: string, data: Uint8Array, options?: VFSWriteOptions): void {
+    this.assertWritable();
     const norm = this.normalizePath(path);
     if (norm === '/dev/null') return;
 
@@ -659,22 +709,12 @@ export class VirtualFileSystem {
       mime.includes('xml') ||
       mime.includes('sh');
 
-    let textContent: string | undefined;
-    if (isText) {
-      try {
-        textContent = new TextDecoder().decode(data);
-      } catch {
-        // Fallback
-      }
-    }
-
     const node: VFSNode = {
       name,
       path: norm,
       parentPath,
       type: 'file',
       binaryContent: data,
-      content: textContent,
       size: data.byteLength,
       createdAt: existing ? existing.createdAt : now,
       modifiedAt: now,
@@ -686,7 +726,7 @@ export class VirtualFileSystem {
     };
 
     this.nodes.set(norm, node);
-    idbStorage.queueSave(node);
+    this.queueChange(node.path, node);
     this.notifyWatchers(norm, existing ? 'modify' : 'create');
   }
 
@@ -751,6 +791,7 @@ export class VirtualFileSystem {
     content: string | Uint8Array,
     options?: VFSWriteOptions
   ): void {
+    this.assertWritable();
     if (content instanceof Uint8Array) {
       this.writeBytesSync(path, content, options);
       return;
@@ -840,7 +881,7 @@ export class VirtualFileSystem {
     };
 
     this.nodes.set(norm, node);
-    idbStorage.queueSave(node);
+    this.queueChange(node.path, node);
 
     this.notifyWatchers(norm, existing ? 'modify' : 'create');
   }
@@ -888,6 +929,7 @@ export class VirtualFileSystem {
       context?: Partial<VFSUserContext> & { user?: string };
     }
   ): void {
+    this.assertWritable();
     const norm = this.normalizePath(path);
     if (norm === '/') return;
 
@@ -930,7 +972,7 @@ export class VirtualFileSystem {
     };
 
     this.nodes.set(norm, node);
-    idbStorage.queueSave(node);
+    this.queueChange(node.path, node);
     this.notifyWatchers(norm, 'create');
   }
 
@@ -1024,6 +1066,7 @@ export class VirtualFileSystem {
   }
 
   public unlink(path: string): void {
+    this.assertWritable();
     const norm = this.normalizePath(path);
     if (!this.checkAccess(norm, 'w')) {
       throw new Error(`EACCES: permission denied, unlink '${path}'`);
@@ -1038,11 +1081,12 @@ export class VirtualFileSystem {
     }
 
     this.nodes.delete(norm);
-    idbStorage.queueDelete(norm);
+    this.queueChange(norm, null);
     this.notifyWatchers(norm, 'delete');
   }
 
   public rmdir(path: string, options?: { recursive?: boolean }): void {
+    this.assertWritable();
     const norm = this.normalizePath(path);
     if (norm === '/') {
       throw new Error(`EBUSY: resource busy or locked, rmdir '/'`);
@@ -1072,18 +1116,19 @@ export class VirtualFileSystem {
       for (const p of Array.from(this.nodes.keys())) {
         if (p === norm || p.startsWith(prefix)) {
           this.nodes.delete(p);
-          idbStorage.queueDelete(p);
+          this.queueChange(p, null);
           this.notifyWatchers(p, 'delete');
         }
       }
     } else {
       this.nodes.delete(norm);
-      idbStorage.queueDelete(norm);
+      this.queueChange(norm, null);
       this.notifyWatchers(norm, 'delete');
     }
   }
 
   public rename(oldPath: string, newPath: string): void {
+    this.assertWritable();
     const normOld = this.normalizePath(oldPath);
     const normNew = this.normalizePath(newPath);
 
@@ -1127,12 +1172,12 @@ export class VirtualFileSystem {
         for (const [p] of Array.from(this.nodes.entries())) {
           if (p === normNew || p.startsWith(targetPrefix)) {
             this.nodes.delete(p);
-            idbStorage.queueDelete(p);
+            this.queueChange(p, null);
           }
         }
       } else {
         this.nodes.delete(normNew);
-        idbStorage.queueDelete(normNew);
+        this.queueChange(normNew, null);
       }
     }
 
@@ -1173,13 +1218,13 @@ export class VirtualFileSystem {
 
       for (const u of updates) {
         this.nodes.delete(u.old);
-        idbStorage.queueDelete(u.old);
+        this.queueChange(u.old, null);
         this.nodes.set(u.node.path, u.node);
-        idbStorage.queueSave(u.node);
+        this.queueChange(u.node.path, u.node);
       }
     } else {
       this.nodes.delete(normOld);
-      idbStorage.queueDelete(normOld);
+      this.queueChange(normOld, null);
 
       const updated: VFSNode = {
         ...oldNode,
@@ -1190,7 +1235,7 @@ export class VirtualFileSystem {
         modifiedAt: Date.now(),
       };
       this.nodes.set(normNew, updated);
-      idbStorage.queueSave(updated);
+      this.queueChange(updated.path, updated);
     }
 
     this.notifyWatchers(normOld, 'move');
@@ -1245,6 +1290,7 @@ export class VirtualFileSystem {
   }
 
   public symlink(targetPath: string, linkPath: string): void {
+    this.assertWritable();
     const normLink = this.normalizePath(linkPath);
     const parts = normLink.split('/').filter(Boolean);
     const name = parts[parts.length - 1];
@@ -1269,7 +1315,7 @@ export class VirtualFileSystem {
     };
 
     this.nodes.set(normLink, node);
-    idbStorage.queueSave(node);
+    this.queueChange(node.path, node);
     this.notifyWatchers(normLink, 'create');
   }
 
@@ -1286,6 +1332,7 @@ export class VirtualFileSystem {
   }
 
   public chmod(path: string, mode: number): void {
+    this.assertWritable();
     const node = this.nodes.get(this.normalizePath(path));
     if (!node) {
       throw new Error(`ENOENT: no such file or directory, chmod '${path}'`);
@@ -1296,11 +1343,12 @@ export class VirtualFileSystem {
     }
     node.permissions = mode;
     node.modifiedAt = Date.now();
-    idbStorage.queueSave(node);
+    this.queueChange(node.path, node);
     this.notifyWatchers(node.path, 'modify');
   }
 
   public chown(path: string, owner: string, group?: string): void {
+    this.assertWritable();
     const node = this.nodes.get(this.normalizePath(path));
     if (!node) {
       throw new Error(`ENOENT: no such file or directory, chown '${path}'`);
@@ -1311,17 +1359,18 @@ export class VirtualFileSystem {
     node.owner = owner;
     if (group) node.group = group;
     node.modifiedAt = Date.now();
-    idbStorage.queueSave(node);
+    this.queueChange(node.path, node);
     this.notifyWatchers(node.path, 'modify');
   }
 
   public utimes(path: string, mtime = Date.now()): void {
+    this.assertWritable();
     const node = this.nodes.get(this.normalizePath(path));
     if (!node) {
       throw new Error(`ENOENT: no such file or directory, utimes '${path}'`);
     }
     node.modifiedAt = mtime;
-    idbStorage.queueSave(node);
+    this.queueChange(node.path, node);
     this.notifyWatchers(node.path, 'modify');
   }
 
@@ -1451,6 +1500,10 @@ export class VirtualFileSystem {
   }
 
   private notifyWatchers(path: string, operation: 'create' | 'modify' | 'delete' | 'move'): void {
+    if (this.batch) {
+      this.batch.events.push({ path, operation });
+      return;
+    }
     systemEventBus.emit('filesystem:changed', { path, operation });
 
     for (const [watchPath, callbacks] of this.watchers.entries()) {
@@ -1517,39 +1570,11 @@ export class VirtualFileSystem {
         return false;
       }
 
-      const previousNodes = new Map(this.nodes);
-
-      try {
-        await idbStorage.clearAll();
-        this.nodes.clear();
-
-        for (const item of parsed.nodes) {
-          let binaryContent: Uint8Array | undefined;
-          if (item.binaryBase64) {
-            const binStr = atob(item.binaryBase64);
-            binaryContent = new Uint8Array(binStr.length);
-            for (let i = 0; i < binStr.length; i++) {
-              binaryContent[i] = binStr.charCodeAt(i);
-            }
-          }
-          const { binaryBase64: _bin, ...nodeData } = item;
-          const node: VFSNode = {
-            ...nodeData,
-            binaryContent,
-          };
-          this.nodes.set(node.path, node);
-          idbStorage.queueSave(node);
-        }
-
-        await idbStorage.flush();
-        this.notifyWatchers('/', 'modify');
-        systemLogger.info('vfs', `Restored ${this.nodes.size} nodes from AetherFS 2.0 backup`);
-        return true;
-      } catch {
-        // Rollback on persistence error
-        this.nodes = previousNodes;
-        return false;
-      }
+      await this.replaceNodes(parsed.nodes.map(({ binaryBase64, ...node }) => ({
+        ...node,
+        binaryContent: binaryBase64 === undefined ? undefined : Uint8Array.from(atob(binaryBase64), (char) => char.charCodeAt(0)),
+      })));
+      return true;
     } catch {
       return false;
     }
@@ -1569,27 +1594,34 @@ export class VirtualFileSystem {
       throw new Error('Invalid snapshot format: expected array of nodes');
     }
 
-    await idbStorage.clearAll();
-    this.nodes.clear();
-
-    for (const item of items) {
-      this.nodes.set(item.path, item);
-      idbStorage.queueSave(item);
-    }
-    await idbStorage.flush();
-    systemLogger.info('vfs', `Successfully imported snapshot with ${items.length} nodes`);
+    await this.replaceNodes(items.map((node) => {
+      const bytes = node.binaryContent;
+      if (!bytes || bytes instanceof Uint8Array) return node;
+      return { ...node, binaryContent: Uint8Array.from(Object.values(bytes)) };
+    }));
     return items.length;
   }
 
   public async resetFileSystem(): Promise<void> {
-    await idbStorage.clearAll();
-    this.nodes = createDefaultFileSystem();
-    for (const node of this.nodes.values()) {
-      idbStorage.queueSave(node);
+    await this.replaceNodes(createDefaultFileSystem().values());
+  }
+
+  private async replaceNodes(items: Iterable<VFSNode>): Promise<void> {
+    this.assertWritable();
+    const replacement = new Map<string, VFSNode>();
+    for (const node of items) {
+      if (!isStoredNode(node) || replacement.has(node.path)) throw new Error('Invalid or duplicate snapshot node');
+      replacement.set(node.path, node);
     }
-    await idbStorage.flush();
+    if (replacement.get('/')?.type !== 'dir') throw new Error('Snapshot has no root directory');
+    this.replacing = true;
+    try {
+      if (!await idbStorage.replaceAll(replacement.values())) throw new Error('Could not persist the filesystem snapshot');
+      this.nodes = replacement;
+    } finally {
+      this.replacing = false;
+    }
     this.notifyWatchers('/', 'modify');
-    systemLogger.info('vfs', 'VFS reset to default Linux skeleton');
   }
 
   public getAllNodes(): VFSNode[] {

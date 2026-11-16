@@ -63,3 +63,7 @@ $RECYCLE.BIN/
 # Agent and AI scratch directories
 .gemini/
 .antigravity/
+
+# Playwright results
+/test-results/
+/playwright-report/

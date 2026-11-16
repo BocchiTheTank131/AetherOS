@@ -1,8 +1,12 @@
 // AetherOS - Local Git Service Engine
+import { Buffer } from 'buffer';
 import git from 'isomorphic-git';
 import { gitFsAdapter } from './GitFileSystemAdapter';
 import { vfs } from '../vfs/vfs';
 import { computeLineDiff, type FileDiffResult } from './GitDiff';
+
+// isomorphic-git's browser entry expects the Node-compatible Buffer global.
+if (typeof globalThis.Buffer === 'undefined') Object.defineProperty(globalThis, 'Buffer', { value: Buffer });
 
 export interface GitFileStatus {
   filepath: string;

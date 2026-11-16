@@ -5,40 +5,35 @@ import { RotateCcw } from 'lucide-react';
 
 const SIZE = 4;
 
+function spawnTile(b: number[][]): number[][] {
+  const empty: Array<[number, number]> = [];
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      if (b[r][c] === 0) empty.push([r, c]);
+    }
+  }
+  if (empty.length === 0) return b;
+  const [r, c] = empty[Math.floor(Math.random() * empty.length)];
+  const next = b.map((row) => [...row]);
+  next[r][c] = Math.random() < 0.9 ? 2 : 4;
+  return next;
+}
+
+function newBoard(): number[][] {
+  return spawnTile(spawnTile(Array.from({ length: SIZE }, () => Array<number>(SIZE).fill(0))));
+}
+
 export const Game2048App: React.FC<AppProps> = ({ isFocused }) => {
-  const [board, setBoard] = useState<number[][]>([]);
+  const [board, setBoard] = useState(newBoard);
   const [score, setScore] = useState(0);
   const [bestScore, setBestScore] = useState(0);
   const [gameOver, setGameOver] = useState(false);
 
-  const spawnTile = (b: number[][]): number[][] => {
-    const empty: Array<[number, number]> = [];
-    for (let r = 0; r < SIZE; r++) {
-      for (let c = 0; c < SIZE; c++) {
-        if (b[r][c] === 0) empty.push([r, c]);
-      }
-    }
-    if (empty.length === 0) return b;
-    const [r, c] = empty[Math.floor(Math.random() * empty.length)];
-    const next = b.map((row) => [...row]);
-    next[r][c] = Math.random() < 0.9 ? 2 : 4;
-    return next;
-  };
-
   const initGame = () => {
-    let b = Array(SIZE)
-      .fill(0)
-      .map(() => Array(SIZE).fill(0));
-    b = spawnTile(b);
-    b = spawnTile(b);
-    setBoard(b);
+    setBoard(newBoard());
     setScore(0);
     setGameOver(false);
   };
-
-  useEffect(() => {
-    initGame();
-  }, []);
 
   const checkGameOver = (b: number[][]): boolean => {
     for (let r = 0; r < SIZE; r++) {

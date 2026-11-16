@@ -33,8 +33,12 @@ import {
 } from 'lucide-react';
 
 export const AppLauncher: React.FC = () => {
+  const { appLauncherOpen } = useSystem();
+  return appLauncherOpen ? <AppLauncherContent /> : null;
+};
+
+function AppLauncherContent() {
   const {
-    appLauncherOpen,
     setAppLauncherOpen,
     openWindow,
     user,
@@ -59,12 +63,7 @@ export const AppLauncher: React.FC = () => {
     });
   }, []);
 
-  useEffect(() => {
-    if (appLauncherOpen) {
-      searchInputRef.current?.focus();
-      setSearch('');
-    }
-  }, [appLauncherOpen]);
+  useEffect(() => { searchInputRef.current?.focus(); }, []);
 
   // Click outside listener
   useEffect(() => {
@@ -78,18 +77,9 @@ export const AppLauncher: React.FC = () => {
       }
     };
 
-    if (appLauncherOpen) {
-      window.addEventListener('mousedown', handleClickOutside);
-    }
+    window.addEventListener('mousedown', handleClickOutside);
     return () => window.removeEventListener('mousedown', handleClickOutside);
-  }, [appLauncherOpen, setAppLauncherOpen]);
-
-  // Reset selection index when search or category changes
-  useEffect(() => {
-    setSelectedIndex(search ? 0 : -1);
-  }, [search, selectedCategory]);
-
-  if (!appLauncherOpen) return null;
+  }, [setAppLauncherOpen]);
 
   const getAppIcon = (iconName: string, customCls?: string, size?: number) => {
     const cls = customCls || 'w-7 h-7 text-cyan-400 group-hover:scale-110 transition-transform';
@@ -201,7 +191,7 @@ export const AppLauncher: React.FC = () => {
             ref={searchInputRef}
             type="text"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => { setSearch(e.target.value); setSelectedIndex(e.target.value ? 0 : -1); }}
             onKeyDown={(e) => {
               if (e.key === 'ArrowDown') {
                 e.preventDefault();
@@ -235,7 +225,7 @@ export const AppLauncher: React.FC = () => {
           {categories.map((cat) => (
             <button
               key={cat}
-              onClick={() => setSelectedCategory(cat)}
+              onClick={() => { setSelectedCategory(cat); setSelectedIndex(search ? 0 : -1); }}
               className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                 selectedCategory === cat
                   ? 'bg-cyan-500/20 text-cyan-500 font-semibold'
@@ -390,4 +380,4 @@ export const AppLauncher: React.FC = () => {
       </div>
     </div>
   );
-};
+}

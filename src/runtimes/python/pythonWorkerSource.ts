@@ -7,19 +7,26 @@ export const PYTHON_WORKER_CODE = `
 (function() {
   'use strict';
 
-  // Strip ambient host capabilities before code evaluation
-  const forbiddenGlobals = [
-    'Worker', 'SharedWorker', 'WebSocket', 'Notification',
-    'BroadcastChannel', 'indexedDB'
-  ];
-  for (const name of forbiddenGlobals) {
-    try {
-      Object.defineProperty(self, name, {
-        value: undefined,
-        writable: false,
-        configurable: false,
-      });
-    } catch {}
+  const post = self.postMessage.bind(self);
+  const listen = self.addEventListener.bind(self);
+  function lockBrowserCapabilities() {
+    const denied = [
+      'Worker', 'SharedWorker', 'WebSocket', 'WebTransport', 'Notification',
+      'BroadcastChannel', 'indexedDB', 'caches', 'navigator', 'location',
+      'fetch', 'importScripts', 'XMLHttpRequest', 'EventSource', 'close',
+      'postMessage', 'addEventListener', 'removeEventListener', 'dispatchEvent',
+      'onmessage', 'onmessageerror', 'loadPyodide', 'MessageChannel', 'MessagePort'
+    ];
+    let scope = self;
+    while (scope && scope !== Object.prototype) {
+      for (const name of denied) {
+        if (scope === self || Object.prototype.hasOwnProperty.call(scope, name)) {
+          try { Object.defineProperty(scope, name, { value: undefined, configurable: false, writable: false }); }
+          catch { if (scope[name] !== undefined) throw new Error('Could not lock down ' + name); }
+        }
+      }
+      scope = Object.getPrototypeOf(scope);
+    }
   }
 
   let pyodideInstance = null;
@@ -36,14 +43,14 @@ export const PYTHON_WORKER_CODE = `
 
     isInitializing = true;
     try {
-      self.postMessage({ type: 'status', message: 'Downloading Pyodide WebAssembly runtime (v${PYODIDE_VERSION})...' });
+      post({ type: 'status', message: 'Downloading Pyodide WebAssembly runtime (v${PYODIDE_VERSION})...' });
       importScripts('${PYODIDE_CDN_BASE}pyodide.js');
-      self.postMessage({ type: 'status', message: 'Initializing Python WebAssembly environment...' });
+      post({ type: 'status', message: 'Initializing Python WebAssembly environment...' });
 
       pyodideInstance = await self.loadPyodide({
         indexURL: '${PYODIDE_CDN_BASE}',
-        stdout: (text) => self.postMessage({ type: 'stdout', text: text + '\\n' }),
-        stderr: (text) => self.postMessage({ type: 'stderr', text: text + '\\n' }),
+        stdout: (text) => post({ type: 'stdout', text: text + '\\n' }),
+        stderr: (text) => post({ type: 'stderr', text: text + '\\n' }),
       });
 
       // Initialize workspace directory in MEMFS
@@ -51,19 +58,20 @@ export const PYTHON_WORKER_CODE = `
         pyodideInstance.FS.mkdir('/workspace');
       } catch {}
 
-      self.postMessage({ type: 'status', message: 'Python runtime ready.' });
+      post({ type: 'status', message: 'Python runtime ready.' });
       isInitializing = false;
       return pyodideInstance;
     } catch (err) {
       isInitializing = false;
-      self.postMessage({ type: 'stderr', text: 'Failed to load Pyodide WebAssembly runtime: ' + String(err) + '\\n' });
+      post({ type: 'stderr', text: 'Failed to load Pyodide WebAssembly runtime: ' + String(err) + '\\n' });
       throw err;
     }
   }
 
-  self.onmessage = async function(e) {
+  let started = false;
+  listen('message', async function(e) {
     const data = e.data;
-    if (!data) return;
+    if (!e.isTrusted || !data) return;
 
     if (data.type === 'init') {
       try {
@@ -72,9 +80,11 @@ export const PYTHON_WORKER_CODE = `
       return;
     }
 
-    if (data.type === 'execute') {
+    if (data.type === 'execute' && !started) {
+      started = true;
       try {
         const py = await getPyodide();
+        lockBrowserCapabilities();
         const code = data.code || '';
         const args = data.args || [];
         const filename = data.filename || 'script.py';
@@ -98,43 +108,48 @@ export const PYTHON_WORKER_CODE = `
 
         // Setup sys.argv and working directory
         py.FS.chdir('/workspace');
+        py.globals.set('_aether_argv_json', JSON.stringify([filename, ...args]));
         py.runPython(\`
-import sys, os
+import json, sys, os
 from pathlib import Path
-sys.argv = [\${JSON.stringify([filename, ...args]).slice(1, -1)}]
+sys.argv = json.loads(_aether_argv_json)
+del _aether_argv_json
 \`);
 
         // Execute code
         await py.runPythonAsync(code);
 
         // Scan /workspace for modified or created files to sync back to host
-        const syncedFiles = {};
-        function scanDir(dir, prefix) {
-          try {
-            const entries = py.FS.readdir(dir);
-            for (const entry of entries) {
-              if (entry === '.' || entry === '..') continue;
-              const fullPath = dir + '/' + entry;
-              const relPath = prefix ? prefix + '/' + entry : entry;
-              const stat = py.FS.stat(fullPath);
-              if (py.FS.isDir(stat.mode)) {
-                scanDir(fullPath, relPath);
-              } else {
-                syncedFiles[relPath] = py.FS.readFile(fullPath);
-              }
+        const syncedFiles = Object.create(null);
+        let remaining = 20 * 1024 * 1024;
+        let count = 0;
+        function scanDir(dir, prefix, depth = 0) {
+          if (depth > 32) throw new Error('Python output directory nesting limit exceeded');
+          for (const entry of py.FS.readdir(dir)) {
+            if (entry.startsWith('.') || entry === 'dist' || entry === '__pycache__') continue;
+            if (++count > 1000) throw new Error('Python output file count limit exceeded');
+            const fullPath = dir + '/' + entry;
+            const relPath = prefix ? prefix + '/' + entry : entry;
+            const stat = py.FS.lstat(fullPath);
+            if (py.FS.isDir(stat.mode)) {
+              scanDir(fullPath, relPath, depth + 1);
+            } else if (py.FS.isFile(stat.mode)) {
+              remaining -= stat.size;
+              if (remaining < 0) throw new Error('Python output file size limit exceeded');
+              syncedFiles[relPath] = py.FS.readFile(fullPath);
             }
-          } catch {}
+          }
         }
-        scanDir('/workspace', '');
+        if (py.FS.isDir(py.FS.lstat('/workspace').mode)) scanDir('/workspace', '');
 
-        self.postMessage({ type: 'sync_files', files: syncedFiles });
-        self.postMessage({ type: 'exit', exitCode: 0 });
+        post({ type: 'sync_files', files: syncedFiles });
+        post({ type: 'exit', exitCode: 0 });
       } catch (err) {
         const msg = String(err);
-        self.postMessage({ type: 'stderr', text: msg + '\\n' });
-        self.postMessage({ type: 'exit', exitCode: 1 });
+        post({ type: 'stderr', text: msg + '\\n' });
+        post({ type: 'exit', exitCode: 1 });
       }
     }
-  };
+  });
 })();
 `;

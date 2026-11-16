@@ -1,4 +1,5 @@
 // AetherOS - Application Manifest Specification & Validator
+import { relativeFilePath } from '../vfs/safePath';
 import type { PermissionScope } from './AppPermissions';
 import { VALID_PERMISSION_SCOPES } from './AppPermissions';
 
@@ -41,7 +42,9 @@ export interface ManifestValidationResult {
   manifest?: AppManifest;
 }
 
-const ID_REGEX = /^[a-z0-9_-]+(\.[a-z0-9_-]+)+$/;
+export function isAppId(id: unknown): id is string {
+  return typeof id === 'string' && id.length <= 128 && /^[a-z0-9_-]+(\.[a-z0-9_-]+)+$/.test(id);
+}
 const SEMVER_REGEX = /^\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?$/;
 
 export function validateManifest(raw: unknown): ManifestValidationResult {
@@ -59,7 +62,7 @@ export function validateManifest(raw: unknown): ManifestValidationResult {
   }
 
   // id
-  if (typeof obj.id !== 'string' || !ID_REGEX.test(obj.id)) {
+  if (!isAppId(obj.id)) {
     errors.push(
       "Invalid 'id': must be lowercase reverse-DNS format (e.g. 'dev.aether.myapp', alphanumeric with dots/hyphens)"
     );
@@ -90,15 +93,16 @@ export function validateManifest(raw: unknown): ManifestValidationResult {
     errors.push("Invalid 'type': must be either 'windowed' or 'cli'");
   }
 
-  // entry
-  if (
-    typeof obj.entry !== 'string' ||
-    obj.entry.trim().length === 0 ||
-    obj.entry.startsWith('/') ||
-    obj.entry.includes('..') ||
-    obj.entry.includes('\0')
-  ) {
-    errors.push("Invalid 'entry': must be a safe relative path within the archive (e.g. 'index.html')");
+  let entry = '';
+  try {
+    entry = relativeFilePath(obj.entry);
+  } catch {
+    errors.push("Invalid 'entry': must be a safe relative path within the archive");
+  }
+
+  if (obj.minAetherVersion !== undefined &&
+      (typeof obj.minAetherVersion !== 'string' || !SEMVER_REGEX.test(obj.minAetherVersion))) {
+    errors.push("Invalid 'minAetherVersion'");
   }
 
   // window configuration
@@ -177,7 +181,7 @@ export function validateManifest(raw: unknown): ManifestValidationResult {
     } else {
       dependencies = {};
       for (const [depId, versionReq] of Object.entries(obj.dependencies)) {
-        if (typeof versionReq !== 'string') {
+        if (!isAppId(depId) || depId === obj.id || typeof versionReq !== 'string' || versionReq.length > 100) {
           errors.push(`Invalid version constraint for dependency '${depId}'`);
         } else {
           dependencies[depId] = versionReq;
@@ -221,7 +225,7 @@ export function validateManifest(raw: unknown): ManifestValidationResult {
     author: (obj.author as string) || '',
     license: typeof obj.license === 'string' ? obj.license : undefined,
     type: obj.type as 'windowed' | 'cli',
-    entry: obj.entry as string,
+    entry,
     icon: typeof obj.icon === 'string' ? obj.icon : undefined,
     minAetherVersion: typeof obj.minAetherVersion === 'string' ? obj.minAetherVersion : undefined,
     window: windowConfig,

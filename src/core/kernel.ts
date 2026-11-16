@@ -110,7 +110,7 @@ export class VirtualKernel {
     ppid?: number;
     windowId?: string;
     appId?: string;
-    cleanup?: () => void;
+    cleanup?: (exitCode: number) => void;
   }): Process {
     const pid = this.nextPid++;
     const isApp = Boolean(options.appId || options.windowId);
@@ -149,9 +149,10 @@ export class VirtualKernel {
       return false;
     }
 
+    this.processes.delete(pid);
     try {
       if (proc.cleanup) {
-        proc.cleanup();
+        proc.cleanup(exitCode);
       }
       if (proc.worker) {
         proc.worker.terminate();
@@ -162,7 +163,6 @@ export class VirtualKernel {
 
     proc.state = 'terminated';
     proc.exitCode = exitCode;
-    this.processes.delete(pid);
 
     systemLogger.info('kernel', `Process terminated: [${pid}] ${proc.name} (exit ${exitCode})`);
     systemEventBus.emit('process:terminated', { pid, exitCode });
@@ -291,14 +291,22 @@ export class VirtualKernel {
     return '6.8.0-aether';
   }
 
+  public start(): void {
+    if (this.statsTimer) return;
+    this.bootTime = Date.now();
+    this.initKernelSpace();
+    this.startResourceSampler();
+  }
+
   public shutdown(): void {
     if (this.statsTimer) {
       clearInterval(this.statsTimer);
+      this.statsTimer = undefined;
     }
     systemLogger.info('kernel', 'Virtual kernel shutting down processes');
     for (const proc of Array.from(this.processes.values())) {
       if (proc.pid > 2) {
-        this.exit(proc.pid, 0);
+        this.exit(proc.pid, 143);
       }
     }
   }

@@ -1,5 +1,6 @@
 // AetherOS - Dynamic Application Registry
-import type { AppManifest } from './AppManifest';
+import { isAppId, validateManifest, type AppManifest } from './AppManifest';
+import { relativeFilePath, isWithin, withoutSymlinks } from '../vfs/safePath';
 import { vfs } from '../vfs/vfs';
 import { systemLogger } from '../core/logger';
 import { systemEventBus } from '../core/eventBus';
@@ -40,11 +41,12 @@ export class DynamicAppRegistry {
         const raw = vfs.readFile(REGISTRY_FILE);
         const parsed: Record<string, InstalledAppRecord> = JSON.parse(raw);
         for (const [id, rec] of Object.entries(parsed)) {
-          // Verify that installDir actually exists to avoid dead entries
-          if (vfs.exists(rec.installDir)) {
+          try {
+            this.validate(rec);
+            if (id !== rec.id) throw new Error('Mismatched application ID');
             this.apps.set(id, rec);
-          } else {
-            systemLogger.warn('appRegistry', `Installed directory missing for app ${id}: ${rec.installDir}`);
+          } catch (error) {
+            systemLogger.warn('appRegistry', `Skipped invalid app ${id}: ${String(error)}`);
           }
         }
       }
@@ -56,23 +58,34 @@ export class DynamicAppRegistry {
   }
 
   private save(): void {
-    try {
-      if (!vfs.exists('/var/lib/aetherpkg')) {
-        vfs.mkdir('/var/lib/aetherpkg', { recursive: true });
-      }
-      const data: Record<string, InstalledAppRecord> = {};
-      for (const [id, rec] of this.apps.entries()) {
-        data[id] = rec;
-      }
-      vfs.writeFile(REGISTRY_FILE, JSON.stringify(data, null, 2));
-    } catch (err) {
-      systemLogger.error('appRegistry', `Failed to save dynamic apps registry: ${String(err)}`);
+    const path = withoutSymlinks(REGISTRY_FILE);
+    vfs.mkdir('/var/lib/aetherpkg', { recursive: true });
+    vfs.writeFile(path, JSON.stringify(Object.fromEntries(this.apps), null, 2));
+  }
+
+  private validate(record: InstalledAppRecord): void {
+    if (!isAppId(record.id) || record.packageId !== record.id ||
+        !isWithin(record.installDir, `/opt/aether/apps/${record.id}`) ||
+        withoutSymlinks(record.installDir) !== record.installDir ||
+        !validateManifest(record.manifest).valid || record.manifest.id !== record.id ||
+        record.manifest.version !== record.version ||
+        relativeFilePath(record.entry) !== relativeFilePath(record.manifest.entry) ||
+        !vfs.stat(withoutSymlinks(`${record.installDir}/${relativeFilePath(record.entry)}`)).isFile()) {
+      throw new Error('Invalid application registry record');
     }
   }
 
   public register(record: InstalledAppRecord): void {
+    this.validate(record);
+    const previous = this.apps.get(record.id);
     this.apps.set(record.id, record);
-    this.save();
+    try {
+      this.save();
+    } catch (error) {
+      if (previous) this.apps.set(record.id, previous);
+      else this.apps.delete(record.id);
+      throw error;
+    }
     systemLogger.info('appRegistry', `Dynamically registered app: ${record.name} (${record.id} v${record.version})`);
     this.notify();
     systemEventBus.emit('app:registered', { appId: record.id });
@@ -83,7 +96,12 @@ export class DynamicAppRegistry {
     if (!existing) return false;
 
     this.apps.delete(id);
-    this.save();
+    try {
+      this.save();
+    } catch (error) {
+      this.apps.set(id, existing);
+      throw error;
+    }
     systemLogger.info('appRegistry', `Unregistered dynamic app: ${id}`);
     this.notify();
     systemEventBus.emit('app:unregistered', { appId: id });

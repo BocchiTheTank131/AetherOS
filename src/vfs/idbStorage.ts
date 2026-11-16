@@ -1,224 +1,223 @@
-// AetherOS - IndexedDB Storage Engine for Virtual Filesystem (AetherFS 2.0)
 import type { VFSNode } from './types';
 import { systemLogger } from '../core/logger';
 
 const DB_NAME = 'AetherOS_DB';
-const DB_VERSION = 2;
 const STORE_NAME = 'vfs_nodes';
+const META_STORE = 'vfs_meta';
+
+export type PersistenceStatus = 'idle' | 'pending' | 'saving' | 'error' | 'unavailable' | 'conflict';
+
+export function isStoredNode(node: VFSNode): boolean {
+  if (!node || typeof node.path !== 'string' || !node.path.startsWith('/') ||
+      node.path.includes('\\') || node.path.split('').some((char) => char.charCodeAt(0) < 32) || node.path.includes('//') ||
+      node.path.split('/').some((part) => part === '.' || part === '..')) return false;
+  if (node.path === '/') return node.type === 'dir';
+  const slash = node.path.lastIndexOf('/');
+  return node.name === node.path.slice(slash + 1) && node.name.length > 0 &&
+    node.parentPath === (node.path.slice(0, slash) || '/') &&
+    (node.type === 'dir' || node.type === 'file' || (node.type === 'symlink' && typeof node.targetPath === 'string')) &&
+    Number.isFinite(node.size) && node.size >= 0 && Number.isInteger(node.permissions) &&
+    typeof node.owner === 'string' && typeof node.group === 'string' &&
+    (node.content === undefined || typeof node.content === 'string') &&
+    (node.binaryContent === undefined || node.binaryContent instanceof Uint8Array);
+}
 
 export class IndexedDBStorage {
   private db: IDBDatabase | null = null;
-  private isAvailable = false;
-  private pendingSaves = new Map<string, VFSNode>();
-  private pendingDeletes = new Set<string>();
+  private opening?: Promise<boolean>;
+  private revision = 0;
+  private pending = new Map<string, { node?: VFSNode }>();
   private saveTimeout?: ReturnType<typeof setTimeout>;
-  private status: 'idle' | 'saving' | 'error' = 'idle';
+  private writing?: Promise<boolean>;
+  private status: PersistenceStatus = 'idle';
+  private listeners = new Set<(status: PersistenceStatus) => void>();
 
-  constructor() {
-    this.isAvailable = typeof indexedDB !== 'undefined';
-  }
-
-  public getPersistenceStatus(): 'idle' | 'saving' | 'error' {
+  public getPersistenceStatus(): PersistenceStatus {
     return this.status;
   }
 
-  public async init(): Promise<boolean> {
-    if (!this.isAvailable) {
-      systemLogger.warn('vfs', 'IndexedDB is not supported in this environment. Falling back to memory storage.');
+  public subscribe(listener: (status: PersistenceStatus) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  private setStatus(status: PersistenceStatus): void {
+    if (status === this.status) return;
+    this.status = status;
+    for (const listener of this.listeners) listener(status);
+  }
+
+  public init(): Promise<boolean> {
+    return this.opening ??= this.open();
+  }
+
+  private async open(): Promise<boolean> {
+    if (typeof indexedDB === 'undefined') {
+      this.setStatus('unavailable');
       return false;
     }
-
-    return new Promise((resolve) => {
-      try {
-        const req = indexedDB.open(DB_NAME, DB_VERSION);
-
-        req.onupgradeneeded = (e) => {
-          const db = (e.target as IDBOpenDBRequest).result;
-          if (!db.objectStoreNames.contains(STORE_NAME)) {
-            db.createObjectStore(STORE_NAME, { keyPath: 'path' });
-          }
-          systemLogger.info('vfs', `Upgraded IndexedDB schema to version ${DB_VERSION}`);
+    return new Promise<boolean>((resolve) => {
+      const req = indexedDB.open(DB_NAME, 3);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME, { keyPath: 'path' });
+        if (!db.objectStoreNames.contains(META_STORE)) db.createObjectStore(META_STORE);
+      };
+      req.onsuccess = () => {
+        this.db = req.result;
+        this.db.onversionchange = () => {
+          this.db?.close();
+          this.db = null;
+          this.setStatus('conflict');
         };
-
-        req.onsuccess = () => {
-          this.db = req.result;
-          systemLogger.info('vfs', 'IndexedDB AetherFS 2.0 persistent storage connected');
-
-          if (typeof window !== 'undefined') {
-            window.addEventListener('beforeunload', () => {
-              this.flush();
-            });
-            window.addEventListener('pagehide', () => {
-              this.flush();
-            });
-          }
-
-          resolve(true);
-        };
-
-        req.onerror = () => {
-          this.status = 'error';
-          systemLogger.warn('vfs', `Failed to open IndexedDB: ${req.error?.message}`);
-          resolve(false);
-        };
-      } catch (err) {
-        this.status = 'error';
-        systemLogger.warn('vfs', `IndexedDB open exception: ${String(err)}`);
+        resolve(true);
+      };
+      req.onerror = req.onblocked = () => {
+        this.setStatus('unavailable');
+        systemLogger.warn('vfs', 'IndexedDB could not open. Close older AetherOS tabs and reload.');
         resolve(false);
-      }
+      };
+    }).catch((error: unknown) => {
+      this.setStatus('unavailable');
+      systemLogger.warn('vfs', 'IndexedDB could not open: ' + String(error));
+      return false;
     });
   }
 
   public async loadAll(): Promise<Map<string, VFSNode>> {
-    const nodes = new Map<string, VFSNode>();
-    if (!this.db) return nodes;
-
-    return new Promise((resolve) => {
-      try {
-        const tx = this.db!.transaction(STORE_NAME, 'readonly');
-        const store = tx.objectStore(STORE_NAME);
-        const req = store.getAll();
-
-        req.onsuccess = () => {
-          const list: VFSNode[] = req.result || [];
-          for (const item of list) {
-            // Restore and normalize binary data
-            if (item.binaryContent) {
-              if (!(item.binaryContent instanceof Uint8Array)) {
-                item.binaryContent = new Uint8Array(item.binaryContent);
-              }
-              item.size = item.binaryContent.byteLength;
-            } else if (item.isBinary && item.content && item.content.startsWith('data:')) {
-              // Backward compatibility migration for v1 data: URL base64 storage
-              try {
-                const base64Data = item.content.split(',')[1] || '';
-                const binaryString = atob(base64Data);
-                const bytes = new Uint8Array(binaryString.length);
-                for (let i = 0; i < binaryString.length; i++) {
-                  bytes[i] = binaryString.charCodeAt(i);
-                }
-                item.binaryContent = bytes;
-                item.size = bytes.byteLength;
-              } catch {
-                // Fallback to text length if decoding fails
-                item.size = item.content.length;
-              }
-            }
-            nodes.set(item.path, item);
+    if (!this.db) return new Map();
+    try {
+      const db = this.db;
+      return await new Promise((resolve, reject) => {
+        const tx = db.transaction([STORE_NAME, META_STORE], 'readonly');
+        const records = tx.objectStore(STORE_NAME).openCursor();
+        const revision = tx.objectStore(META_STORE).get('revision');
+        const nodes = new Map<string, VFSNode>();
+        records.onsuccess = () => {
+          const cursor = records.result;
+          if (!cursor) return;
+          const node = cursor.value as VFSNode;
+          if (isStoredNode(node)) {
+            if (node.binaryContent) node.size = node.binaryContent.length;
+            nodes.set(node.path, node);
+          } else {
+            systemLogger.warn('vfs', 'Skipped invalid IndexedDB record ' + String(cursor.key));
           }
-          systemLogger.info('vfs', `Loaded ${nodes.size} nodes from persistent storage`);
+          cursor.continue();
+        };
+        tx.oncomplete = () => {
+          this.revision = revision.result ?? 0;
           resolve(nodes);
         };
-
-        req.onerror = () => {
-          this.status = 'error';
-          systemLogger.error('vfs', `Failed to load nodes: ${req.error?.message}`);
-          resolve(nodes);
-        };
-      } catch (err) {
-        this.status = 'error';
-        systemLogger.error('vfs', `Transaction error loading nodes: ${String(err)}`);
-        resolve(nodes);
-      }
-    });
+        tx.onabort = () => reject(tx.error);
+      });
+    } catch (error) {
+      this.db?.close();
+      this.db = null;
+      this.setStatus('error');
+      throw error;
+    }
   }
 
   public queueSave(node: VFSNode): void {
-    this.pendingDeletes.delete(node.path);
-    this.pendingSaves.set(node.path, node);
+    this.pending.set(node.path, { node });
     this.scheduleFlush();
   }
 
   public queueDelete(path: string): void {
-    this.pendingSaves.delete(path);
-    this.pendingDeletes.add(path);
+    this.pending.set(path, {});
     this.scheduleFlush();
   }
 
   private scheduleFlush(): void {
-    if (this.saveTimeout) {
-      clearTimeout(this.saveTimeout);
-    }
+    if (!this.db || this.status === 'conflict' || this.saveTimeout !== undefined) return;
+    if (this.status === 'idle') this.setStatus('pending');
     this.saveTimeout = setTimeout(() => {
-      this.flush();
-    }, 400);
+      this.saveTimeout = undefined;
+      void this.flush();
+    }, 25);
   }
 
-  public async flush(): Promise<boolean> {
-    if (!this.db || (this.pendingSaves.size === 0 && this.pendingDeletes.size === 0)) {
-      return true;
+  public flush(): Promise<boolean> {
+    clearTimeout(this.saveTimeout);
+    this.saveTimeout = undefined;
+    if (!this.db || this.status === 'conflict') return Promise.resolve(false);
+    if (!this.writing) {
+      const write = this.drain();
+      this.writing = write.finally(() => { this.writing = undefined; });
     }
+    return this.writing;
+  }
 
-    const toSave = Array.from(this.pendingSaves.entries());
-    const toDelete = Array.from(this.pendingDeletes);
-    this.status = 'saving';
+  private async drain(): Promise<boolean> {
+    while (this.pending.size) {
+      const batch = new Map(this.pending);
+      if (!await this.commit((store) => {
+        for (const [path, op] of batch) {
+          if (op.node) store.put(op.node);
+          else store.delete(path);
+        }
+      })) return false;
 
-    return new Promise((resolve) => {
-      try {
-        const tx = this.db!.transaction(STORE_NAME, 'readwrite');
-        const store = tx.objectStore(STORE_NAME);
+      for (const [path, op] of batch) {
+        if (this.pending.get(path) === op) this.pending.delete(path);
+      }
+    }
+    this.setStatus('idle');
+    return true;
+  }
 
-        for (const [, node] of toSave) {
-          // Never persist dynamic virtual nodes like /proc or /dev
-          if (!node.path.startsWith('/proc') && !node.path.startsWith('/dev')) {
-            store.put(node);
+  public async replaceAll(nodes: Iterable<VFSNode>): Promise<boolean> {
+    if (!this.db) return this.status === 'unavailable';
+    if (!await this.flush() || this.writing) return false;
+    const write = this.commit((store) => {
+      store.clear();
+      for (const node of nodes) store.put(node);
+    });
+    this.writing = write.then(async (success) => success && await this.drain())
+      .finally(() => { this.writing = undefined; });
+    return write;
+  }
+
+  private async commit(apply: (store: IDBObjectStore) => void): Promise<boolean> {
+    const db = this.db;
+    if (!db || this.status === 'conflict') return false;
+    this.setStatus('saving');
+    try {
+      return await new Promise((resolve) => {
+        const tx = db.transaction([STORE_NAME, META_STORE], 'readwrite', { durability: 'strict' });
+        const meta = tx.objectStore(META_STORE);
+        const req = meta.get('revision');
+        req.onsuccess = () => {
+          if ((req.result ?? 0) !== this.revision) {
+            this.setStatus('conflict');
+            tx.abort();
+            return;
           }
-        }
-
-        for (const path of toDelete) {
-          store.delete(path);
-        }
-
+          try {
+            apply(tx.objectStore(STORE_NAME));
+            meta.put(this.revision + 1, 'revision');
+          } catch (error) {
+            systemLogger.error('vfs', 'Could not queue IndexedDB transaction: ' + String(error));
+            tx.abort();
+          }
+        };
         tx.oncomplete = () => {
-          // Only remove committed items if they were not updated in memory while saving
-          for (const [path, node] of toSave) {
-            if (this.pendingSaves.get(path) === node) {
-              this.pendingSaves.delete(path);
-            }
-          }
-          for (const path of toDelete) {
-            this.pendingDeletes.delete(path);
-          }
-          this.status = 'idle';
+          this.revision++;
           resolve(true);
         };
-
-        tx.onerror = () => {
-          this.status = 'error';
-          systemLogger.error('vfs', `Error writing to IndexedDB: ${tx.error?.message}`);
+        tx.onabort = () => {
+          if (this.status !== 'conflict') this.setStatus('error');
+          const message = this.status === 'conflict' ? 'another tab wrote to storage' : tx.error?.message ?? 'transaction aborted';
+          systemLogger.error('vfs', 'VFS persistence failed: ' + message);
           resolve(false);
         };
-      } catch (err) {
-        this.status = 'error';
-        systemLogger.error('vfs', `Flush exception: ${String(err)}`);
-        resolve(false);
-      }
-    });
-  }
-
-  public async clearAll(): Promise<void> {
-    if (!this.db) return;
-    return new Promise((resolve) => {
-      try {
-        const tx = this.db!.transaction(STORE_NAME, 'readwrite');
-        const store = tx.objectStore(STORE_NAME);
-        store.clear();
-        tx.oncomplete = () => {
-          this.pendingSaves.clear();
-          this.pendingDeletes.clear();
-          this.status = 'idle';
-          systemLogger.info('vfs', 'IndexedDB VFS storage wiped');
-          resolve();
-        };
-        tx.onerror = () => {
-          this.status = 'error';
-          resolve();
-        };
-      } catch {
-        this.status = 'error';
-        resolve();
-      }
-    });
+      });
+    } catch (error) {
+      this.setStatus('error');
+      systemLogger.error('vfs', 'Failed to begin IndexedDB transaction: ' + String(error));
+      return false;
+    }
   }
 }
 

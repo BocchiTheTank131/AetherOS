@@ -9,36 +9,32 @@ export const SANDBOX_WORKER_CODE = `
     ? self.postMessage.bind(self)
     : function() {};
 
+  const listen = self.addEventListener.bind(self);
+  const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
+  const stringify = JSON.stringify;
+  const limit = 2 * 1024 * 1024;
+  let remaining = limit;
+  function log(type, prefix, args) {
+    if (remaining <= 0) return;
+    let text = prefix;
+    for (const arg of args) {
+      if (text.length >= remaining) break;
+      text += (typeof arg === 'object' ? stringify(arg) : String(arg)).slice(0, remaining - text.length) + ' ';
+    }
+    text = text.trimEnd() + '\\n';
+    remaining -= text.length + 64;
+    postToHost({ type, text });
+  }
+
   // Pending host requests map
   const pendingRequests = new Map();
   let reqSeq = 0;
 
-  // Intercept console with bounded string formatting
   const guestConsole = Object.freeze({
-    log: function(...args) {
-      postToHost({
-        type: 'stdout',
-        text: args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)).join(' ') + '\\n'
-      });
-    },
-    info: function(...args) {
-      postToHost({
-        type: 'stdout',
-        text: '[INFO] ' + args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)).join(' ') + '\\n'
-      });
-    },
-    warn: function(...args) {
-      postToHost({
-        type: 'stderr',
-        text: '[WARN] ' + args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)).join(' ') + '\\n'
-      });
-    },
-    error: function(...args) {
-      postToHost({
-        type: 'stderr',
-        text: '[ERROR] ' + args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)).join(' ') + '\\n'
-      });
-    }
+    log: (...args) => log('stdout', '', args),
+    info: (...args) => log('stdout', '[INFO] ', args),
+    warn: (...args) => log('stderr', '[WARN] ', args),
+    error: (...args) => log('stderr', '[ERROR] ', args),
   });
 
   // Secure guest AetherOS bridge API
@@ -60,6 +56,7 @@ export const SANDBOX_WORKER_CODE = `
         });
       },
       writeBytes: function(path, bytes) {
+        if (!(bytes instanceof Uint8Array) || bytes.length > limit) throw new Error('Invalid or oversized file');
         let bin = '';
         for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
         return sendFsRequest('writeBytes', { path, bytesBase64: btoa(bin) });
@@ -75,6 +72,7 @@ export const SANDBOX_WORKER_CODE = `
 
   function sendFsRequest(method, params) {
     return new Promise((resolve, reject) => {
+      if (pendingRequests.size >= 64 || reqSeq >= 4096) return reject(new Error('Filesystem request limit exceeded'));
       const id = 'req_' + (++reqSeq);
       pendingRequests.set(id, { resolve, reject });
       postToHost({
@@ -90,6 +88,7 @@ export const SANDBOX_WORKER_CODE = `
   const scopes = [
     typeof WorkerGlobalScope !== 'undefined' ? WorkerGlobalScope.prototype : null,
     typeof DedicatedWorkerGlobalScope !== 'undefined' ? DedicatedWorkerGlobalScope.prototype : null,
+    EventTarget.prototype,
     self
   ];
   const blocked = [
@@ -102,7 +101,10 @@ export const SANDBOX_WORKER_CODE = `
     'SharedWorker',
     'BroadcastChannel',
     'Notification',
-    'close'
+    'close', 'postMessage', 'onmessage', 'onmessageerror', 'addEventListener',
+    'removeEventListener', 'dispatchEvent', 'MessageChannel', 'MessagePort',
+    'caches', 'navigator', 'location', 'WebTransport', 'RTCPeerConnection',
+    'EventSource', 'FileReader', 'FileReaderSync'
   ];
   for (const scope of scopes) {
     if (!scope) continue;
@@ -114,7 +116,7 @@ export const SANDBOX_WORKER_CODE = `
           configurable: false,
         });
       } catch {
-        try { scope[prop] = undefined; } catch {}
+        if (scope[prop] !== undefined) throw new Error('Could not lock down ' + prop);
       }
     }
   }
@@ -123,9 +125,10 @@ export const SANDBOX_WORKER_CODE = `
   globalThis.aether = guestAether;
 
   // Message dispatcher
-  self.onmessage = async function(e) {
+  let started = false;
+  listen('message', async function(e) {
     const msg = e.data;
-    if (!msg) return;
+    if (!e.isTrusted || !msg) return;
 
     if (msg.type === 'fs_response') {
       const p = pendingRequests.get(msg.id);
@@ -140,9 +143,9 @@ export const SANDBOX_WORKER_CODE = `
       return;
     }
 
-    if (msg.type === 'execute') {
+    if (msg.type === 'execute' && !started) {
+      started = true;
       try {
-        const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
         // Wrapped with strict mode and sandboxed arguments
         const fn = new AsyncFunction('aether', 'args', 'console', '"use strict";\\n' + msg.code);
         const result = await fn(guestAether, msg.args || [], guestConsole);
@@ -155,6 +158,6 @@ export const SANDBOX_WORKER_CODE = `
         postToHost({ type: 'exit', exitCode: 1 });
       }
     }
-  };
+  });
 })();
 `;

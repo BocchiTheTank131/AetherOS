@@ -12,7 +12,7 @@
 
 **A high-fidelity, Linux-inspired virtual operating environment engineered natively for modern web standards.**
 
-[![AetherOS Version](https://img.shields.io/badge/AetherOS-v1.4.0%20Developer%20Workstation-00f2fe?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/BocchiTheTank131/AetherOS)
+[![AetherOS Version](https://img.shields.io/badge/AetherOS-v1.4.1%20Stability%20%26%20Security-00f2fe?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/BocchiTheTank131/AetherOS)
 [![React](https://img.shields.io/badge/React-19.3-61dafb?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-7.0-3178c6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-4.3-38bdf8?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
@@ -26,6 +26,10 @@
 
 ---
 
+## Releases
+
+See [CHANGELOG.md](CHANGELOG.md) for v1.4.1 stability, security and storage changes.
+
 ## 🌟 Executive Summary
 
 Rather than emulating hardware CPU instructions through slow x86 or ARM virtualization, **AetherOS** implements genuine operating system paradigms directly on modern web standards:
@@ -38,9 +42,9 @@ Rather than emulating hardware CPU instructions through slow x86 or ARM virtuali
 - **Extensible Application Platform (`AetherAppPlatform`)**: Opaque-origin sandboxed `<iframe>` execution (`sandbox="allow-scripts"` without `allow-same-origin`), isolated `MessageChannel` RPC, full Aether App SDK (`window.aether`), granular capability permissions (`/var/lib/aetherpkg/permissions.json`), and private app storage quotas.
 - **Genuine Package Management Subsystem (`.aepkg`)**: Binary-safe compressed Zip archives via `fflate`, SHA-256 cryptographic verification (`integrity.json`), semver resolution, atomic staging (`/opt/aether/apps/`), version rollback, and uninstallation with data purge.
 - **Preemptive Virtual Kernel (`AetherCore`)**: PID process allocation starting at PID 100, POSIX signal handlers (`SIGTERM`, `SIGKILL`, `SIGSTOP`, `SIGCONT`), and measured resource telemetry based on active execution and browser JS heap limits.
-- **POSIX-Compliant Filesystem (`AetherFS 2.0`)**: Complete Linux directory tree (`/bin`, `/etc`, `/home/aether`, `/proc`, `/dev`, `/var`, `/opt`) persisted in browser **IndexedDB v2** with binary-safe byte arrays (`Uint8Array`), POSIX virtual access control (`r/w/x`), relative symlinks, and SHA-256 verified backup and restore.
+- **POSIX-style Filesystem (`AetherFS 2.0`)**: Complete Linux directory tree (`/bin`, `/etc`, `/home/aether`, `/proc`, `/dev`, `/var`, `/opt`) persisted in browser **IndexedDB v2** with binary-safe byte arrays (`Uint8Array`), POSIX virtual access control (`r/w/x`), relative symlinks, and SHA-256 verified backup and restore.
 - **Secure Aether Runtime**: Isolated Web Worker execution sandbox for running untrusted user JavaScript, featuring process tracking, console streaming, timeout enforcement (exit code 124), cancellation, and a guest `aether.fs` VFS bridge.
-- **Authentic Command Shell (`aesh`)**: Lexer tokenizer, full POSIX scripting AST (`if/then/elif/else/fi`, `for/do/done`, `while`, `case/esac`, functions, positional parameters `$0..$9`, `$#`, `$@`), pipelines (`|`), input/output redirections (`>`, `>>`, `<`, `2>`), conditionals (`&&`, `||`, `;`), job control (`&`, `jobs`, `fg`, `bg`, `wait`), and 50+ built-in utilities.
+- **Authentic Command Shell (`aesh`)**: Lexer tokenizer, POSIX-style scripting AST (`if/then/elif/else/fi`, `for/do/done`, `while`, `case/esac`, functions, positional parameters `$0..$9`, `$#`, `$@`), pipelines (`|`), input/output redirections (`>`, `>>`, `<`, `2>`), conditionals (`&&`, `||`, `;`), job control (`&`, `jobs`, `fg`, `bg`, `wait`), and 50+ built-in utilities.
 - **Composited Desktop Environment (`AetherWM`)**: Draggable windows with 8-direction resizing, visual snap guides, memory of window coordinates, 4 virtual workspaces, session persistence and restoration, customizable dock (bottom/top/left), app launcher, command palette, and notification drawer.
 
 ---
@@ -107,7 +111,7 @@ AetherOS v1.4.0 evolves AetherOS into a **professional browser-native developer 
 |   Lexer -> AST Parser -> Execution Pipeline (| > >> < 2> && || ;) -> 45+ Builtins    |
 +---------------------------------------------------------------------------------------+
 |                               AetherCore Virtual Kernel                               |
-|   PID Table (1..N) · Signal Dispatcher · Metrics Jitter · Event Bus · Ring Logger     |
+|   PID Table (1..N) · Signal Dispatcher · Virtual Accounting · Event Bus · Ring Logger     |
 +---------------------------------------------------------------------------------------+
 |                               Virtual Filesystem (VFS)                                |
 |   POSIX Hierarchy · Dynamic /proc & /dev · Permissions · Watchers · JSON Backup       |
@@ -426,7 +430,7 @@ git clone https://github.com/your-username/AetherOS.git
 cd AetherOS
 
 # Install dependencies
-npm install
+npm ci
 ```
 
 ### 2. Run Local Development Server

@@ -1,6 +1,7 @@
 // AetherOS - Main Operating System Application Root
-import React, { useState, useEffect } from 'react';
-import { SystemProvider, useSystem } from './core/context';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useSystem } from './core/context';
+import { SystemProvider } from './core/SystemProvider';
 import { systemEventBus } from './core/eventBus';
 import { BootScreen } from './desktop/components/BootScreen';
 import { LockScreen } from './desktop/components/LockScreen';
@@ -11,11 +12,13 @@ import { CommandPalette } from './desktop/components/CommandPalette';
 import { NotificationCenter } from './desktop/components/NotificationCenter';
 import { QuickSettings } from './desktop/components/QuickSettings';
 import { DialogHost } from './desktop/components/DialogHost';
+import { OfflineUpdate } from './core/OfflineUpdate';
 import { Power } from 'lucide-react';
 
 const AetherOSDesktop: React.FC = () => {
   const { booted, isPoweredOff, powerOnSystem } = useSystem();
   const [bootCompleted, setBootCompleted] = useState(false);
+  const finishBoot = useCallback(() => setBootCompleted(true), []);
 
   useEffect(() => {
     const unsubRestart = systemEventBus.on('system:restart', () => {
@@ -53,7 +56,7 @@ const AetherOSDesktop: React.FC = () => {
   }
 
   if (!bootCompleted || !booted) {
-    return <BootScreen onComplete={() => setBootCompleted(true)} />;
+    return <BootScreen onComplete={finishBoot} />;
   }
 
   return (
@@ -78,6 +81,7 @@ const AetherOSDesktop: React.FC = () => {
 
       {/* System Modal Dialog Host */}
       <DialogHost />
+      <OfflineUpdate />
 
       {/* Lock Screen */}
       <LockScreen />

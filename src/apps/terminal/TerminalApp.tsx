@@ -17,7 +17,7 @@ interface TerminalTab {
 }
 
 export const TerminalApp: React.FC<AppProps> = ({ setTitle, initialProps }) => {
-  const [tabs, setTabs] = useState<TerminalTab[]>([
+  const [tabs, setTabs] = useState<TerminalTab[]>(() => [
     {
       id: 'tab-1',
       title: 'aesh',
@@ -27,7 +27,13 @@ export const TerminalApp: React.FC<AppProps> = ({ setTitle, initialProps }) => {
           text: `\x1b[1;36mAetherOS v${AETHER_VERSION.version} (${AETHER_VERSION.codename}) [${AETHER_VERSION.architecture}]\x1b[0m\nWelcome to AetherOS. The ${AETHER_VERSION.shell} is ready.\nType \x1b[1;32mhelp\x1b[0m for commands, \x1b[1;33mfastfetch\x1b[0m for system overview, or \x1b[1;35mjs\x1b[0m for script execution.\n`,
         },
       ],
-      context: createDefaultShellContext(),
+      context: (() => {
+        const context = createDefaultShellContext();
+        try {
+          context.history = vfs.readFile('/home/aether/.aesh_history').split('\n').map((line) => line.trim()).filter(Boolean);
+        } catch {}
+        return context;
+      })(),
       historyIdx: -1,
     },
   ]);
@@ -40,7 +46,6 @@ export const TerminalApp: React.FC<AppProps> = ({ setTitle, initialProps }) => {
 
   useEffect(() => {
     if (initialProps?.initialCommand && typeof initialProps.initialCommand === 'string') {
-      setInputVal(initialProps.initialCommand);
       inputRef.current?.focus();
     }
   }, [initialProps?.initialCommand]);
@@ -50,29 +55,6 @@ export const TerminalApp: React.FC<AppProps> = ({ setTitle, initialProps }) => {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeTab?.history]);
-
-  // Load persistent history on mount
-  useEffect(() => {
-    try {
-      if (vfs.exists('/home/aether/.aesh_history')) {
-        const raw = vfs.readFile('/home/aether/.aesh_history');
-        const lines = raw.split('\n').map((l) => l.trim()).filter(Boolean);
-        if (lines.length > 0) {
-          setTabs((prev) =>
-            prev.map((t) => ({
-              ...t,
-              context: {
-                ...t.context,
-                history: [...new Set([...t.context.history, ...lines])],
-              },
-            }))
-          );
-        }
-      }
-    } catch {
-      // Ignore
-    }
-  }, []);
 
   useEffect(() => {
     if (setTitle && activeTab) {
