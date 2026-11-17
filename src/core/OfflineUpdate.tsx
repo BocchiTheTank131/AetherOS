@@ -34,7 +34,7 @@ export function OfflineUpdate() {
   if (!waiting) return null;
   return (
     <button
-      className="fixed right-4 top-4 z-[10000] rounded bg-slate-800 px-3 py-2 text-sm text-white shadow-lg"
+      className="fixed right-4 top-4 z-[10000] rounded bg-control px-3 py-2 text-sm text-ink shadow-lg"
       disabled={updating}
       onClick={async () => {
         if (!await dialogService.confirm({

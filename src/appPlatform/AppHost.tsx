@@ -1,5 +1,5 @@
 // AetherOS - Sandboxed Application Host Component
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import type { AppProps } from '../apps/types';
 import { dynamicAppRegistry, type InstalledAppRecord } from './DynamicAppRegistry';
 import { permissionManager } from './PermissionManager';
@@ -46,7 +46,7 @@ export const AppHost: React.FC<AppHostProps> = ({
   previewRecord,
   onPreviewOutput,
 }) => {
-  const { theme, addNotification, updateWindowMinimum } = useSystem();
+  const { colorMode, theme, addNotification, updateWindowMinimum } = useSystem();
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const tokenRef = useRef('');
@@ -55,6 +55,13 @@ export const AppHost: React.FC<AppHostProps> = ({
   const channelRef = useRef<{ port1: MessagePort } | null>(null);
   const currentUrl = useRef<string | null>(null);
   const rateLimit = useRef({ since: 0, count: 0 });
+  const accentColor = theme.accentColor;
+  const guestTheme = useRef({ mode: colorMode, accentColor });
+
+  useLayoutEffect(() => {
+    guestTheme.current = { mode: colorMode, accentColor };
+  }, [colorMode, accentColor]);
+
   const setTitleRef = useRef(setTitle);
 
   useEffect(() => {
@@ -411,10 +418,7 @@ export const AppHost: React.FC<AppHostProps> = ({
         }
 
         case 'system:getTheme': {
-          sendResponse(true, {
-            mode: theme.mode,
-            accentColor: theme.accentColor,
-          });
+          sendResponse(true, guestTheme.current);
           break;
         }
 
@@ -444,7 +448,7 @@ export const AppHost: React.FC<AppHostProps> = ({
         type: 'aether:init',
         appId: effectiveAppId,
         appInfo: { id: appRecord?.id, name: appRecord?.name, version: appRecord?.version, author: appRecord?.author },
-        theme: { mode: theme.mode, accentColor: theme.accentColor },
+        theme: guestTheme.current,
       });
     };
     window.addEventListener('message', connect);
@@ -470,29 +474,26 @@ export const AppHost: React.FC<AppHostProps> = ({
       const eventMsg: HostEventMessage = {
         type: 'aether:event',
         event: 'themeChange',
-        payload: {
-          mode: theme.mode,
-          accentColor: theme.accentColor,
-        },
+        payload: guestTheme.current,
       };
       try {
         channelRef.current.port1.postMessage(eventMsg);
       } catch {}
     }
-  }, [theme.mode, theme.accentColor]);
+  }, [colorMode, accentColor]);
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center h-full p-6 text-center bg-gray-900 text-gray-200">
-        <AlertTriangle className="w-12 h-12 text-red-400 mb-3" />
-        <h2 className="text-base font-semibold text-white mb-1">Application Failed to Launch</h2>
-        <p className="text-xs text-red-300 max-w-md mb-4 bg-red-950/40 p-2.5 rounded border border-red-800/40 font-mono text-left overflow-auto max-h-32">
+      <div className="flex flex-col items-center justify-center h-full p-6 text-center bg-canvas text-ink">
+        <AlertTriangle className="w-12 h-12 text-danger mb-3" />
+        <h2 className="text-base font-semibold text-ink mb-1">Application Failed to Launch</h2>
+        <p className="text-xs text-danger max-w-md mb-4 bg-danger/10 p-2.5 rounded border border-danger/30 font-mono text-left overflow-auto max-h-32">
           {error}
         </p>
         <div className="flex gap-2">
           <button
             onClick={loadApp}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded bg-gray-800 hover:bg-gray-700 text-white transition-colors"
+            className="ui-button"
           >
             <RefreshCw className="w-3.5 h-3.5" />
             Retry
@@ -502,7 +503,7 @@ export const AppHost: React.FC<AppHostProps> = ({
               dynamicAppRegistry.unregister(effectiveAppId);
               onClose?.();
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded bg-red-600/80 hover:bg-red-500 text-white transition-colors"
+            className="ui-button text-danger"
           >
             <Trash2 className="w-3.5 h-3.5" />
             Uninstall
@@ -514,7 +515,7 @@ export const AppHost: React.FC<AppHostProps> = ({
 
   if (!blobUrl) {
     return (
-      <div className="flex items-center justify-center h-full text-xs text-gray-400">
+      <div className="flex items-center justify-center h-full text-xs text-muted">
         Launching application...
       </div>
     );

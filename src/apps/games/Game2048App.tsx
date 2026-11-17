@@ -1,5 +1,5 @@
 // AetherOS - 2048 Puzzle Game
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { AppProps } from '../types';
 import { RotateCcw } from 'lucide-react';
 
@@ -24,6 +24,7 @@ function newBoard(): number[][] {
 }
 
 export const Game2048App: React.FC<AppProps> = ({ isFocused }) => {
+  const swipeStart = useRef<{ x: number; y: number } | null>(null);
   const [board, setBoard] = useState(newBoard);
   const [score, setScore] = useState(0);
   const [bestScore, setBestScore] = useState(0);
@@ -213,58 +214,71 @@ export const Game2048App: React.FC<AppProps> = ({ isFocused }) => {
   const getTileColor = (val: number): string => {
     switch (val) {
       case 2:
-        return 'bg-gray-700 text-gray-100';
+        return 'bg-control text-ink';
       case 4:
-        return 'bg-gray-600 text-white';
+        return 'bg-hover text-ink';
       case 8:
-        return 'bg-amber-600 text-white';
+        return 'bg-[#a15624] text-on-action';
       case 16:
-        return 'bg-orange-600 text-white';
+        return 'bg-[#9b4433] text-on-action';
       case 32:
-        return 'bg-red-500 text-white';
+        return 'bg-[#9a3853] text-on-action';
       case 64:
-        return 'bg-red-600 text-white font-bold';
+        return 'bg-[#883760] text-on-action font-bold';
       case 128:
-        return 'bg-yellow-500 text-gray-900 font-bold';
+        return 'bg-[#e5ab60] text-[#302017] font-bold';
       case 256:
-        return 'bg-yellow-400 text-gray-900 font-bold';
+        return 'bg-[#ecc77d] text-[#302017] font-bold';
       case 512:
-        return 'bg-cyan-500 text-black font-extrabold';
+        return 'bg-action text-on-action font-extrabold';
       case 1024:
-        return 'bg-cyan-400 text-black font-extrabold text-sm';
+        return 'bg-action text-on-action font-extrabold text-sm';
       case 2048:
-        return 'bg-purple-500 text-white font-extrabold text-sm shadow-lg shadow-purple-500/50';
+        return 'bg-[#51449d] text-on-action font-bold text-sm';
       default:
-        return 'bg-gray-800 text-transparent';
+        return 'bg-control text-transparent';
     }
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#181d29] text-white p-4 select-none items-center justify-between">
+    <div className="game-app flex flex-col h-full bg-canvas text-ink p-4 select-none items-center justify-between">
       {/* Score Header */}
       <div className="flex items-center justify-between w-full max-w-[280px] mb-3">
-        <h1 className="text-2xl font-black text-cyan-400">2048</h1>
+        <h1 className="text-2xl font-semibold text-accent">2048</h1>
 
         <div className="flex gap-2 text-xs">
-          <div className="bg-[#11141e] px-2.5 py-1 rounded-lg border border-gray-700 text-center">
-            <span className="text-[10px] text-gray-400 block uppercase font-bold">Score</span>
-            <span className="font-mono font-bold text-white">{score}</span>
+          <div className="bg-inset px-2.5 py-1 rounded-lg border border-line text-center">
+            <span className="text-[10px] text-muted block font-semibold">Score</span>
+            <span className="font-mono font-bold text-ink">{score}</span>
           </div>
-          <div className="bg-[#11141e] px-2.5 py-1 rounded-lg border border-gray-700 text-center">
-            <span className="text-[10px] text-gray-400 block uppercase font-bold">Best</span>
-            <span className="font-mono font-bold text-cyan-400">{bestScore}</span>
+          <div className="bg-inset px-2.5 py-1 rounded-lg border border-line text-center">
+            <span className="text-[10px] text-muted block font-semibold">Best</span>
+            <span className="font-mono font-bold text-accent">{bestScore}</span>
           </div>
         </div>
       </div>
 
       {/* 4x4 Grid Board */}
-      <div className="relative grid grid-cols-4 gap-2 bg-[#10131d] p-3 rounded-2xl border border-gray-700/80 shadow-xl">
+      <div className="game-2048-board" onPointerDown={(event) => {
+        if (gameOver || event.pointerType === 'mouse' || !event.isPrimary) return;
+        swipeStart.current = { x: event.clientX, y: event.clientY };
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }} onPointerUp={(event) => {
+        const start = swipeStart.current;
+        swipeStart.current = null;
+        if (!start || gameOver) return;
+        const dx = event.clientX - start.x;
+        const dy = event.clientY - start.y;
+        if (Math.max(Math.abs(dx), Math.abs(dy)) < 22) return;
+        if (Math.abs(dx) > Math.abs(dy)) (dx < 0 ? moveLeft : moveRight)();
+        else (dy < 0 ? moveUp : moveDown)();
+      }} onPointerCancel={() => { swipeStart.current = null; }}>
         {gameOver && (
           <div className="absolute inset-0 bg-black/85 backdrop-blur-sm rounded-2xl flex flex-col items-center justify-center z-10">
-            <h3 className="text-xl font-bold text-red-400 mb-2">Game Over</h3>
+            <h3 className="text-xl font-bold text-danger mb-2">Game Over</h3>
             <button
               onClick={initGame}
-              className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-semibold shadow"
+              className="px-4 py-2 bg-action hover:bg-action text-on-action rounded-lg text-xs font-semibold shadow"
             >
               Try Again
             </button>
@@ -274,7 +288,7 @@ export const Game2048App: React.FC<AppProps> = ({ isFocused }) => {
           row.map((val, c) => (
             <div
               key={`${r}-${c}`}
-              className={`w-14 h-14 rounded-xl flex items-center justify-center font-bold text-lg transition-transform ${getTileColor(
+              className={`aspect-square rounded-lg flex items-center justify-center font-bold text-lg transition-colors ${getTileColor(
                 val
               )}`}
             >
@@ -286,10 +300,10 @@ export const Game2048App: React.FC<AppProps> = ({ isFocused }) => {
 
       {/* Controls Footer */}
       <div className="flex items-center justify-between w-full max-w-[280px] mt-3">
-        <span className="text-[11px] text-gray-400">Use arrow keys or WASD</span>
+        <span className="text-[11px] text-muted">Use arrow keys, WASD, or swipe</span>
         <button
           onClick={initGame}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-semibold shadow"
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-action hover:bg-action text-on-action rounded-lg text-xs font-semibold shadow"
         >
           <RotateCcw className="w-3.5 h-3.5" />
           <span>New Game</span>

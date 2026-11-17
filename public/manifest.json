@@ -4,8 +4,8 @@
   "description": "Browser-native Linux-inspired operating environment with extensible application platform",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#090d16",
-  "theme_color": "#090d16",
+  "background_color": "#1b2029",
+  "theme_color": "#1b2029",
   "icons": [
     {
       "src": "/icon.svg",

@@ -108,13 +108,18 @@ test('edits a project and runs a live preview with diagnostic output', async ({ 
 
 test('installs, launches, updates and uninstalls a confined application', async ({ page }) => {
   test.setTimeout(45_000);
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.getByTitle('Quick Settings', { exact: true }).click();
+  await page.getByRole('button', { name: 'System', exact: true }).click();
+  await page.getByTitle('Quick Settings', { exact: true }).click();
   await command(page, 'mkdir -p /home/aether/Projects/package && cd /home/aether/Projects/package');
   const manifest = (version: string) => JSON.stringify({
     schemaVersion: 1, id: 'dev.browser.package', name: 'Browser Package', version, description: 'E2E test',
     author: 'AetherOS', type: 'windowed', entry: 'index.html', permissions: ['storage:appdata'],
   });
-  const html = (version: string) => '<h1>Package ' + version + '</h1><p id="result"></p><script>' +
-    'Promise.all([aether.fs.exists("/home/aether/.local/share/aether/apps/dev.other/storage.json").catch(() => "boundary denied"), aether.permissions.request("filesystem:read")]).then((results) => { document.querySelector("#result").textContent = results.join(" / "); });</script>';
+  const html = (version: string) => '<h1>Package ' + version + '</h1><p id="result"></p><p id="theme"></p><script>' +
+    'Promise.all([aether.fs.exists("/home/aether/.local/share/aether/apps/dev.other/storage.json").catch(() => "boundary denied"), aether.permissions.request("filesystem:read")]).then((results) => { document.querySelector("#result").textContent = results.join(" / "); });' +
+    'function showTheme() { aether.system.getTheme().then(theme => { document.querySelector("#theme").textContent = theme.mode; }); } aether.on("themeChange", showTheme); showTheme();</script>';
   for (const version of ['1.0.0', '1.1.0']) {
     await command(page, `echo '${manifest(version)}' > manifest.json`);
     await command(page, `echo '${html(version)}' > index.html`);
@@ -122,6 +127,10 @@ test('installs, launches, updates and uninstalls a confined application', async 
     const frame = page.frameLocator('iframe[title="Browser Package"]');
     await expect(frame.getByRole('heading', { name: 'Package ' + version })).toBeVisible();
     await expect(frame.getByText('boundary denied / false')).toBeVisible();
+    await expect(frame.locator('#theme')).toHaveText('dark');
+    await page.emulateMedia({ colorScheme: 'light' });
+    await expect(frame.locator('#theme')).toHaveText('light');
+    await page.emulateMedia({ colorScheme: 'dark' });
     await page.getByRole('button', { name: 'Close', exact: true }).last().click();
   }
   await command(page, 'aetherpkg remove dev.browser.package && aetherpkg info dev.browser.package');

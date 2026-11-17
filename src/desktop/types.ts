@@ -7,6 +7,8 @@ export type WindowDisplayState =
   | 'snapped-left'
   | 'snapped-right';
 
+export type VisibleWindowState = Exclude<WindowDisplayState, 'minimized'>;
+
 export interface WindowInstance {
   id: string;
   appId: string;
@@ -21,6 +23,7 @@ export interface WindowInstance {
   minHeight: number;
   zIndex: number;
   state: WindowDisplayState;
+  restoreState?: VisibleWindowState;
   workspaceId: number;
   isFocused: boolean;
   props?: Record<string, unknown>;

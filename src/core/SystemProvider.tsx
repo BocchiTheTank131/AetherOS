@@ -1,5 +1,5 @@
 // AetherOS - Main System React Context & State Provider
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useSyncExternalStore } from 'react';
 import type { SystemTheme, UserAccount, SystemNotification } from './types';
 import type { WindowInstance, WindowDisplayState } from '../desktop/types';
 import { SystemContext, type SystemContextValue } from './context';
@@ -12,6 +12,8 @@ import { audioService } from './audio';
 import { appRegistry } from '../apps/appRegistry';
 import { packageManager } from '../pkg/packageManager';
 import { SessionManager } from '../session/SessionManager';
+import { DEFAULT_WALLPAPER, accentPalette, normalizeTheme } from './appearance';
+import { dialogService } from './dialog';
 
 function focusWorkspace(windows: WindowInstance[], workspace: number): WindowInstance[] {
   const top = windows.reduce<WindowInstance | undefined>((focused, win) =>
@@ -20,11 +22,27 @@ function focusWorkspace(windows: WindowInstance[], workspace: number): WindowIns
   return windows.map((win) => win.isFocused === (win === top) ? win : { ...win, isFocused: win === top });
 }
 
+const darkScheme = '(prefers-color-scheme: dark)';
+const getSystemDark = () => window.matchMedia(darkScheme).matches;
+const subscribeSystemScheme = (listen: () => void) => {
+  const query = window.matchMedia(darkScheme);
+  query.addEventListener('change', listen);
+  return () => query.removeEventListener('change', listen);
+};
+const reducedTransparency = '(prefers-reduced-transparency: reduce)';
+const getReducedTransparency = () => window.matchMedia(reducedTransparency).matches;
+const subscribeTransparency = (listen: () => void) => {
+  const query = window.matchMedia(reducedTransparency);
+  query.addEventListener('change', listen);
+  return () => query.removeEventListener('change', listen);
+};
+
 const DEFAULT_THEME: SystemTheme = {
+  appearance: 'liquid-glass',
   mode: 'dark',
-  accentColor: 'cyan',
-  accentHex: '#00f2fe',
-  wallpaper: 'https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?q=80&w=2560&auto=format&fit=crop',
+  accentColor: 'blue',
+  accentHex: '#548ae8',
+  wallpaper: DEFAULT_WALLPAPER,
   transparency: true,
   blur: true,
   reducedMotion: false,
@@ -46,6 +64,11 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [booted, setBooted] = useState(false);
   const [isPoweredOff, setIsPoweredOff] = useState(false);
   const [theme, setThemeState] = useState<SystemTheme>(DEFAULT_THEME);
+  const themeChanged = React.useRef(false);
+  const systemDark = useSyncExternalStore(subscribeSystemScheme, getSystemDark);
+  const reduceTransparency = useSyncExternalStore(subscribeTransparency, getReducedTransparency);
+  const glassEffects = theme.appearance === 'liquid-glass' && theme.blur && theme.transparency && !reduceTransparency;
+  const colorMode = theme.mode === 'system' ? (systemDark ? 'dark' : 'light') : theme.mode;
   const [user, setUserState] = useState<UserAccount>(DEFAULT_USER);
   const [isLocked, setIsLocked] = useState(false);
   const [windows, setWindows] = useState<WindowInstance[]>([]);
@@ -79,53 +102,26 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, []);
 
   // Synchronize system theme classes and CSS variables with document root
-  useEffect(() => {
+  useLayoutEffect(() => {
     const root = document.documentElement;
-    if (theme.mode === 'light') {
-      root.classList.add('light');
-      root.classList.remove('dark');
-    } else {
-      root.classList.add('dark');
-      root.classList.remove('light');
-    }
-    root.style.setProperty('--aether-accent', theme.accentHex || '#06b6d4');
+    root.classList.toggle('light', colorMode === 'light');
+    root.classList.toggle('dark', colorMode === 'dark');
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', colorMode === 'light' ? '#edf1f7' : '#1b2029');
+    root.dataset.appearance = theme.appearance;
+    root.dataset.dock = theme.dockPosition;
+    root.toggleAttribute('data-dock-autohide', theme.dockAutoHide);
+    root.toggleAttribute('data-glass-effects', glassEffects);
+    root.toggleAttribute('data-reduced-motion', theme.reducedMotion);
+    const palette = accentPalette(theme.accentHex);
+    root.style.setProperty('--aether-accent', theme.accentHex);
+    root.style.setProperty('--aether-accent-light', palette.light);
+    root.style.setProperty('--aether-accent-dark', palette.dark);
+    root.style.setProperty('--aether-action', palette.action);
     root.style.setProperty(
       '--aether-font-size',
       theme.fontSize === 'small' ? '12px' : theme.fontSize === 'large' ? '16px' : '14px'
     );
-  }, [theme.mode, theme.accentHex, theme.fontSize]);
-
-  // Viewport resize clamping
-  useEffect(() => {
-    const handleResize = () => {
-      setWindows((prev) =>
-        prev.map((win) => {
-          if (
-            win.state === 'maximized' ||
-            win.state === 'snapped-left' ||
-            win.state === 'snapped-right'
-          ) {
-            return win;
-          }
-          const clampedX = Math.max(10, Math.min(window.innerWidth - 100, win.x));
-          const clampedY = Math.max(10, Math.min(window.innerHeight - 80, win.y));
-          const clampedW = Math.min(window.innerWidth - 20, win.width);
-          const clampedH = Math.min(window.innerHeight - 50, win.height);
-          if (
-            clampedX !== win.x ||
-            clampedY !== win.y ||
-            clampedW !== win.width ||
-            clampedH !== win.height
-          ) {
-            return { ...win, x: clampedX, y: clampedY, width: clampedW, height: clampedH };
-          }
-          return win;
-        })
-      );
-    };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  }, [colorMode, glassEffects, theme]);
 
   // Initialize Core Systems
   useEffect(() => {
@@ -142,7 +138,7 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         if (vfs.exists('/home/aether/.config/aetheros/theme.json')) {
           const themeJson = vfs.readFile('/home/aether/.config/aetheros/theme.json');
           const savedTheme = JSON.parse(themeJson);
-          if (mounted) setThemeState((prev) => ({ ...prev, ...savedTheme }));
+          if (mounted) setThemeState(normalizeTheme({ ...DEFAULT_THEME, ...savedTheme }));
         }
       } catch {}
 
@@ -178,6 +174,7 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                 zIndex: 10 + idx,
                 isFocused: false,
                 state: sw.state,
+                restoreState: sw.restoreState,
                 workspaceId: sw.workspace,
                 props: sw.props,
                 pid: proc.pid,
@@ -301,17 +298,22 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // Update theme and persist to VFS
   const setTheme = useCallback((newTheme: Partial<SystemTheme>) => {
-    setThemeState((prev) => {
-      const updated = { ...prev, ...newTheme };
-      try {
-        if (vfs.exists('/home/aether/.config/aetheros')) {
-          vfs.writeFile('/home/aether/.config/aetheros/theme.json', JSON.stringify(updated, null, 2));
-        }
-      } catch {}
-      systemEventBus.emit('theme:changed', { theme: updated });
-      return updated;
-    });
+    themeChanged.current = true;
+    setThemeState((prev) => normalizeTheme({ ...prev, ...newTheme }));
   }, []);
+
+  useEffect(() => {
+    if (!booted || !themeChanged.current) return;
+    themeChanged.current = false;
+    try {
+      const path = '/home/aether/.config/aetheros/theme.json';
+      const serialized = JSON.stringify(theme, null, 2);
+      if (!vfs.exists(path) || vfs.readFile(path) !== serialized) vfs.writeFile(path, serialized);
+    } catch (error) {
+      systemLogger.warn('settings', `Could not save appearance preferences: ${String(error)}`);
+    }
+    systemEventBus.emit('theme:changed', { theme });
+  }, [booted, theme]);
 
   const setUser = useCallback((newUser: Partial<UserAccount>) => {
     setUserState((prev) => {
@@ -356,7 +358,7 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const highestZ = Math.max(...prev.map((w) => w.zIndex), 0) + 1;
       return prev.map((w) =>
         w.id === id
-          ? { ...w, zIndex: highestZ, isFocused: true, state: w.state === 'minimized' ? 'normal' : w.state }
+          ? { ...w, zIndex: highestZ, isFocused: true, state: w.state === 'minimized' ? w.restoreState ?? 'normal' : w.state, restoreState: undefined }
           : { ...w, isFocused: false }
       );
     });
@@ -455,18 +457,21 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // Close Window (terminates process in kernel)
   const closeWindow = useCallback(
-    async (id: string) => {
+    async (id: string, beforeClose?: () => Promise<void>) => {
       if (pendingCloses.current.has(id)) return;
       const guard = closeGuards.current.get(id);
-      if (guard) {
-        pendingCloses.current.add(id);
-        try {
-          if (!await guard()) return;
-        } catch {
-          return;
-        } finally {
-          pendingCloses.current.delete(id);
+      pendingCloses.current.add(id);
+      try {
+        if (guard) {
+          try {
+            if (!await guard()) return;
+          } catch {
+            return;
+          }
         }
+        await beforeClose?.().catch(() => {});
+      } finally {
+        pendingCloses.current.delete(id);
       }
       const target = sessionRef.current.windows.find((w) => w.id === id);
       if (target) {
@@ -513,7 +518,9 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setWindows((prev) => {
         const target = prev.find((w) => w.id === id);
         const next = prev.map((w) =>
-          w.id === id ? { ...w, state: 'minimized' as WindowDisplayState, isFocused: false } : w
+          w.id === id && w.state !== 'minimized'
+            ? { ...w, state: 'minimized' as const, restoreState: w.state, isFocused: false }
+            : w
         );
         if (target?.isFocused) {
           const workspaceWins = next.filter(
@@ -627,7 +634,7 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // Global Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (isLocked) return;
+      if (isLocked || dialogService.isOpen()) return;
 
       // Workspace switching: Alt + 1..4
       if (e.altKey && !e.ctrlKey && !e.shiftKey && ['1', '2', '3', '4'].includes(e.key)) {
@@ -731,6 +738,8 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     () => ({
       booted,
       theme,
+      colorMode,
+      glassEffects,
       setTheme,
       user,
       setUser,
@@ -771,6 +780,8 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     [
       booted,
       theme,
+      colorMode,
+      glassEffects,
       setTheme,
       user,
       setUser,

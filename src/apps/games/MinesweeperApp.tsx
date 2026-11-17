@@ -1,7 +1,7 @@
 // AetherOS - Minesweeper Classic Game
 import React, { useState } from 'react';
 import type { AppProps } from '../types';
-import { Bomb, Flag, Trophy } from 'lucide-react';
+import { Bomb, Flag, RotateCcw, Trophy } from 'lucide-react';
 
 type CellState = {
   isMine: boolean;
@@ -29,6 +29,7 @@ function chooseMines(positions: number[]): number[] {
 }
 
 export const MinesweeperApp: React.FC<AppProps> = () => {
+  const [flagMode, setFlagMode] = useState(false);
   const [grid, setGrid] = useState(emptyGrid);
   const [gameOver, setGameOver] = useState(false);
   const [gameWon, setGameWon] = useState(false);
@@ -37,6 +38,7 @@ export const MinesweeperApp: React.FC<AppProps> = () => {
 
   const initGame = () => {
     setGrid(emptyGrid());
+    setFlagMode(false);
     setGameOver(false);
     setGameWon(false);
     setFirstClickDone(false);
@@ -124,8 +126,7 @@ export const MinesweeperApp: React.FC<AppProps> = () => {
     }
   };
 
-  const toggleFlag = (e: React.MouseEvent, r: number, c: number) => {
-    e.preventDefault();
+  const toggleFlag = (r: number, c: number) => {
     if (gameOver || gameWon || grid[r][c].isRevealed) return;
 
     const next = grid.map((row) => row.map((cell) => ({ ...cell })));
@@ -139,29 +140,29 @@ export const MinesweeperApp: React.FC<AppProps> = () => {
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#1e2330] text-white p-4 select-none items-center justify-between">
+    <div className="game-app flex flex-col h-full bg-canvas text-ink p-4 select-none items-center justify-between">
       {/* Top Header Scoreboard */}
-      <div className="flex items-center justify-between w-full max-w-[280px] bg-[#141824] p-2.5 rounded-xl border border-gray-700 mb-3">
-        <div className="flex items-center gap-1.5 font-mono font-bold text-red-400 text-sm">
+      <div className="flex items-center justify-between w-full max-w-[280px] bg-canvas p-2.5 rounded-xl border border-line mb-3">
+        <div className="flex items-center gap-1.5 font-mono font-bold text-danger text-sm">
           <Bomb className="w-4 h-4" />
           <span>{String(flagsRemaining).padStart(2, '0')}</span>
         </div>
 
         <button
           onClick={initGame}
-          className="p-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-yellow-400 font-bold transition-transform active:scale-95"
+          className="p-1.5 bg-control hover:bg-hover rounded-lg text-caution font-bold transition-transform active:scale-95"
           title="Restart"
         >
-          {gameOver ? '😵' : gameWon ? '😎' : '🙂'}
+          <RotateCcw size={16} />
         </button>
 
-        <div className="text-xs font-semibold text-gray-300">
+        <div className="text-xs font-semibold text-secondary">
           {gameWon ? (
-            <span className="text-emerald-400 flex items-center gap-1">
+            <span className="text-positive flex items-center gap-1">
               <Trophy className="w-4 h-4" /> Won!
             </span>
           ) : gameOver ? (
-            <span className="text-red-400">Game Over</span>
+            <span className="text-danger">Game Over</span>
           ) : (
             <span>9x9</span>
           )}
@@ -169,20 +170,21 @@ export const MinesweeperApp: React.FC<AppProps> = () => {
       </div>
 
       {/* 9x9 Grid */}
-      <div className="grid grid-cols-9 gap-1 bg-[#141824] p-2 rounded-xl border border-gray-700">
+      <div className="minesweeper-board">
         {grid.map((row, r) =>
           row.map((cell, c) => {
             return (
               <button
                 key={`${r}-${c}`}
-                onClick={() => revealCell(r, c)}
-                onContextMenu={(e) => toggleFlag(e, r, c)}
-                className={`w-7 h-7 rounded text-xs font-bold flex items-center justify-center transition-colors shadow-sm ${
+                onClick={() => flagMode ? toggleFlag(r, c) : revealCell(r, c)}
+                onContextMenu={(event) => { event.preventDefault(); toggleFlag(r, c); }}
+                aria-label={`Row ${r + 1}, column ${c + 1}, ${cell.isFlagged ? 'flagged' : cell.isRevealed ? cell.isMine ? 'mine' : `${cell.neighborMines} neighboring mines` : 'unrevealed'}`}
+                className={`aspect-square rounded text-xs font-bold flex items-center justify-center transition-colors shadow-sm ${
                   cell.isRevealed
                     ? cell.isMine
-                      ? 'bg-red-600 text-white'
-                      : 'bg-[#282f44] text-gray-200'
-                    : 'bg-[#374151] hover:bg-[#4b5563] text-transparent'
+                      ? 'bg-red-600 text-on-action'
+                      : 'bg-control text-ink'
+                    : 'bg-control hover:bg-hover text-transparent'
                 }`}
               >
                 {cell.isRevealed ? (
@@ -193,12 +195,12 @@ export const MinesweeperApp: React.FC<AppProps> = () => {
                       style={{
                         color:
                           cell.neighborMines === 1
-                            ? '#38bdf8'
+                            ? 'var(--ui-accent)'
                             : cell.neighborMines === 2
-                            ? '#4ade80'
+                            ? 'var(--ui-positive)'
                             : cell.neighborMines === 3
-                            ? '#f87171'
-                            : '#c084fc',
+                            ? 'var(--ui-danger)'
+                            : 'var(--ui-iris)',
                       }}
                     >
                       {cell.neighborMines}
@@ -207,7 +209,7 @@ export const MinesweeperApp: React.FC<AppProps> = () => {
                     ''
                   )
                 ) : cell.isFlagged ? (
-                  <Flag className="w-3.5 h-3.5 text-red-400 fill-red-400" />
+                  <Flag className="w-3.5 h-3.5 text-danger fill-red-400" />
                 ) : (
                   ''
                 )}
@@ -217,8 +219,9 @@ export const MinesweeperApp: React.FC<AppProps> = () => {
         )}
       </div>
 
-      <div className="text-[11px] text-gray-400 text-center mt-3">
-        Left-click to reveal • Right-click to flag
+      <div className="game-footer">
+        <span>Right-click a square to flag it</span>
+        <button className="ui-button" aria-pressed={flagMode} onClick={() => setFlagMode((active) => !active)}><Flag size={14} />Flag mode</button>
       </div>
     </div>
   );

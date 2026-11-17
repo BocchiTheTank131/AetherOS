@@ -4,6 +4,8 @@ import type { AppProps } from '../types';
 import { useSystem } from '../../core/context';
 import { vfs } from '../../vfs/vfs';
 import { AETHER_VERSION } from '../../core/version';
+import { DEFAULT_WALLPAPER } from '../../core/appearance';
+import { AppearanceStyleControl, ColorModeControl } from '../../desktop/components/AppearanceControls';
 import { audioService } from '../../core/audio';
 import { dialogService } from '../../core/dialog';
 import { permissionManager } from '../../appPlatform/PermissionManager';
@@ -26,6 +28,7 @@ import {
 } from 'lucide-react';
 
 const WALLPAPERS = [
+  { name: 'Blue Hour', url: '/wallpapers/blue-hour.webp', value: DEFAULT_WALLPAPER },
   {
     name: 'Cosmic Nebula',
     url: 'https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?q=80&w=2560&auto=format&fit=crop',
@@ -52,7 +55,7 @@ const ACCENT_COLORS = [
   { name: 'cyan', hex: '#00f2fe', label: 'Cyan' },
   { name: 'violet', hex: '#8b5cf6', label: 'Violet' },
   { name: 'emerald', hex: '#10b981', label: 'Emerald' },
-  { name: 'blue', hex: '#3b82f6', label: 'Blue' },
+  { name: 'blue', hex: '#548ae8', label: 'Blue' },
   { name: 'amber', hex: '#f59e0b', label: 'Amber' },
   { name: 'rose', hex: '#f43f5e', label: 'Rose' },
 ];
@@ -164,276 +167,130 @@ export const SettingsApp: React.FC<AppProps> = () => {
     audioService.playNotification();
   };
 
+  const categories = [
+    { id: 'appearance', title: 'Appearance', Icon: Palette },
+    { id: 'dock', title: 'Dock & Panels', Icon: Monitor },
+    { id: 'sound', title: 'Sound & Audio', Icon: Volume2 },
+    { id: 'storage', title: 'Storage & Backup', Icon: HardDrive },
+    { id: 'permissions', title: 'App Permissions', Icon: Shield },
+    { id: 'users', title: 'User Accounts', Icon: User },
+    { id: 'about', title: 'About AetherOS', Icon: Info },
+  ] as const;
+
   return (
-    <div className="flex h-full bg-[#111827] text-gray-200 select-none overflow-hidden">
-      {/* Category Sidebar */}
-      <div className="w-52 bg-[#161f2e] border-r border-gray-700/60 p-3 flex flex-col gap-1.5">
-        <span className="text-xs font-semibold uppercase tracking-wider text-gray-400 px-3 py-1">
-          Settings
-        </span>
-
-        <button
-          onClick={() => setActiveCategory('appearance')}
-          className={`flex items-center gap-2.5 px-3 py-2 text-xs rounded-lg transition-colors ${
-            activeCategory === 'appearance'
-              ? 'bg-cyan-500/20 text-cyan-300 font-semibold'
-              : 'text-gray-300 hover:bg-gray-800'
-          }`}
-        >
-          <Palette className="w-4 h-4 text-cyan-400" />
-          <span>Appearance</span>
-        </button>
-
-        <button
-          onClick={() => setActiveCategory('dock')}
-          className={`flex items-center gap-2.5 px-3 py-2 text-xs rounded-lg transition-colors ${
-            activeCategory === 'dock'
-              ? 'bg-cyan-500/20 text-cyan-300 font-semibold'
-              : 'text-gray-300 hover:bg-gray-800'
-          }`}
-        >
-          <Monitor className="w-4 h-4 text-blue-400" />
-          <span>Dock & Panels</span>
-        </button>
-
-        <button
-          onClick={() => setActiveCategory('sound')}
-          className={`flex items-center gap-2.5 px-3 py-2 text-xs rounded-lg transition-colors ${
-            activeCategory === 'sound'
-              ? 'bg-cyan-500/20 text-cyan-300 font-semibold'
-              : 'text-gray-300 hover:bg-gray-800'
-          }`}
-        >
-          <Volume2 className="w-4 h-4 text-emerald-400" />
-          <span>Sound & Audio</span>
-        </button>
-
-        <button
-          onClick={() => setActiveCategory('storage')}
-          className={`flex items-center gap-2.5 px-3 py-2 text-xs rounded-lg transition-colors ${
-            activeCategory === 'storage'
-              ? 'bg-cyan-500/20 text-cyan-300 font-semibold'
-              : 'text-gray-300 hover:bg-gray-800'
-          }`}
-        >
-          <HardDrive className="w-4 h-4 text-amber-400" />
-          <span>Storage & Backup</span>
-        </button>
-
-        <button
-          onClick={() => setActiveCategory('permissions')}
-          className={`flex items-center gap-2.5 px-3 py-2 text-xs rounded-lg transition-colors ${
-            activeCategory === 'permissions'
-              ? 'bg-cyan-500/20 text-cyan-300 font-semibold'
-              : 'text-gray-300 hover:bg-gray-800'
-          }`}
-        >
-          <Shield className="w-4 h-4 text-emerald-400" />
-          <span>App Permissions</span>
-        </button>
-
-        <button
-          onClick={() => setActiveCategory('users')}
-          className={`flex items-center gap-2.5 px-3 py-2 text-xs rounded-lg transition-colors ${
-            activeCategory === 'users'
-              ? 'bg-cyan-500/20 text-cyan-300 font-semibold'
-              : 'text-gray-300 hover:bg-gray-800'
-          }`}
-        >
-          <User className="w-4 h-4 text-purple-400" />
-          <span>User Accounts</span>
-        </button>
-
-        <button
-          onClick={() => setActiveCategory('about')}
-          className={`flex items-center gap-2.5 px-3 py-2 text-xs rounded-lg transition-colors ${
-            activeCategory === 'about'
-              ? 'bg-cyan-500/20 text-cyan-300 font-semibold'
-              : 'text-gray-300 hover:bg-gray-800'
-          }`}
-        >
-          <Info className="w-4 h-4 text-pink-400" />
-          <span>About AetherOS</span>
-        </button>
-      </div>
-
-      {/* Settings Content Area */}
-      <div className="flex-1 p-6 overflow-y-auto">
+    <div className="settings-app select-none">
+      <nav className="settings-nav glass-navigation glass-rim" aria-label="Settings categories">
+        {categories.map(({ id, title, Icon }) => (
+          <button key={id} aria-pressed={activeCategory === id} onClick={() => setActiveCategory(id)}>
+            <Icon size={17} aria-hidden="true" />
+            <span>{title}</span>
+          </button>
+        ))}
+      </nav>
+      <main className="settings-content">
         {/* APPEARANCE */}
         {activeCategory === 'appearance' && (
-          <div className="space-y-6 max-w-xl">
-            <div>
-              <h2 className="text-lg font-bold text-white mb-1">Appearance</h2>
-              <p className="text-xs text-gray-400">Personalize your desktop theme and wallpapers.</p>
-            </div>
-
-            {/* Dark / Light Mode */}
-            <div className="bg-[#1e293b] p-4 rounded-xl border border-gray-700/60 space-y-3">
-              <label className="text-sm font-semibold text-white">System Theme</label>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  onClick={() => setTheme({ mode: 'dark' })}
-                  className={`p-3 rounded-lg border flex items-center justify-between transition-colors ${
-                    theme.mode === 'dark'
-                      ? 'border-cyan-500 bg-cyan-500/10 text-white'
-                      : 'border-gray-700 bg-gray-800 text-gray-400'
-                  }`}
-                >
-                  <span className="text-sm font-medium">Dark Mode</span>
-                  {theme.mode === 'dark' && <Check className="w-4 h-4 text-cyan-400" />}
-                </button>
-                <button
-                  onClick={() => setTheme({ mode: 'light' })}
-                  className={`p-3 rounded-lg border flex items-center justify-between transition-colors ${
-                    theme.mode === 'light'
-                      ? 'border-cyan-500 bg-cyan-500/10 text-white'
-                      : 'border-gray-700 bg-gray-800 text-gray-400'
-                  }`}
-                >
-                  <span className="text-sm font-medium">Light Mode</span>
-                  {theme.mode === 'light' && <Check className="w-4 h-4 text-cyan-400" />}
-                </button>
-              </div>
-            </div>
-
-            {/* Accent Colors */}
-            <div className="bg-[#1e293b] p-4 rounded-xl border border-gray-700/60 space-y-3">
-              <label className="text-sm font-semibold text-white">Accent Color</label>
-              <div className="flex items-center gap-3">
-                {ACCENT_COLORS.map((c) => (
-                  <button
-                    key={c.name}
-                    onClick={() => setTheme({ accentColor: c.name, accentHex: c.hex })}
-                    className="w-8 h-8 rounded-full flex items-center justify-center transition-transform hover:scale-110 shadow"
-                    style={{ backgroundColor: c.hex }}
-                    title={c.label}
-                  >
-                    {theme.accentColor === c.name && <Check className="w-4 h-4 text-white" />}
+          <div className="settings-page">
+            <header><h2>Appearance</h2><p>Choose how your desktop and apps look.</p></header>
+            <section className="ui-card settings-card">
+              <h3>Interface style</h3>
+              <AppearanceStyleControl preview />
+            </section>
+            <section className="ui-card settings-card">
+              <h3>Color mode</h3>
+              <ColorModeControl />
+            </section>
+            <section className="ui-card settings-card">
+              <h3>Accent color</h3>
+              <div className="accent-swatches">
+                {ACCENT_COLORS.map(({ name, hex, label }) => (
+                  <button key={name} type="button" title={label} aria-label={label} aria-pressed={theme.accentHex === hex}
+                    onClick={() => setTheme({ accentColor: name, accentHex: hex })} style={{ '--swatch': hex } as React.CSSProperties}>
+                    {theme.accentHex === hex && <Check size={16} />}
                   </button>
                 ))}
+                <label className="accent-custom">Custom <input type="color" value={theme.accentHex} aria-label="Custom accent color"
+                  onChange={(event) => setTheme({ accentColor: 'custom', accentHex: event.target.value })} /></label>
               </div>
-            </div>
-
-            {/* Wallpapers */}
-            <div className="bg-[#1e293b] p-4 rounded-xl border border-gray-700/60 space-y-3">
-              <label className="text-sm font-semibold text-white">Desktop Wallpaper</label>
-              <div className="grid grid-cols-3 gap-3">
-                {WALLPAPERS.map((wp) => (
-                  <div
-                    key={wp.url}
-                    onClick={() => setTheme({ wallpaper: wp.url })}
-                    className={`relative rounded-lg overflow-hidden h-24 border cursor-pointer group ${
-                      theme.wallpaper === wp.url ? 'border-cyan-400 ring-2 ring-cyan-400/40' : 'border-gray-700'
-                    }`}
-                  >
-                    <img
-                      src={wp.url}
-                      alt={wp.name}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                    />
-                    <div className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1 text-[10px] text-white font-medium truncate">
-                      {wp.name}
-                    </div>
-                  </div>
-                ))}
+            </section>
+            <section className="ui-card settings-card">
+              <h3>Wallpaper</h3>
+              <div className="wallpaper-options">
+                {WALLPAPERS.map((wp) => {
+                  const value = wp.value ?? wp.url;
+                  return (
+                    <button key={value} type="button" aria-pressed={theme.wallpaper === value} onClick={() => setTheme({ wallpaper: value })}>
+                      <img src={wp.url} alt="" loading="lazy" />
+                      <span>{wp.name}</span>
+                    </button>
+                  );
+                })}
               </div>
-
-              {/* Custom Wallpaper Section */}
-              <div className="pt-2 border-t border-gray-700/60 space-y-2">
-                <span className="text-xs text-gray-300 font-medium">Custom Wallpaper</span>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    placeholder="https://example.com/wallpaper.jpg"
-                    value={customWpUrl}
-                    onChange={(e) => setCustomWpUrl(e.target.value)}
-                    className="flex-1 bg-[#111827] border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white placeholder-gray-500 outline-none focus:border-cyan-500"
-                  />
-                  <button
-                    onClick={handleApplyCustomWpUrl}
-                    className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-medium"
-                  >
-                    Apply URL
-                  </button>
-                  <label className="px-3 py-1.5 rounded-lg bg-gray-700 hover:bg-gray-600 text-white text-xs font-medium cursor-pointer flex items-center gap-1.5">
-                    <ImageIcon className="w-3.5 h-3.5" />
-                    <span>Upload</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleUploadWallpaperFile}
-                      className="hidden"
-                    />
-                  </label>
-                </div>
-              </div>
-            </div>
-
-            {/* Transparency & Blur */}
-            <div className="bg-[#1e293b] p-4 rounded-xl border border-gray-700/60 space-y-3">
-              <label className="text-sm font-semibold text-white">Effects</label>
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-300">Glassmorphism Blur & Transparency</span>
-                <input
-                  type="checkbox"
-                  checked={theme.blur}
-                  onChange={(e) => setTheme({ blur: e.target.checked, transparency: e.target.checked })}
-                  className="rounded text-cyan-500 w-4 h-4 cursor-pointer"
-                />
-              </div>
-            </div>
+              <form className="wallpaper-tools" onSubmit={(event) => { event.preventDefault(); handleApplyCustomWpUrl(); }}>
+                <input className="ui-input" type="text" aria-label="Wallpaper URL" placeholder="Image URL" value={customWpUrl} onChange={(event) => setCustomWpUrl(event.target.value)} />
+                <button className="ui-button" type="submit">Apply URL</button>
+                <label className="ui-button wallpaper-upload"><ImageIcon size={15} />Upload
+                  <input type="file" className="sr-only" accept="image/*" onChange={handleUploadWallpaperFile} />
+                </label>
+              </form>
+            </section>
+            <section className="ui-card settings-card">
+              <h3>Effects and readability</h3>
+              <label className="setting-row"><span>Glass blur and transparency</span>
+                <input className="ui-switch" type="checkbox" checked={theme.blur && theme.transparency}
+                  onChange={(event) => setTheme({ blur: event.target.checked, transparency: event.target.checked })} />
+              </label>
+              <label className="setting-row"><span>Reduce motion</span>
+                <input className="ui-switch" type="checkbox" checked={theme.reducedMotion} onChange={(event) => setTheme({ reducedMotion: event.target.checked })} />
+              </label>
+              <label className="setting-row"><span>Text size</span>
+                <select className="ui-input" value={theme.fontSize} onChange={(event) => setTheme({ fontSize: event.target.value as typeof theme.fontSize })}>
+                  <option value="small">Small</option><option value="medium">Standard</option><option value="large">Large</option>
+                </select>
+              </label>
+            </section>
           </div>
         )}
 
         {/* DOCK & PANELS */}
         {activeCategory === 'dock' && (
-          <div className="space-y-6 max-w-xl">
-            <div>
-              <h2 className="text-lg font-bold text-white mb-1">Dock & Panels</h2>
-              <p className="text-xs text-gray-400">Configure taskbar position and dock behavior.</p>
-            </div>
-
-            <div className="bg-[#1e293b] p-4 rounded-xl border border-gray-700/60 space-y-3">
-              <label className="text-sm font-semibold text-white">Dock Screen Position</label>
-              <div className="grid grid-cols-3 gap-3">
-                {(['bottom', 'top', 'left'] as const).map((pos) => (
-                  <button
-                    key={pos}
-                    onClick={() => setTheme({ dockPosition: pos })}
-                    className={`p-3 rounded-lg border text-center capitalize text-xs font-semibold transition-colors ${
-                      theme.dockPosition === pos
-                        ? 'border-cyan-400 bg-cyan-500/10 text-white'
-                        : 'border-gray-700 bg-gray-800 text-gray-400'
-                    }`}
-                  >
-                    {pos}
-                  </button>
+          <div className="settings-page">
+            <header><h2>Dock & Panels</h2><p>Choose where the dock appears and when it stays visible.</p></header>
+            <section className="ui-card settings-card">
+              <h3>Screen position</h3>
+              <div className="ui-segments" role="group" aria-label="Dock position">
+                {(['bottom', 'top', 'left'] as const).map((position) => (
+                  <button key={position} className="ui-button capitalize" aria-pressed={theme.dockPosition === position}
+                    onClick={() => setTheme({ dockPosition: position })}>{position}</button>
                 ))}
               </div>
-            </div>
+              <label className="setting-row"><span>Automatically hide the dock</span>
+                <input type="checkbox" className="ui-switch" checked={theme.dockAutoHide} onChange={(event) => setTheme({ dockAutoHide: event.target.checked })} />
+              </label>
+            </section>
           </div>
         )}
 
         {/* SOUND & AUDIO */}
         {activeCategory === 'sound' && (
-          <div className="space-y-6 max-w-xl">
+          <div className="settings-page">
             <div>
-              <h2 className="text-lg font-bold text-white mb-1">Sound & Audio</h2>
-              <p className="text-xs text-gray-400">Synthesizer volume and system sound effects.</p>
+              <h2 className="text-lg font-bold text-ink mb-1">Sound & Audio</h2>
+              <p className="text-xs text-muted">Synthesizer volume and system sound effects.</p>
             </div>
 
-            <div className="bg-[#1e293b] p-4 rounded-xl border border-gray-700/60 space-y-4">
+            <div className="bg-raised p-4 rounded-xl border border-line space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <span className="text-sm font-semibold text-white block">System Sound Effects</span>
-                  <span className="text-xs text-gray-400">Boot chime, window snapping, alerts</span>
+                  <span className="text-sm font-semibold text-ink block">System Sound Effects</span>
+                  <span className="text-xs text-muted">Boot chime, window snapping, alerts</span>
                 </div>
                 <button
                   onClick={handleToggleMute}
                   className={`p-2 rounded-lg border flex items-center gap-1.5 text-xs font-semibold ${
                     !isMuted
-                      ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400'
-                      : 'border-gray-700 bg-gray-800 text-gray-400'
+                      ? 'border-emerald-500 bg-positive/10 text-positive'
+                      : 'border-line bg-control text-muted'
                   }`}
                 >
                   {!isMuted ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
@@ -441,10 +298,10 @@ export const SettingsApp: React.FC<AppProps> = () => {
                 </button>
               </div>
 
-              <div className="space-y-2 pt-2 border-t border-gray-700/60">
+              <div className="space-y-2 pt-2 border-t border-line">
                 <div className="flex justify-between text-xs">
-                  <span className="text-gray-300">Master Volume</span>
-                  <span className="font-mono text-cyan-400">{volume}%</span>
+                  <span className="text-secondary">Master Volume</span>
+                  <span className="font-mono text-accent">{volume}%</span>
                 </div>
                 <input
                   type="range"
@@ -452,16 +309,16 @@ export const SettingsApp: React.FC<AppProps> = () => {
                   max="100"
                   value={volume}
                   onChange={(e) => handleVolumeChange(parseInt(e.target.value, 10))}
-                  className="w-full accent-cyan-400 cursor-pointer"
+                  className="w-full accent-action cursor-pointer"
                 />
               </div>
 
               <div className="pt-2">
                 <button
                   onClick={handleTestSound}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-700 hover:bg-gray-600 text-white text-xs font-medium"
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-control hover:bg-hover text-ink text-xs font-medium"
                 >
-                  <Play className="w-3.5 h-3.5 text-cyan-400" />
+                  <Play className="w-3.5 h-3.5 text-accent" />
                   <span>Test Notification Tone</span>
                 </button>
               </div>
@@ -471,39 +328,39 @@ export const SettingsApp: React.FC<AppProps> = () => {
 
         {/* STORAGE & BACKUP */}
         {activeCategory === 'storage' && (
-          <div className="space-y-6 max-w-xl">
+          <div className="settings-page">
             <div>
-              <h2 className="text-lg font-bold text-white mb-1">Storage & System Backup</h2>
-              <p className="text-xs text-gray-400">
+              <h2 className="text-lg font-bold text-ink mb-1">Storage & System Backup</h2>
+              <p className="text-xs text-muted">
                 Manage IndexedDB persistent storage, export snapshots, and restore.
               </p>
             </div>
 
-            <div className="bg-[#1e293b] p-4 rounded-xl border border-gray-700/60 space-y-3">
-              <label className="text-sm font-semibold text-white">Filesystem Capacity</label>
-              <div className="space-y-2 text-xs text-gray-300">
+            <div className="ui-card settings-card">
+              <label className="text-sm font-semibold text-ink">Filesystem Capacity</label>
+              <div className="space-y-2 text-xs text-secondary">
                 <div className="flex justify-between">
                   <span>Total Filesystem Nodes:</span>
-                  <span className="font-mono text-cyan-400">{vfs.getAllNodes().length}</span>
+                  <span className="font-mono text-accent">{vfs.getAllNodes().length}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Storage Backend:</span>
-                  <span className="font-mono text-emerald-400">IndexedDB (Browser Persistent)</span>
+                  <span className="font-mono text-positive">IndexedDB (Browser Persistent)</span>
                 </div>
               </div>
             </div>
 
-            <div className="bg-[#1e293b] p-4 rounded-xl border border-gray-700/60 space-y-3">
-              <label className="text-sm font-semibold text-white">System Backup & Restore</label>
+            <div className="ui-card settings-card">
+              <label className="text-sm font-semibold text-ink">System Backup & Restore</label>
               <div className="flex items-center gap-3">
                 <button
                   onClick={handleExportBackup}
-                  className="flex items-center gap-2 px-3 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-medium"
+                  className="flex items-center gap-2 px-3 py-2 bg-action hover:bg-action text-on-action rounded-lg text-xs font-medium"
                 >
                   <Download className="w-4 h-4" />
                   <span>Export System Backup</span>
                 </button>
-                <label className="flex items-center gap-2 px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-xs font-medium cursor-pointer">
+                <label className="flex items-center gap-2 px-3 py-2 bg-control hover:bg-hover text-ink rounded-lg text-xs font-medium cursor-pointer">
                   <Upload className="w-4 h-4" />
                   <span>Restore from Backup</span>
                   <input
@@ -516,14 +373,14 @@ export const SettingsApp: React.FC<AppProps> = () => {
               </div>
             </div>
 
-            <div className="bg-red-500/10 border border-red-500/30 p-4 rounded-xl space-y-2">
-              <h3 className="text-sm font-bold text-red-400">Factory Reset</h3>
-              <p className="text-xs text-gray-300">
+            <div className="bg-danger/10 border border-danger/30 p-4 rounded-xl space-y-2">
+              <h3 className="text-sm font-bold text-danger">Factory Reset</h3>
+              <p className="text-xs text-secondary">
                 Resets the virtual filesystem, wiping all personal files and restoring the default Linux skeleton.
               </p>
               <button
                 onClick={handleFactoryReset}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded text-xs font-semibold mt-2"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-500 text-on-action rounded text-xs font-semibold mt-2"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 <span>Erase All Data & Reset</span>
@@ -534,25 +391,25 @@ export const SettingsApp: React.FC<AppProps> = () => {
 
         {/* APPLICATION PERMISSIONS */}
         {activeCategory === 'permissions' && (
-          <div className="space-y-6 max-w-xl">
+          <div className="settings-page">
             <div>
-              <h2 className="text-lg font-bold text-white mb-1">Application Permissions</h2>
-              <p className="text-xs text-gray-400">
+              <h2 className="text-lg font-bold text-ink mb-1">Application Permissions</h2>
+              <p className="text-xs text-muted">
                 Inspect and control granular capabilities granted to installed applications.
               </p>
             </div>
 
             {permissionManager.getAllRecords().length === 0 ? (
-              <div className="bg-[#1e293b] p-6 rounded-xl border border-gray-700/60 text-center text-xs text-gray-400">
+              <div className="bg-raised p-6 rounded-xl border border-line text-center text-xs text-muted">
                 No installed applications have requested permissions yet.
               </div>
             ) : (
               permissionManager.getAllRecords().map((rec) => (
-                <div key={rec.appId} className="bg-[#1e293b] p-4 rounded-xl border border-gray-700/60 space-y-3">
-                  <div className="flex items-center justify-between pb-2 border-b border-gray-700/60">
+                <div key={rec.appId} className="ui-card settings-card">
+                  <div className="flex items-center justify-between pb-2 border-b border-line">
                     <div>
-                      <h3 className="font-semibold text-white text-sm">{rec.appId}</h3>
-                      <p className="text-[11px] text-gray-400">
+                      <h3 className="font-semibold text-ink text-sm">{rec.appId}</h3>
+                      <p className="text-[11px] text-muted">
                         Updated: {new Date(rec.updatedAt).toLocaleString()}
                       </p>
                     </div>
@@ -561,7 +418,7 @@ export const SettingsApp: React.FC<AppProps> = () => {
                         permissionManager.resetPermissions(rec.appId);
                         setForceUpdate((v) => v + 1);
                       }}
-                      className="px-2.5 py-1 text-[11px] rounded bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 transition-colors"
+                      className="px-2.5 py-1 text-[11px] rounded bg-control hover:bg-hover text-secondary border border-line transition-colors"
                     >
                       Reset Defaults
                     </button>
@@ -574,24 +431,24 @@ export const SettingsApp: React.FC<AppProps> = () => {
                       return (
                         <div
                           key={scope}
-                          className="flex items-center justify-between p-2.5 rounded-lg bg-gray-900/60 border border-gray-800 text-xs"
+                          className="flex items-center justify-between p-2.5 rounded-lg bg-inset border border-line text-xs"
                         >
                           <div className="pr-4">
                             <div className="flex items-center gap-2">
-                              <span className="font-medium text-white">{meta?.name || scope}</span>
+                              <span className="font-medium text-ink">{meta?.name || scope}</span>
                               <span
                                 className={`px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase ${
                                   meta?.risk === 'high'
-                                    ? 'bg-red-950 text-red-400 border border-red-800/40'
+                                    ? 'bg-red-950 text-danger border border-danger/40'
                                     : meta?.risk === 'medium'
-                                    ? 'bg-amber-950 text-amber-400 border border-amber-800/40'
-                                    : 'bg-emerald-950 text-emerald-400 border border-emerald-800/40'
+                                    ? 'bg-amber-950 text-caution border border-caution/40'
+                                    : 'bg-emerald-950 text-positive border border-positive/40'
                                 }`}
                               >
                                 {meta?.risk || 'low'}
                               </span>
                             </div>
-                            <p className="text-[10px] text-gray-400 mt-0.5">
+                            <p className="text-[10px] text-muted mt-0.5">
                               {meta?.description || scope}
                             </p>
                           </div>
@@ -606,8 +463,8 @@ export const SettingsApp: React.FC<AppProps> = () => {
                             }}
                             className={`px-3 py-1 rounded text-xs font-semibold transition-colors ${
                               isGranted
-                                ? 'bg-emerald-600/80 hover:bg-emerald-500 text-white'
-                                : 'bg-red-600/80 hover:bg-red-500 text-white'
+                                ? 'bg-positive/80 hover:bg-emerald-500 text-on-action'
+                                : 'bg-danger/80 hover:bg-red-500 text-on-action'
                             }`}
                           >
                             {isGranted ? 'Allowed' : 'Denied'}
@@ -624,38 +481,38 @@ export const SettingsApp: React.FC<AppProps> = () => {
 
         {/* USERS */}
         {activeCategory === 'users' && (
-          <div className="space-y-6 max-w-xl">
+          <div className="settings-page">
             <div>
-              <h2 className="text-lg font-bold text-white mb-1">User Accounts</h2>
-              <p className="text-xs text-gray-400">Manage user profile information and permissions.</p>
+              <h2 className="text-lg font-bold text-ink mb-1">User Accounts</h2>
+              <p className="text-xs text-muted">Manage user profile information and permissions.</p>
             </div>
 
-            <div className="bg-[#1e293b] p-4 rounded-xl border border-gray-700/60 space-y-4">
+            <div className="bg-raised p-4 rounded-xl border border-line space-y-4">
               <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-full bg-cyan-500/20 border-2 border-cyan-400 flex items-center justify-center text-cyan-300 font-bold text-xl">
+                <div className="w-14 h-14 rounded-full bg-selection border-2 border-accent flex items-center justify-center text-accent font-bold text-xl">
                   {user.displayName.charAt(0)}
                 </div>
                 <div>
-                  <h3 className="font-semibold text-white">{user.displayName}</h3>
-                  <p className="text-xs text-gray-400">
-                    @{user.username} &bull; <span className="text-cyan-400 uppercase">{user.role}</span>
+                  <h3 className="font-semibold text-ink">{user.displayName}</h3>
+                  <p className="text-xs text-muted">
+                    @{user.username} &bull; <span className="text-accent uppercase">{user.role}</span>
                   </p>
                 </div>
               </div>
 
-              <div className="space-y-3 pt-2 border-t border-gray-700/60">
+              <div className="space-y-3 pt-2 border-t border-line">
                 <div>
-                  <label className="text-xs text-gray-400 block mb-1">Display Name</label>
+                  <label className="text-xs text-muted block mb-1">Display Name</label>
                   <input
                     type="text"
                     value={displayNameInput}
                     onChange={(e) => setDisplayNameInput(e.target.value)}
-                    className="w-full bg-[#111827] border border-gray-700 rounded-lg p-2 text-xs text-white outline-none focus:border-cyan-500"
+                    className="w-full bg-canvas border border-line rounded-lg p-2 text-xs text-ink outline-none focus:border-accent"
                   />
                 </div>
                 <button
                   onClick={() => setUser({ displayName: displayNameInput })}
-                  className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-medium"
+                  className="px-3 py-1.5 bg-action hover:bg-action text-on-action rounded-lg text-xs font-medium"
                 >
                   Save Changes
                 </button>
@@ -666,53 +523,53 @@ export const SettingsApp: React.FC<AppProps> = () => {
 
         {/* ABOUT */}
         {activeCategory === 'about' && (
-          <div className="space-y-6 max-w-xl">
+          <div className="settings-page">
             <div>
-              <h2 className="text-lg font-bold text-white mb-1">About AetherOS</h2>
-              <p className="text-xs text-gray-400">High-fidelity web-standard virtual operating system.</p>
+              <h2 className="text-lg font-bold text-ink mb-1">About AetherOS</h2>
+              <p className="text-xs text-muted">High-fidelity web-standard virtual operating system.</p>
             </div>
 
-            <div className="bg-[#1e293b] p-4 rounded-xl border border-gray-700/60 space-y-3 text-xs text-gray-300">
-              <div className="flex justify-between py-1 border-b border-gray-700/60">
+            <div className="bg-raised p-4 rounded-xl border border-line space-y-3 text-xs text-secondary">
+              <div className="flex justify-between py-1 border-b border-line">
                 <span>OS Name:</span>
-                <span className="font-semibold text-white">AetherOS</span>
+                <span className="font-semibold text-ink">AetherOS</span>
               </div>
-              <div className="flex justify-between py-1 border-b border-gray-700/60">
+              <div className="flex justify-between py-1 border-b border-line">
                 <span>Version:</span>
-                <span className="font-mono text-cyan-400">v{AETHER_VERSION.version} ({AETHER_VERSION.codename})</span>
+                <span className="font-mono text-accent">v{AETHER_VERSION.version} ({AETHER_VERSION.codename})</span>
               </div>
-              <div className="flex justify-between py-1 border-b border-gray-700/60">
+              <div className="flex justify-between py-1 border-b border-line">
                 <span>Virtual Kernel:</span>
-                <span className="font-mono text-cyan-400">{AETHER_VERSION.kernel} (AetherCore)</span>
+                <span className="font-mono text-accent">{AETHER_VERSION.kernel} (AetherCore)</span>
               </div>
-              <div className="flex justify-between py-1 border-b border-gray-700/60">
+              <div className="flex justify-between py-1 border-b border-line">
                 <span>Architecture:</span>
-                <span className="font-mono text-white">{AETHER_VERSION.architecture}</span>
+                <span className="font-mono text-ink">{AETHER_VERSION.architecture}</span>
               </div>
-              <div className="flex justify-between py-1 border-b border-gray-700/60">
+              <div className="flex justify-between py-1 border-b border-line">
                 <span>Compositor:</span>
-                <span className="font-mono text-white">{AETHER_VERSION.compositor}</span>
+                <span className="font-mono text-ink">{AETHER_VERSION.compositor}</span>
               </div>
-              <div className="flex justify-between py-1 border-b border-gray-700/60">
+              <div className="flex justify-between py-1 border-b border-line">
                 <span>Shell:</span>
-                <span className="font-mono text-white">{AETHER_VERSION.shell}</span>
+                <span className="font-mono text-ink">{AETHER_VERSION.shell}</span>
               </div>
-              <div className="flex justify-between py-1 border-b border-gray-700/60">
+              <div className="flex justify-between py-1 border-b border-line">
                 <span>Execution Runtime:</span>
-                <span className="font-mono text-purple-400">{AETHER_VERSION.runtime}</span>
+                <span className="font-mono text-iris">{AETHER_VERSION.runtime}</span>
               </div>
-              <div className="flex justify-between py-1 border-b border-gray-700/60">
+              <div className="flex justify-between py-1 border-b border-line">
                 <span>Virtual Filesystem:</span>
-                <span className="font-mono text-teal-400">{AETHER_VERSION.vfs}</span>
+                <span className="font-mono text-aqua">{AETHER_VERSION.vfs}</span>
               </div>
               <div className="flex justify-between py-1">
                 <span>Persistence:</span>
-                <span className="font-mono text-emerald-400">IndexedDB Persistent Store</span>
+                <span className="font-mono text-positive">IndexedDB Persistent Store</span>
               </div>
             </div>
           </div>
         )}
-      </div>
+      </main>
     </div>
   );
 };

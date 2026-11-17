@@ -142,15 +142,15 @@ export const StudioTerminal: React.FC<StudioTerminalProps> = ({ cwd }) => {
 
   return (
     <div
-      className="flex flex-col h-full w-full bg-[#0d1017] text-gray-200 font-mono text-xs select-text overflow-hidden cursor-text"
+      className="flex flex-col h-full w-full bg-canvas text-ink font-mono text-xs select-text overflow-hidden cursor-text"
       onClick={() => inputRef.current?.focus()}
     >
-      <div className="flex items-center justify-between px-3 py-1 bg-[#161a26] border-b border-gray-800 text-[10px] text-gray-400 select-none">
+      <div className="flex items-center justify-between px-3 py-1 bg-side border-b border-line text-[10px] text-muted select-none">
         <div className="flex items-center gap-1.5">
-          <TerminalIcon className="w-3 h-3 text-cyan-400" />
+          <TerminalIcon className="w-3 h-3 text-accent" />
           <span>Integrated Project Terminal</span>
           {isRunning && (
-            <span className="text-amber-400 font-normal">
+            <span className="text-caution font-normal">
               (Running PID {activePid})
             </span>
           )}
@@ -160,7 +160,7 @@ export const StudioTerminal: React.FC<StudioTerminalProps> = ({ cwd }) => {
             e.stopPropagation();
             setHistory([]);
           }}
-          className="flex items-center gap-1 hover:text-white transition-colors"
+          className="flex items-center gap-1 hover:text-ink transition-colors"
           title="Clear Terminal"
         >
           <Trash2 className="w-3 h-3" />
@@ -177,7 +177,7 @@ export const StudioTerminal: React.FC<StudioTerminalProps> = ({ cwd }) => {
 
         {/* Active prompt row */}
         <div className="flex items-center gap-1 leading-5">
-          <span className="text-cyan-400 select-none">
+          <span className="text-accent select-none">
             aether@aetheros:{workingDir.replace('/home/aether', '~')}$
           </span>
           <input
@@ -190,7 +190,7 @@ export const StudioTerminal: React.FC<StudioTerminalProps> = ({ cwd }) => {
             readOnly={isRunning}
             spellCheck={false}
             autoFocus
-            className="flex-1 bg-transparent text-white outline-none caret-cyan-400 border-none p-0 text-xs"
+            className="flex-1 bg-transparent text-ink outline-none caret-cyan-400 border-none p-0 text-xs"
           />
         </div>
         <div ref={bottomRef} />

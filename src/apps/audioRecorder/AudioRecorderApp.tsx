@@ -146,29 +146,29 @@ export const AudioRecorderApp: React.FC<AppProps> = () => {
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#131622] text-white p-5 select-none justify-between items-center">
+    <div className="recorder-app flex flex-col h-full bg-canvas text-ink p-5 select-none justify-between items-center overflow-auto">
       {/* Header */}
-      <div className="w-full flex items-center justify-between pb-2 border-b border-gray-800 text-xs text-gray-400">
-        <span className="font-semibold text-cyan-400">Sound Studio Recorder</span>
+      <div className="w-full flex items-center justify-between pb-2 border-b border-line text-xs text-muted">
+        <span className="font-semibold text-accent">Microphone</span>
         <span>/home/aether/Music</span>
       </div>
 
       {/* Mic Animation & Visualizer */}
       <div className="flex flex-col items-center my-6">
         <div
-          className={`w-28 h-28 rounded-full flex items-center justify-center transition-all ${
+          className={`recorder-meter rounded-full flex items-center justify-center transition-colors ${
             isRecording
-              ? 'bg-red-500/20 border-2 border-red-500 animate-pulse shadow-2xl shadow-red-500/30'
-              : 'bg-gray-800/80 border border-gray-700'
+              ? 'bg-danger/20 border-2 border-red-500  shadow-2xl shadow-red-500/30'
+              : 'bg-control border border-line'
           }`}
         >
-          <Mic className={`w-12 h-12 ${isRecording ? 'text-red-400' : 'text-gray-400'}`} />
+          <Mic className={`w-12 h-12 ${isRecording ? 'text-danger' : 'text-muted'}`} />
         </div>
 
-        <div className="font-mono text-3xl font-extrabold mt-4 tracking-wider text-cyan-300">
+        <div className="font-mono text-3xl font-extrabold mt-4 tracking-wider text-accent">
           {formatTime(recordingSeconds)}
         </div>
-        <span className="text-xs text-gray-400 mt-1">
+        <span className="text-xs text-muted mt-1">
           {isRecording ? 'Recording in progress...' : recordedBlobUrl ? 'Ready to save' : 'Ready'}
         </span>
       </div>
@@ -184,11 +184,11 @@ export const AudioRecorderApp: React.FC<AppProps> = () => {
       )}
 
       {/* Control Buttons */}
-      <div className="flex items-center gap-4 w-full justify-center pt-4 border-t border-gray-800">
+      <div className="flex flex-wrap items-center gap-2 w-full justify-center pt-4 border-t border-line">
         {!isRecording ? (
           <button
             onClick={startRecording}
-            className="flex items-center gap-2 px-5 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-full font-semibold text-xs shadow-lg transition-transform hover:scale-105"
+            className="flex items-center gap-2 px-5 py-2.5 recorder-record ui-button text-on-action"
           >
             <Mic className="w-4 h-4" />
             <span>Record</span>
@@ -196,7 +196,7 @@ export const AudioRecorderApp: React.FC<AppProps> = () => {
         ) : (
           <button
             onClick={stopRecording}
-            className="flex items-center gap-2 px-5 py-2.5 bg-gray-700 hover:bg-gray-600 text-white rounded-full font-semibold text-xs shadow-lg transition-transform hover:scale-105"
+            className="flex items-center gap-2 px-5 py-2.5 bg-control hover:bg-hover text-ink rounded-full font-semibold text-xs shadow-lg transition-transform hover:scale-105"
           >
             <Square className="w-4 h-4" />
             <span>Stop</span>
@@ -217,14 +217,14 @@ export const AudioRecorderApp: React.FC<AppProps> = () => {
                   }
                 }
               }}
-              className="p-2.5 bg-gray-800 hover:bg-gray-700 rounded-full text-white"
+              className="p-2.5 bg-control hover:bg-hover rounded-full text-ink"
               title="Play / Pause"
             >
               {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
             </button>
             <button
               onClick={handleSaveToVfs}
-              className="flex items-center gap-1.5 px-4 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-full text-xs font-semibold shadow transition-transform hover:scale-105"
+              className="flex items-center gap-1.5 px-4 py-2.5 bg-action hover:bg-action text-on-action rounded-full text-xs font-semibold shadow transition-transform hover:scale-105"
             >
               <Save className="w-4 h-4" />
               <span>Save to Music</span>

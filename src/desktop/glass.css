@@ -1,0 +1,302 @@
+/* Liquid Glass optics. Shared shell components keep their solid styles when
+   the appearance, system preference or browser disables transparency. */
+:root[data-appearance="liquid-glass"] {
+  --ui-radius-panel: 27px;
+  --ui-radius-dock: 999px;
+  --glass-clear-tint: rgb(8 12 20 / .12);
+  --glass-regular-tint: rgb(13 17 24 / .57);
+  --glass-thick-tint: rgb(12 16 24 / .22);
+  --glass-nav-tint: rgb(16 20 28 / .54);
+  --glass-control-tint: rgb(11 14 21 / .26);
+  --glass-highlight: rgb(255 255 255 / .64);
+  --glass-keyline: rgb(240 248 255 / .26);
+  --glass-return: rgb(226 242 255 / .38);
+  --glass-spring: cubic-bezier(.23, .85, .28, 1.15);
+  --glass-tone: brightness(.51);
+  --glass-bevel: inset 0 1px 1px #fff6, inset 0 3px 10px #edf7ff22, inset 0 -2px 4px #090e242d;
+  --glass-elevation: 0 12px 28px #04091242, 0 3px 7px #04091222;
+}
+:root.light[data-appearance="liquid-glass"] {
+  --glass-clear-tint: rgb(246 249 255 / .57);
+  --glass-regular-tint: rgb(249 251 255 / .78);
+  --glass-thick-tint: rgb(247 250 255 / .62);
+  --glass-nav-tint: rgb(246 249 255 / .72);
+  --glass-control-tint: rgb(255 255 255 / .24);
+  --glass-highlight: rgb(255 255 255 / .91);
+  --glass-keyline: rgb(255 255 255 / .47);
+  --glass-return: rgb(246 249 255 / .64);
+  --glass-tone: contrast(.78) brightness(1.12);
+}
+
+.glass-filter-definitions { position: absolute; pointer-events: none; }
+
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root[data-appearance="liquid-glass"][data-glass-effects] {
+    --ui-material: linear-gradient(155deg, #fff2, transparent 55%), var(--glass-regular-tint);
+    --ui-material-filter: blur(15px) saturate(1.12);
+    --ui-material-rim: var(--glass-keyline);
+    --ui-material-highlight: var(--glass-bevel);
+  }
+  [data-appearance="liquid-glass"][data-glass-effects] .glass-clear {
+    --ui-material: linear-gradient(162deg, #fff1, transparent 41%, #fff1), var(--glass-clear-tint);
+    --ui-material-filter: var(--glass-lens,) blur(2.5px) saturate(1.23) var(--glass-tone);
+  }
+  [data-appearance="liquid-glass"][data-glass-effects] .glass-thick {
+    --ui-material: linear-gradient(145deg, #fff1, transparent 46%, #fff1), var(--glass-thick-tint);
+    --ui-material-filter: var(--glass-lens,) blur(5px) saturate(1.22) var(--glass-tone);
+  }
+  [data-appearance="liquid-glass"][data-glass-effects] .glass-button {
+    --ui-material: linear-gradient(160deg, #fff2, transparent 59%, #fff1), var(--glass-clear-tint);
+    --ui-material-filter: blur(5px) saturate(1.18) var(--glass-tone);
+  }
+  [data-appearance="liquid-glass"][data-glass-effects] .glass-navigation {
+    --ui-material: linear-gradient(150deg, #fff2, transparent 72%), var(--glass-nav-tint);
+    --ui-material-filter: blur(11px) saturate(1.14);
+    background: var(--ui-material);
+    -webkit-backdrop-filter: var(--ui-material-filter);
+    backdrop-filter: var(--ui-material-filter);
+  }
+  [data-appearance="liquid-glass"][data-glass-effects] .glass-rim::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    padding: 1px;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(135deg, var(--glass-highlight), transparent 30%, transparent 55%, var(--glass-return) 92%);
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+  }
+  [data-appearance="liquid-glass"][data-glass-effects] :is(.quick-heading, .quick-group, .quick-action) {
+    position: relative;
+    box-shadow: var(--glass-elevation), var(--glass-bevel);
+  }
+  [data-appearance="liquid-glass"][data-glass-effects] .quick-group {
+    padding-block: 19px;
+    box-shadow: 0 18px 38px #04091245, var(--glass-bevel);
+  }
+  [data-appearance="liquid-glass"][data-glass-effects] .window-frame { background: transparent; }
+  [data-appearance="liquid-glass"][data-glass-effects] .window-frame[data-focused="true"] {
+    border-color: var(--glass-keyline);
+    box-shadow: 0 26px 68px #030a1a68, 0 5px 14px #05102241;
+  }
+  [data-appearance="liquid-glass"][data-glass-effects] .window-frame[data-focused="false"] .window-titlebar {
+    --ui-material: var(--glass-regular-tint);
+    --ui-material-highlight: inset 0 1px 0 #fff3;
+  }
+  [data-appearance="liquid-glass"][data-glass-effects] .window-frame[data-interacting="true"] .window-titlebar {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--ui-solid);
+  }
+  [data-appearance="liquid-glass"][data-glass-effects] .window-frame[data-app="settings"] > .window-client {
+    background: transparent;
+  }
+  [data-appearance="liquid-glass"][data-glass-effects] .settings-nav {
+    position: relative;
+    border: 1px solid var(--glass-keyline);
+    box-shadow: var(--glass-elevation), var(--glass-bevel);
+  }
+  [data-appearance="liquid-glass"][data-glass-effects] .glass-segments {
+    background: var(--glass-control-tint);
+    border-color: var(--glass-keyline);
+  }
+  [data-appearance="liquid-glass"][data-glass-effects] .dock {
+    box-shadow: var(--glass-elevation), var(--glass-bevel);
+  }
+}
+
+/* Geometry and interaction also apply to the solid Liquid Glass fallback. */
+[data-appearance="liquid-glass"] .quick-settings {
+  animation-name: glass-open;
+  /* Release the animated opacity layer so the modules can sample the desktop. */
+  animation-fill-mode: backwards;
+}
+@keyframes glass-open {
+  from { opacity: 0; scale: .91 .84; }
+  to { opacity: 1; scale: 1; }
+}
+[data-appearance="liquid-glass"] .glass-interactive {
+  transition: background var(--ui-fast), scale 210ms var(--glass-spring), box-shadow var(--ui-fast);
+}
+[data-appearance="liquid-glass"][data-glass-effects] .glass-interactive:hover {
+  box-shadow: var(--glass-elevation), inset 1px 2px 8px #fff5;
+}
+[data-appearance="liquid-glass"] .glass-interactive:active { scale: .92; }
+[data-appearance="liquid-glass"] .glass-segments {
+  position: relative;
+  isolation: isolate;
+  gap: 0;
+  padding: 4px;
+  border-radius: 999px;
+}
+[data-appearance="liquid-glass"] .glass-segments::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 4px auto 4px 4px;
+  width: calc((100% - 8px) / var(--glass-count));
+  border-radius: inherit;
+  translate: calc(100% * var(--glass-index));
+  background: linear-gradient(150deg, #fff4, transparent 65%), var(--ui-action);
+  box-shadow: inset 0 1px 1px #fff7, 0 2px 5px #05091143;
+  transition: translate 280ms var(--glass-spring);
+}
+[data-appearance="liquid-glass"] .glass-segments .ui-button {
+  min-width: 0;
+  border: 0;
+  border-radius: inherit;
+  color: var(--ui-ink);
+  background: transparent;
+  line-height: 1.2;
+}
+[data-appearance="liquid-glass"] .glass-segments .ui-button[aria-pressed="true"] { color: white; background: transparent; border-color: transparent; }
+[data-appearance="liquid-glass"] .glass-segments .ui-button:hover:not([aria-pressed="true"]) { background: #fff2; }
+[data-appearance="liquid-glass"] .glass-slider { min-height: 126px; }
+[data-appearance="liquid-glass"] .glass-slider-fill::before {
+  background: linear-gradient(90deg, #d1e0f0, #fbfdff 42%, #e8f1fa);
+  box-shadow: inset 0 1px 1px #fff, 0 -1px 7px #ffffff4c;
+}
+[data-appearance="liquid-glass"] .glass-slider-value {
+  z-index: 1;
+  color: #fff;
+  text-shadow: 0 1px 3px #0b1527, 0 0 4px #0b1527;
+}
+[data-appearance="liquid-glass"] .glass-slider input { appearance: none; background: transparent; }
+[data-appearance="liquid-glass"] .glass-slider input::-webkit-slider-runnable-track { background: transparent; }
+[data-appearance="liquid-glass"] .glass-slider input::-moz-range-track { background: transparent; }
+[data-appearance="liquid-glass"] .glass-slider input::-webkit-slider-thumb {
+  appearance: none;
+  width: 32px;
+  height: 12px;
+  border: 1px solid #fff9;
+  border-radius: 50px;
+  background: #fff8;
+  box-shadow: 0 2px 5px #11223548, inset 0 1px 2px #fff;
+}
+[data-appearance="liquid-glass"] .glass-slider input::-moz-range-thumb {
+  width: 32px;
+  height: 12px;
+  border: 1px solid #fff9;
+  border-radius: 50px;
+  background: #fff8;
+  box-shadow: 0 2px 5px #11223548, inset 0 1px 2px #fff;
+}
+[data-appearance="liquid-glass"] .glass-slider input:active::-webkit-slider-thumb { background: #fff; }
+[data-appearance="liquid-glass"] .glass-slider input:active::-moz-range-thumb { background: #fff; }
+[data-appearance="liquid-glass"] .quick-action { min-height: 47px; }
+[data-appearance="liquid-glass"] .quick-volume .quick-action { justify-self: center; width: 47px; }
+
+[data-appearance="liquid-glass"] .dock { gap: 11px; padding-inline: 12px; }
+[data-appearance="liquid-glass"] .dock-apps { gap: 4px; padding-inline: 9px; border-color: currentColor; border-color: color-mix(in srgb, currentColor 18%, transparent); }
+[data-appearance="liquid-glass"] .dock-app {
+  --tile-size: 45px;
+  width: 53px;
+  height: 57px;
+  border-radius: 16px;
+}
+[data-appearance="liquid-glass"] .dock-app[data-focused="true"] { background: transparent; border-color: transparent; }
+[data-appearance="liquid-glass"] .dock-app[data-running="true"]::after {
+  bottom: 0;
+  background: currentColor;
+  box-shadow: 0 0 2px #080e19;
+  transition: width 220ms var(--glass-spring);
+}
+[data-appearance="liquid-glass"] .dock-app[data-focused="true"]::after { width: 13px; }
+[data-appearance="liquid-glass"] .dock-app .app-tile { transition: translate 240ms var(--glass-spring), scale 240ms var(--glass-spring); }
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  :root[data-appearance="liquid-glass"]:not([data-reduced-motion]) .dock-app:hover .app-tile { translate: 0 -2px; scale: 1.13; }
+  :root[data-appearance="liquid-glass"]:not([data-reduced-motion]) .dock-app:is(:has(+ .dock-app:hover), .dock-app:hover + .dock-app) .app-tile { scale: 1.055; }
+}
+[data-appearance="liquid-glass"] .dock-app:active .app-tile { scale: .93; }
+[data-appearance="liquid-glass"] .dock-launch {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at 28% 12%, #d2ebff9c, transparent 60%), linear-gradient(145deg, #6184ba, #223658 82%);
+}
+[data-appearance="liquid-glass"] .dock-workspaces {
+  border-radius: 17px;
+  background: color-mix(in srgb, var(--ui-solid) 31%, transparent);
+  box-shadow: inset 0 1px 2px #03102738, 0 1px 0 #fff3;
+}
+[data-appearance="liquid-glass"] .dock-workspaces button { color: var(--ui-ink); border-radius: 50%; }
+[data-appearance="liquid-glass"] .dock-workspaces button[aria-pressed="true"] { color: #fff; box-shadow: inset 0 1px 1px #fff5; }
+[data-appearance="liquid-glass"] :is(.dock-system-button, .dock-clock, .dock-tip) { border-radius: 999px; }
+[data-appearance="liquid-glass"] .dock-system-button { color: var(--ui-ink); }
+[data-appearance="liquid-glass"] :is(.dock-network, .dock-clock span + span) { color: var(--ui-ink); }
+[data-appearance="liquid-glass"][data-dock="left"] .dock-apps { padding: 6px 2px; }
+
+[data-appearance="liquid-glass"] .desktop-shortcut {
+  --tile-size: 63px;
+  min-height: 91px;
+  gap: 4px;
+  border-radius: 21px;
+}
+[data-appearance="liquid-glass"] .desktop-shortcut .app-tile > :is(svg, img) { width: 34px; height: 34px; }
+[data-appearance="liquid-glass"] .desktop-shortcut:hover { background: #e5efff23; }
+[data-appearance="liquid-glass"] .desktop-shortcut[aria-pressed="true"] { background: #cbdefa42; border-color: #f3f8ff77; }
+[data-appearance="liquid-glass"] .desktop-shortcut-label { padding-inline: 0; background: transparent; font-size: 11.5px; font-weight: 630; text-shadow: 0 1px 3px #050c18, 0 0 5px #050c18, 0 0 10px #050c18; }
+[data-appearance="liquid-glass"] .app-tile {
+  position: relative;
+  border-radius: 25%;
+  color: var(--icon-foreground, #fff);
+  border-color: #fff5;
+  background: radial-gradient(ellipse at 25% 4%, #ffffff75, transparent 64%),
+    linear-gradient(148deg, var(--icon-light), var(--icon-pigment) 59%, var(--icon-shadow));
+  box-shadow: inset 0 1px 1px #ffffff8a, inset 0 -2px 4px #040a241c, 0 3px 6px #09162943;
+}
+[data-appearance="liquid-glass"] .app-tile > svg { filter: drop-shadow(0 1px 1px #0004); }
+[data-appearance="liquid-glass"] .app-tile::before {
+  content: "";
+  position: absolute;
+  inset: 17%;
+  border-radius: 21%;
+  background: var(--icon-inlay, none);
+}
+[data-appearance="liquid-glass"] .app-tile[data-icon="Folder"] > svg { fill: #ffffff8a; }
+[data-appearance="liquid-glass"] .app-tile[data-icon="Terminal"] {
+  --icon-inlay: linear-gradient(148deg, #182331, #08151e);
+  color: #c8ffeb;
+}
+[data-appearance="liquid-glass"] .app-tile[data-icon="Activity"] {
+  --icon-inlay: linear-gradient(148deg, #e23f65, #9a244e);
+}
+[data-appearance="liquid-glass"] .app-tile[data-icon="Settings"] {
+  --icon-inlay: repeating-radial-gradient(circle at center, #b6c3db14 0 2px, transparent 2px 4px), #253d5a36;
+}
+[data-appearance="liquid-glass"] .app-tile[data-icon="FileText"] { color: #16406f; }
+
+[data-appearance="liquid-glass"] .window-titlebar { min-height: 49px; padding-inline: 18px 10px; }
+[data-appearance="liquid-glass"] .window-controls button {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ui-solid) 45%, transparent);
+  box-shadow: inset 0 1px 0 #fff3;
+}
+[data-appearance="liquid-glass"] .window-controls button:hover { background: var(--ui-hover); }
+[data-appearance="liquid-glass"] .window-controls button:last-child:hover { background: #a42d43; }
+[data-appearance="liquid-glass"] .settings-app { gap: 8px; padding: 8px; }
+[data-appearance="liquid-glass"] .settings-nav { border-radius: 19px; padding: 10px 8px; }
+[data-appearance="liquid-glass"] .settings-nav button { border-radius: 999px; color: var(--ui-ink); }
+[data-appearance="liquid-glass"] .settings-nav button[aria-pressed="true"] {
+  background: linear-gradient(150deg, #fff3, transparent 65%), var(--ui-action);
+  color: white;
+  box-shadow: inset 0 1px 0 #fff6, 0 3px 6px #101b3535;
+}
+[data-appearance="liquid-glass"] .settings-content { border-radius: 19px; padding: clamp(14px, 3cqi, 24px); }
+[data-appearance="liquid-glass"] .settings-card { border-radius: 18px; }
+
+@media (max-width: 900px), (max-height: 570px) {
+  [data-appearance="liquid-glass"] .dock { gap: 5px; padding-inline: 7px; }
+  [data-appearance="liquid-glass"] .dock-apps { gap: 2px; padding-inline: 4px; }
+  [data-appearance="liquid-glass"] .dock-app { --tile-size: 35px; width: 40px; height: 46px; }
+  [data-appearance="liquid-glass"] .dock-launch { width: 36px; height: 36px; }
+}
+@media (forced-colors: active) {
+  .glass-slider input { appearance: auto !important; }
+  .glass-slider-value { display: none; }
+  [data-appearance="liquid-glass"] :is(.glass-segments, .settings-nav) .ui-button[aria-pressed="true"],
+  [data-appearance="liquid-glass"] .settings-nav button[aria-pressed="true"] { outline: 1px solid Highlight; outline-offset: -2px; }
+}

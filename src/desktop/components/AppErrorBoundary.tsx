@@ -54,29 +54,29 @@ export class AppErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="flex flex-col items-center justify-center h-full p-6 text-center select-none bg-[#0f141f] text-gray-200 font-sans">
-          <div className="w-12 h-12 rounded-2xl bg-red-500/10 border border-red-500/30 flex items-center justify-center text-red-400 mb-3 shadow-lg">
+        <div className="flex flex-col items-center justify-center h-full p-6 text-center select-none bg-canvas text-ink font-sans">
+          <div className="w-12 h-12 rounded-2xl bg-danger/10 border border-danger/30 flex items-center justify-center text-danger mb-3 shadow-lg">
             <AlertTriangle className="w-6 h-6" />
           </div>
 
-          <h2 className="text-sm font-bold text-white mb-1">
+          <h2 className="text-sm font-bold text-ink mb-1">
             Application Error
           </h2>
-          <p className="text-xs text-gray-400 max-w-sm mb-4 leading-relaxed">
-            The application <span className="text-cyan-400 font-semibold">{this.props.appId}</span> crashed unexpectedly. Other system operations continue unaffected.
+          <p className="text-xs text-muted max-w-sm mb-4 leading-relaxed">
+            The application <span className="text-accent font-semibold">{this.props.appId}</span> crashed unexpectedly. Other system operations continue unaffected.
           </p>
 
           <div className="flex items-center gap-2 mb-4">
             <button
               onClick={this.handleRestart}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-cyan-500 hover:bg-cyan-400 text-black shadow-md transition-all active:scale-95"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-action hover:bg-action text-on-action shadow-md transition-all active:scale-95"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               <span>Restart Application</span>
             </button>
             <button
               onClick={this.props.onClose}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium bg-gray-800 hover:bg-gray-700 text-gray-300 transition-colors"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium bg-control hover:bg-hover text-secondary transition-colors"
             >
               <XCircle className="w-3.5 h-3.5" />
               <span>Close Window</span>
@@ -87,17 +87,17 @@ export class AppErrorBoundary extends Component<Props, State> {
           <div className="w-full max-w-md text-left">
             <button
               onClick={() => this.setState((prev) => ({ showDetails: !prev.showDetails }))}
-              className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-gray-200 transition-colors"
+              className="flex items-center gap-1 text-[11px] text-muted hover:text-ink transition-colors"
             >
               {this.state.showDetails ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
               <span>Technical Details</span>
             </button>
 
             {this.state.showDetails && (
-              <div className="mt-2 p-3 rounded-lg bg-black/60 border border-gray-800 font-mono text-[11px] text-red-300 max-h-36 overflow-y-auto selectable-text">
-                <div className="font-bold text-red-400 mb-1">{this.state.error?.name}: {this.state.error?.message}</div>
+              <div className="mt-2 p-3 rounded-lg bg-black/60 border border-line font-mono text-[11px] text-danger max-h-36 overflow-y-auto selectable-text">
+                <div className="font-bold text-danger mb-1">{this.state.error?.name}: {this.state.error?.message}</div>
                 {this.state.error?.stack && (
-                  <pre className="text-[10px] text-gray-400 whitespace-pre-wrap">{this.state.error.stack}</pre>
+                  <pre className="text-[10px] text-muted whitespace-pre-wrap">{this.state.error.stack}</pre>
                 )}
               </div>
             )}

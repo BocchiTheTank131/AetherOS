@@ -5,6 +5,8 @@ import type { WindowInstance } from '../desktop/types';
 export interface SystemContextValue {
   booted: boolean;
   theme: SystemTheme;
+  colorMode: Exclude<SystemTheme['mode'], 'system'>;
+  glassEffects: boolean;
   setTheme: (theme: Partial<SystemTheme>) => void;
   user: UserAccount;
   setUser: (user: Partial<UserAccount>) => void;
@@ -17,7 +19,7 @@ export interface SystemContextValue {
   windows: WindowInstance[];
   openWindow: (appId: string, props?: Record<string, unknown>) => string;
   registerCloseGuard: (id: string, guard: () => boolean | Promise<boolean>) => () => void;
-  closeWindow: (id: string) => void;
+  closeWindow: (id: string, beforeClose?: () => Promise<void>) => void;
   focusWindow: (id: string) => void;
   minimizeWindow: (id: string) => void;
   maximizeWindow: (id: string) => void;

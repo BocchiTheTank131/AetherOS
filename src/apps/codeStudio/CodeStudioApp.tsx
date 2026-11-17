@@ -748,30 +748,28 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
   const editorUnavailable = Boolean(activeNode && (activeNode.isBinary || activeNode.size > 2 * 1024 * 1024));
 
   return (
-    <div className="flex flex-col h-full bg-[#0d1117] text-gray-200 font-mono text-xs overflow-hidden select-text relative">
+    <div className="studio-app flex flex-col h-full bg-canvas text-ink text-xs overflow-hidden select-text relative">
       {/* Top Controls Toolbar */}
-      <div className="flex items-center justify-between px-3 py-1.5 bg-[#161b22] border-b border-gray-800 select-none">
+      <div className="studio-toolbar select-none">
         <div className="flex items-center gap-2">
-          <Code2 className="w-4 h-4 text-cyan-400" />
-          <span className="font-semibold text-white">Code Studio 3.0</span>
-          <span className="text-gray-500">|</span>
-          <span className="text-gray-400 truncate max-w-[200px]" title={projectRoot}>
+          <Code2 size={17} className="text-accent shrink-0" />
+          <span className="studio-project truncate font-semibold" title={projectRoot}>
             {projectRoot.replace('/home/aether/Projects/', '')}
           </span>
 
           <button
             onClick={() => setNewProjectModal(true)}
-            className="flex items-center gap-1 px-2 py-0.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded text-[11px] transition-colors ml-1"
+            className="flex items-center gap-1 px-2 py-0.5 bg-control hover:bg-hover text-secondary rounded text-[11px] transition-colors ml-1"
             title="Create Project from Template"
           >
-            <Plus className="w-3 h-3 text-cyan-400" />
+            <Plus className="w-3 h-3 text-accent" />
             <span>New Project</span>
           </button>
-          <button onClick={openProject} className="px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700">Open Project</button>
+          <button onClick={openProject} className="px-2 py-0.5 rounded bg-control hover:bg-hover">Open Project</button>
         </div>
 
-        <div className="flex items-center gap-1.5 flex-wrap justify-end">
-          <label className="flex items-center gap-1 text-[10px]">
+        <div className="studio-toolbar-actions">
+          <label className="flex items-center gap-1.5 text-xs whitespace-nowrap">
             <input type="checkbox" checked={autosave} onChange={(event) => setAutosave(event.target.checked)} />
             Autosave
           </label>
@@ -779,7 +777,7 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
           {isRunning ? (
             <button
               onClick={handleStopExecution}
-              className="flex items-center gap-1 px-2.5 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded text-xs font-medium animate-pulse"
+              className="flex items-center gap-1 px-2.5 py-1 bg-rose-700 hover:bg-rose-800 text-on-action rounded-lg text-xs font-medium"
               title="Stop Running Process"
             >
               <Square className="w-3.5 h-3.5" />
@@ -788,13 +786,7 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
           ) : (
             <button
               onClick={handleRunActiveFile}
-              className={`flex items-center gap-1 px-2.5 py-1 text-white rounded text-xs font-medium shadow-sm transition-colors ${
-                activeFile.endsWith('.py')
-                  ? 'bg-amber-600 hover:bg-amber-500'
-                  : activeFile.endsWith('.ts')
-                  ? 'bg-blue-600 hover:bg-blue-500'
-                  : 'bg-purple-600 hover:bg-purple-500'
-              }`}
+              className="ui-button primary"
               title="Run or Compile Active File"
             >
               <Play className="w-3.5 h-3.5" />
@@ -810,7 +802,7 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
 
           <button
             onClick={handleSaveAll}
-            className="flex items-center gap-1 px-2.5 py-1 bg-gray-700 hover:bg-gray-600 text-white rounded text-xs font-medium"
+            className="flex items-center gap-1 px-2.5 py-1 bg-control hover:bg-hover text-ink rounded text-xs font-medium"
             title="Save All (Ctrl+S)"
           >
             <Save className="w-3.5 h-3.5" />
@@ -820,7 +812,7 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
           {parsedManifest && (
             <button
               onClick={handleBuildPackage}
-              className="flex items-center gap-1 px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-xs font-medium shadow-sm"
+              className="flex items-center gap-1 px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-on-action rounded text-xs font-medium shadow-sm"
               title="Package Application into .aepkg Archive"
             >
               <Box className="w-3.5 h-3.5" />
@@ -831,8 +823,8 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
           {builtArchive && (
             <button
               onClick={handleInstallBuiltPackage}
-              className={`flex items-center gap-1 px-2.5 py-1 text-white rounded text-xs font-medium transition-colors ${
-                installSuccess ? 'bg-emerald-600' : 'bg-cyan-600 hover:bg-cyan-500'
+              className={`flex items-center gap-1 px-2.5 py-1 text-ink rounded text-xs font-medium transition-colors ${
+                installSuccess ? 'bg-emerald-600' : 'bg-action hover:bg-action'
               }`}
               title="Install Built Package into AetherOS"
             >
@@ -844,7 +836,7 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
           {previewRecord && (
             <button
               onClick={preview}
-              className="flex items-center gap-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-medium"
+              className="flex items-center gap-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-on-action rounded text-xs font-medium"
               title="Run Project in Sandboxed Preview"
             >
               <Eye className="w-3.5 h-3.5" />
@@ -854,15 +846,15 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
         </div>
       </div>
 
-      {saveError && <div role="alert" className="px-3 py-1 bg-rose-950/60 text-rose-200">{saveError}</div>}
+      {saveError && <div role="alert" className="px-3 py-1 bg-danger/60 text-danger">{saveError}</div>}
       {/* Main Studio Body */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Activity Bar */}
-        <div className="w-12 bg-[#0b0e14] border-r border-gray-800 flex flex-col items-center py-2 gap-3 select-none z-10">
+        <div className="studio-rail select-none">
           <button
             onClick={() => setActiveSidebar('files')}
-            className={`p-2 rounded hover:bg-gray-800 transition-colors relative ${
-              activeSidebar === 'files' ? 'text-cyan-400 bg-gray-800/60' : 'text-gray-400'
+            className={`p-2 rounded hover:bg-hover transition-colors relative ${
+              activeSidebar === 'files' ? 'text-accent bg-control' : 'text-muted'
             }`}
             title="Explorer (Files)"
           >
@@ -871,21 +863,21 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
 
           <button
             onClick={() => setActiveSidebar('git')}
-            className={`p-2 rounded hover:bg-gray-800 transition-colors relative ${
-              activeSidebar === 'git' ? 'text-cyan-400 bg-gray-800/60' : 'text-gray-400'
+            className={`p-2 rounded hover:bg-hover transition-colors relative ${
+              activeSidebar === 'git' ? 'text-accent bg-control' : 'text-muted'
             }`}
             title="Source Control (Git)"
           >
             <GitBranch className="w-5 h-5" />
             {gitStatus && !gitStatus.isClean && (
-              <span className="w-2 h-2 rounded-full bg-cyan-400 absolute top-1 right-1" />
+              <span className="w-2 h-2 rounded-full bg-action absolute top-1 right-1" />
             )}
           </button>
 
           <button
             onClick={() => setActiveSidebar('search')}
-            className={`p-2 rounded hover:bg-gray-800 transition-colors ${
-              activeSidebar === 'search' ? 'text-cyan-400 bg-gray-800/60' : 'text-gray-400'
+            className={`p-2 rounded hover:bg-hover transition-colors ${
+              activeSidebar === 'search' ? 'text-accent bg-control' : 'text-muted'
             }`}
             title="Search in Project"
           >
@@ -894,14 +886,14 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
 
           <button
             onClick={() => setActiveSidebar('problems')}
-            className={`p-2 rounded hover:bg-gray-800 transition-colors relative ${
-              activeSidebar === 'problems' ? 'text-cyan-400 bg-gray-800/60' : 'text-gray-400'
+            className={`p-2 rounded hover:bg-hover transition-colors relative ${
+              activeSidebar === 'problems' ? 'text-accent bg-control' : 'text-muted'
             }`}
             title="Problems & Diagnostics"
           >
             <AlertCircle className="w-5 h-5" />
             {projectDiagnostics.length > 0 && (
-              <span className="px-1 text-[9px] bg-rose-600 text-white rounded-full absolute -top-0.5 -right-0.5 font-bold">
+              <span className="px-1 text-[9px] bg-rose-600 text-on-action rounded-full absolute -top-0.5 -right-0.5 font-bold">
                 {projectDiagnostics.length}
               </span>
             )}
@@ -909,8 +901,8 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
 
           <button
             onClick={() => setActiveSidebar('tasks')}
-            className={`p-2 rounded hover:bg-gray-800 transition-colors ${
-              activeSidebar === 'tasks' ? 'text-cyan-400 bg-gray-800/60' : 'text-gray-400'
+            className={`p-2 rounded hover:bg-hover transition-colors ${
+              activeSidebar === 'tasks' ? 'text-accent bg-control' : 'text-muted'
             }`}
             title="Tasks & Scripts"
           >
@@ -919,17 +911,17 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
         </div>
 
         {/* Primary Sidebar Content */}
-        <div className="w-56 bg-[#161a26] border-r border-gray-800 flex flex-col select-none overflow-hidden">
+        <div className="studio-sidebar select-none">
           {/* Files Explorer */}
           {activeSidebar === 'files' && (
             <div className="flex-1 flex flex-col p-2 overflow-hidden">
-              <div className="flex items-center justify-between pb-1.5 mb-2 border-b border-gray-800 text-gray-400 font-semibold uppercase text-[10px]">
+              <div className="flex items-center justify-between pb-1.5 mb-2 border-b border-line text-muted font-semibold text-xs">
                 <span>Files</span>
                 <div className="flex items-center gap-1">
-                  <button onClick={() => setNewFileModal(true)} title="New File" className="hover:text-white">
+                  <button onClick={() => setNewFileModal(true)} title="New File" className="hover:text-ink">
                     <FilePlus className="w-3.5 h-3.5" />
                   </button>
-                  <button onClick={refreshProject} title="Refresh" className="hover:text-white">
+                  <button onClick={refreshProject} title="Refresh" className="hover:text-ink">
                     <RefreshCw className="w-3.5 h-3.5" />
                   </button>
                 </div>
@@ -950,22 +942,22 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
                         setMainView('editor');
                       }}
                       className={`flex items-center justify-between px-2 py-1 rounded text-left transition-colors ${
-                        isSelected ? 'bg-cyan-500/20 text-cyan-300 font-medium' : 'text-gray-300 hover:bg-gray-800'
+                        isSelected ? 'bg-selection text-accent font-medium' : 'text-secondary hover:bg-hover'
                       }`}
                     >
                       <div className="flex items-center gap-1.5 truncate">
                         {file.endsWith('.ts') ? (
-                          <Code2 className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+                          <Code2 className="w-3.5 h-3.5 text-accent flex-shrink-0" />
                         ) : file.endsWith('.py') ? (
-                          <Cpu className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                          <Cpu className="w-3.5 h-3.5 text-caution flex-shrink-0" />
                         ) : file.endsWith('.json') ? (
-                          <Box className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                          <Box className="w-3.5 h-3.5 text-positive flex-shrink-0" />
                         ) : (
-                          <FileCode className="w-3.5 h-3.5 text-cyan-400 flex-shrink-0" />
+                          <FileCode className="w-3.5 h-3.5 text-accent flex-shrink-0" />
                         )}
                         <span className="truncate">{name}</span>
                       </div>
-                      {dirty && <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 flex-shrink-0" />}
+                      {dirty && <span className="w-1.5 h-1.5 rounded-full bg-action flex-shrink-0" />}
                     </button>
                   );
                 })}
@@ -976,19 +968,19 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
           {/* Source Control / Git */}
           {activeSidebar === 'git' && (
             <div className="flex-1 flex flex-col p-2 overflow-hidden">
-              <div className="flex items-center justify-between pb-1.5 mb-2 border-b border-gray-800 text-gray-400 font-semibold uppercase text-[10px]">
+              <div className="flex items-center justify-between pb-1.5 mb-2 border-b border-line text-muted font-semibold text-xs">
                 <span>Source Control</span>
                 {hasGitRepo && (
-                  <span className="text-cyan-400 lowercase font-normal">{gitStatus?.branch || 'main'}</span>
+                  <span className="text-accent lowercase font-normal">{gitStatus?.branch || 'main'}</span>
                 )}
               </div>
 
               {!hasGitRepo ? (
                 <div className="flex flex-col gap-2 p-3 text-center">
-                  <p className="text-gray-400 text-[11px]">This folder is not a Git repository.</p>
+                  <p className="text-muted text-[11px]">This folder is not a Git repository.</p>
                   <button
                     onClick={handleGitInit}
-                    className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded font-medium text-xs shadow"
+                    className="px-3 py-1.5 bg-action hover:bg-action text-on-action rounded font-medium text-xs shadow"
                   >
                     Initialize Git
                   </button>
@@ -997,21 +989,21 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
                 <div className="flex-1 overflow-y-auto flex flex-col gap-2">
                   <div className="flex flex-col gap-1">
                     <div className="flex gap-1">
-                      <select aria-label="Git branch" className="min-w-0 flex-1 bg-gray-800" value={gitStatus?.branch ?? ''} onChange={(event) => void switchBranch(event.target.value)}>
+                      <select aria-label="Git branch" className="min-w-0 flex-1 bg-control" value={gitStatus?.branch ?? ''} onChange={(event) => void switchBranch(event.target.value)}>
                         {[...new Set([gitStatus?.branch ?? 'main', ...branches])].map((branch) => <option key={branch}>{branch}</option>)}
                       </select>
-                      <button className="px-1 bg-gray-800 rounded" onClick={addBranch}>New branch</button>
+                      <button className="px-1 bg-control rounded" onClick={addBranch}>New branch</button>
                     </div>
                     <textarea
                       value={commitMessage}
                       onChange={(e) => setCommitMessage(e.target.value)}
                       placeholder="Commit message"
-                      className="w-full h-16 p-2 bg-[#0d1117] border border-gray-700 rounded text-xs text-white outline-none resize-none focus:border-cyan-400"
+                      className="w-full h-16 p-2 bg-canvas border border-line rounded text-xs text-ink outline-none resize-none focus:border-accent"
                     />
                     <button
                       onClick={handleGitCommit}
                       disabled={!commitMessage.trim()}
-                      className="px-2.5 py-1 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white rounded font-medium text-xs transition-colors"
+                      className="px-2.5 py-1 bg-action hover:bg-action disabled:opacity-40 text-on-action rounded font-medium text-xs transition-colors"
                     >
                       Commit to {gitStatus?.branch || 'main'}
                     </button>
@@ -1020,27 +1012,27 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
                   {/* Changes List */}
                   {gitStatus && (
                     <div className="flex flex-col gap-1 mt-2">
-                      <span className="text-[10px] text-gray-500 font-semibold uppercase">
+                      <span className="text-[10px] text-muted font-semibold uppercase">
                         Changes ({gitStatus.unstaged.length + gitStatus.untracked.length})
                       </span>
                       {[...gitStatus.unstaged, ...gitStatus.untracked].map((item) => (
                         <div
                           key={item.filepath}
-                          className="flex items-center justify-between px-1.5 py-1 rounded hover:bg-gray-800/80 group"
+                          className="flex items-center justify-between px-1.5 py-1 rounded hover:bg-hover group"
                         >
                           <button
                             onClick={() => handleViewDiff(item.filepath)}
-                            className="flex items-center gap-1.5 truncate text-left text-gray-300 hover:text-cyan-300 flex-1"
+                            className="flex items-center gap-1.5 truncate text-left text-secondary hover:text-accent flex-1"
                             title="Click to view diff"
                           >
-                            <span className="text-[10px] font-bold text-amber-400">
+                            <span className="text-[10px] font-bold text-caution">
                               {item.status === 'untracked' ? 'U' : item.status === 'deleted' ? 'D' : 'M'}
                             </span>
                             <span className="truncate">{item.filepath}</span>
                           </button>
                           <button
                             onClick={() => handleGitStage(item.filepath)}
-                            className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-emerald-400 text-gray-400 transition-opacity"
+                            className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-positive text-muted transition-opacity"
                             title="Stage file"
                             aria-label={`Stage ${item.filepath}`}
                           >
@@ -1053,19 +1045,19 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
                       {/* Staged Changes */}
                       {gitStatus.staged.length > 0 && (
                         <>
-                          <span className="text-[10px] text-gray-500 font-semibold uppercase mt-2">
+                          <span className="text-[10px] text-muted font-semibold uppercase mt-2">
                             Staged ({gitStatus.staged.length})
                           </span>
                           {gitStatus.staged.map((item) => (
                             <div
                               key={item.filepath}
-                              className="flex items-center justify-between px-1.5 py-1 rounded hover:bg-gray-800/80"
+                              className="flex items-center justify-between px-1.5 py-1 rounded hover:bg-hover"
                             >
                               <button
                                 onClick={() => handleViewDiff(item.filepath, true)}
-                                className="flex items-center gap-1.5 truncate text-left text-emerald-300 hover:underline flex-1"
+                                className="flex items-center gap-1.5 truncate text-left text-positive hover:underline flex-1"
                               >
-                                <span className="text-[10px] font-bold text-emerald-400">
+                                <span className="text-[10px] font-bold text-positive">
                                   {item.status === 'added' ? 'A' : item.status === 'deleted' ? 'D' : 'M'}
                                 </span>
                                 <span className="truncate">{item.filepath}</span>
@@ -1080,12 +1072,12 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
 
                   {/* Commit History */}
                   {gitCommits.length > 0 && (
-                    <div className="flex flex-col gap-1 mt-3 pt-2 border-t border-gray-800">
-                      <span className="text-[10px] text-gray-500 font-semibold uppercase">Recent Commits</span>
+                    <div className="flex flex-col gap-1 mt-3 pt-2 border-t border-line">
+                      <span className="text-[10px] text-muted font-semibold uppercase">Recent Commits</span>
                       {gitCommits.map((c) => (
-                        <div key={c.oid} className="flex flex-col text-[11px] p-1 rounded hover:bg-gray-800/50">
-                          <span className="text-white truncate font-medium">{c.message}</span>
-                          <span className="text-[10px] text-gray-500">{c.oid.slice(0, 7)}</span>
+                        <div key={c.oid} className="flex flex-col text-[11px] p-1 rounded hover:bg-hover">
+                          <span className="text-ink truncate font-medium">{c.message}</span>
+                          <span className="text-[10px] text-muted">{c.oid.slice(0, 7)}</span>
                         </div>
                       ))}
                     </div>
@@ -1098,7 +1090,7 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
           {/* Search in Project */}
           {activeSidebar === 'search' && (
             <div className="flex-1 flex flex-col p-2 overflow-hidden">
-              <div className="flex items-center justify-between pb-1.5 mb-2 border-b border-gray-800 text-gray-400 font-semibold uppercase text-[10px]">
+              <div className="flex items-center justify-between pb-1.5 mb-2 border-b border-line text-muted font-semibold text-xs">
                 <span>Search</span>
               </div>
               <input
@@ -1106,7 +1098,7 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
                 value={searchQuery}
                 onChange={(e) => handleProjectSearch(e.target.value)}
                 placeholder="Search text in project..."
-                className="px-2 py-1 bg-[#0d1117] border border-gray-700 rounded text-xs text-white outline-none mb-2 focus:border-cyan-400"
+                className="px-2 py-1 bg-canvas border border-line rounded text-xs text-ink outline-none mb-2 focus:border-accent"
               />
               <div className="flex-1 overflow-y-auto flex flex-col gap-1">
                 {searchResults.map((res, idx) => (
@@ -1118,12 +1110,12 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
                       setJump({ line: res.line });
                       setMainView('editor');
                     }}
-                    className="flex flex-col text-left p-1.5 rounded hover:bg-gray-800/60 border border-transparent hover:border-gray-700 transition-colors"
+                    className="flex flex-col text-left p-1.5 rounded hover:bg-hover border border-transparent hover:border-line transition-colors"
                   >
-                    <span className="text-cyan-400 text-[11px] font-medium truncate">
+                    <span className="text-accent text-[11px] font-medium truncate">
                       {res.file.split('/').pop()}:{res.line}
                     </span>
-                    <span className="text-gray-400 text-[10px] truncate">{res.text}</span>
+                    <span className="text-muted text-[10px] truncate">{res.text}</span>
                   </button>
                 ))}
               </div>
@@ -1133,12 +1125,12 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
           {/* Problems / Diagnostics */}
           {activeSidebar === 'problems' && (
             <div className="flex-1 flex flex-col p-2 overflow-hidden">
-              <div className="flex items-center justify-between pb-1.5 mb-2 border-b border-gray-800 text-gray-400 font-semibold uppercase text-[10px]">
+              <div className="flex items-center justify-between pb-1.5 mb-2 border-b border-line text-muted font-semibold text-xs">
                 <span>Problems ({projectDiagnostics.length})</span>
               </div>
               <div className="flex-1 overflow-y-auto flex flex-col gap-1">
                 {projectDiagnostics.length === 0 ? (
-                  <div className="text-gray-500 italic p-3 text-center">No issues detected in project.</div>
+                  <div className="text-muted italic p-3 text-center">No issues detected in project.</div>
                 ) : (
                   projectDiagnostics.map((d, idx) => (
                     <button
@@ -1149,13 +1141,13 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
                         setJump({ line: d.line, col: d.col });
                         setMainView('editor');
                       }}
-                      className="flex flex-col text-left p-1.5 rounded hover:bg-gray-800/60 border border-transparent hover:border-rose-900/40"
+                      className="flex flex-col text-left p-1.5 rounded hover:bg-hover border border-transparent hover:border-danger/40"
                     >
-                      <div className="flex items-center gap-1 text-rose-400 font-medium">
+                      <div className="flex items-center gap-1 text-danger font-medium">
                         <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
                         <span className="truncate">{d.code}: {d.message}</span>
                       </div>
-                      <span className="text-gray-500 text-[10px] pl-4">
+                      <span className="text-muted text-[10px] pl-4">
                         {d.file.split('/').pop()}(Ln {d.line}, Col {d.col})
                       </span>
                     </button>
@@ -1168,26 +1160,26 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
           {/* Tasks & Build Scripts */}
           {activeSidebar === 'tasks' && (
             <div className="flex-1 flex flex-col p-2 overflow-hidden">
-              <div className="flex items-center justify-between pb-1.5 mb-2 border-b border-gray-800 text-gray-400 font-semibold uppercase text-[10px]">
+              <div className="flex items-center justify-between pb-1.5 mb-2 border-b border-line text-muted font-semibold text-xs">
                 <span>Tasks & Scripts</span>
               </div>
               <div className="flex-1 overflow-y-auto flex flex-col gap-1.5">
                 {taskRuns.map((task) => (
-                  <div key={task.pid} className="rounded border border-gray-700 p-2" role="status">
+                  <div key={task.pid} className="rounded border border-line p-2" role="status">
                     <div>{task.taskId} · PID {task.pid} · {task.status}</div>
                     {task.endTime !== undefined ? <span>Exit {task.exitCode} · {task.endTime - task.startTime} ms</span> :
                       <div className="flex justify-between"><span>{((Math.max(taskClock, task.startTime) - task.startTime) / 1000).toFixed(1)} s</span>
-                        <button className="text-rose-300" onClick={() => taskManager.cancel(task.pid)}>Stop task</button></div>}
+                        <button className="text-danger" onClick={() => taskManager.cancel(task.pid)}>Stop task</button></div>}
                   </div>
                 ))}
                 {projectTasks.map((t) => (
                   <div
                     key={t.id}
-                    className="flex items-center justify-between p-2 rounded bg-gray-900/60 border border-gray-800 hover:border-gray-700"
+                    className="flex items-center justify-between p-2 rounded bg-inset border border-line hover:border-line"
                   >
                     <div className="flex flex-col truncate pr-2">
-                      <span className="font-semibold text-white">{t.name}</span>
-                      <span className="text-[10px] text-gray-400 truncate">{t.command}</span>
+                      <span className="font-semibold text-ink">{t.name}</span>
+                      <span className="text-[10px] text-muted truncate">{t.command}</span>
                     </div>
                     <button
                       onClick={async () => {
@@ -1198,7 +1190,7 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
                           void refreshProject();
                         } catch (error) { setSaveError(String(error)); }
                       }}
-                      className="p-1.5 bg-cyan-600/80 hover:bg-cyan-500 text-white rounded"
+                      className="p-1.5 bg-selection hover:bg-action text-on-action rounded"
                       title="Run Task"
                     >
                       <Play className="w-3.5 h-3.5" />
@@ -1213,7 +1205,7 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
         {/* Center Main Editor / Preview Area */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Editor Tabs Header */}
-          <div className="flex items-center justify-between bg-[#141822] border-b border-gray-800 px-2 select-none">
+          <div className="studio-tabs select-none">
             <div className="flex items-center overflow-x-auto flex-1 scrollbar-none">
               {openTabs.map((tabPath) => {
                 const tabName = tabPath.split('/').pop() || '';
@@ -1229,15 +1221,15 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
                       setHoverText('');
                       setMainView('editor');
                     }}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 border-t-2 font-medium cursor-pointer border-r border-gray-800/60 transition-colors ${
+                    className={`flex items-center gap-1.5 px-3 py-1.5 border-t-2 font-medium cursor-pointer border-r border-line transition-colors ${
                       isSelected
-                        ? 'bg-[#0d1117] text-white border-cyan-400'
-                        : 'text-gray-400 border-transparent hover:bg-gray-800/60 hover:text-gray-200'
+                        ? 'bg-canvas text-ink border-accent'
+                        : 'text-muted border-transparent hover:bg-hover hover:text-ink'
                     }`}
                   >
-                    <FileCode className="w-3.5 h-3.5 text-cyan-400" />
+                    <FileCode className="w-3.5 h-3.5 text-accent" />
                     <span>{tabName}</span>
-                    {tabDirty && <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />}
+                    {tabDirty && <span className="w-1.5 h-1.5 rounded-full bg-action" />}
                     <button
                       aria-label={`Close ${tabName}`}
                       onClick={async (e) => {
@@ -1250,7 +1242,7 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
                         setOpenTabs(nextTabs);
                         if (activeFile === tabPath) setActiveFile(nextTabs.at(-1) ?? '');
                       }}
-                      className="p-0.5 hover:text-white rounded hover:bg-gray-700 ml-1 text-gray-500"
+                      className="p-0.5 hover:text-ink rounded hover:bg-hover ml-1 text-muted"
                     >
                       <X className="w-3 h-3" />
                     </button>
@@ -1263,11 +1255,11 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
                   onClick={preview}
                   className={`flex items-center gap-1.5 px-3 py-1.5 border-t-2 font-medium ${
                     mainView === 'preview'
-                      ? 'bg-[#0d1117] text-white border-emerald-400'
-                      : 'text-gray-400 border-transparent hover:bg-gray-800'
+                      ? 'bg-canvas text-ink border-emerald-400'
+                      : 'text-muted border-transparent hover:bg-hover'
                   }`}
                 >
-                  <Eye className="w-3.5 h-3.5 text-emerald-400" />
+                  <Eye className="w-3.5 h-3.5 text-positive" />
                   <span>Preview</span>
                 </button>
               )}
@@ -1277,11 +1269,11 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
                   onClick={() => setMainView('diff')}
                   className={`flex items-center gap-1.5 px-3 py-1.5 border-t-2 font-medium ${
                     mainView === 'diff'
-                      ? 'bg-[#0d1117] text-white border-amber-400'
-                      : 'text-gray-400 border-transparent hover:bg-gray-800'
+                      ? 'bg-canvas text-ink border-amber-400'
+                      : 'text-muted border-transparent hover:bg-hover'
                   }`}
                 >
-                  <GitBranch className="w-3.5 h-3.5 text-amber-400" />
+                  <GitBranch className="w-3.5 h-3.5 text-caution" />
                   <span>Diff: {selectedDiff.filepath}</span>
                 </button>
               )}
@@ -1291,8 +1283,8 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
             <div className="flex items-center gap-1">
               <button
                 onClick={() => setSplitMode((prev) => (prev === 'horizontal' ? 'none' : 'horizontal'))}
-                className={`p-1 rounded hover:bg-gray-800 text-gray-400 hover:text-white ${
-                  splitMode === 'horizontal' ? 'text-cyan-400 bg-gray-800' : ''
+                className={`p-1 rounded hover:bg-hover text-muted hover:text-ink ${
+                  splitMode === 'horizontal' ? 'text-accent bg-control' : ''
                 }`}
                 title="Split Editor Horizontally"
               >
@@ -1300,8 +1292,8 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
               </button>
               <button
                 onClick={() => setSplitMode((prev) => (prev === 'vertical' ? 'none' : 'vertical'))}
-                className={`p-1 rounded hover:bg-gray-800 text-gray-400 hover:text-white ${
-                  splitMode === 'vertical' ? 'text-cyan-400 bg-gray-800' : ''
+                className={`p-1 rounded hover:bg-hover text-muted hover:text-ink ${
+                  splitMode === 'vertical' ? 'text-accent bg-control' : ''
                 }`}
                 title="Split Editor Vertically"
               >
@@ -1313,27 +1305,27 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
           {/* Main Workspace Surface */}
           <div className="flex-1 flex overflow-hidden relative">
             {mainView === 'preview' ? (
-              <div className="w-full h-full flex flex-col bg-[#0f172a] relative">
-                <div className="flex items-center gap-2 p-2 border-b border-gray-800">
-                  <label>Viewport <select aria-label="Preview viewport" className="bg-gray-800 p-1" value={previewSize}
+              <div className="w-full h-full flex flex-col bg-inset relative">
+                <div className="flex items-center gap-2 p-2 border-b border-line">
+                  <label>Viewport <select aria-label="Preview viewport" className="bg-control p-1" value={previewSize}
                     onChange={(event) => setPreviewSize(event.target.value as PreviewSize)}>
                     <option value="desktop">Desktop</option><option value="tablet">Tablet</option><option value="mobile">Mobile</option>
                   </select></label>
-                  <button className="px-2 py-1 bg-gray-800 rounded" onClick={preview}>Reload preview</button>
+                  <button className="px-2 py-1 bg-control rounded" onClick={preview}>Reload preview</button>
                 </div>
                 <div className="flex-1 min-h-0 relative overflow-auto">
                   <div className="h-full mx-auto bg-white" style={{ width: previewSize === 'mobile' ? 390 : previewSize === 'tablet' ? 768 : '100%' }}>
                     {previewRecord && <AppHost key={previewKey} windowId={windowId + '-preview'} pid={pid}
                       isFocused={isFocused} previewRecord={previewRecord} onPreviewOutput={capturePreview} />}
                   </div>
-                  {previewError && <div role="alert" className="absolute top-0 inset-x-0 p-3 bg-rose-950/95 text-rose-100">
+                  {previewError && <div role="alert" className="absolute top-0 inset-x-0 p-3 bg-danger/95 text-danger">
                     <button className="float-right underline" onClick={() => setPreviewError(undefined)}>Dismiss</button>
                     <div>{previewError.message}</div>
                     {previewError.source && <div>{previewError.source}:{previewError.line}:{previewError.col}</div>}
                   </div>}
                 </div>
-                <div className="h-24 overflow-auto border-t border-gray-700 p-2" aria-label="Preview console">
-                  {previewConsole.map((log, index) => <div key={index} className={log.level === 'exception' || log.level === 'error' ? 'text-rose-300' : 'text-gray-300'}>
+                <div className="h-24 overflow-auto border-t border-line p-2" aria-label="Preview console">
+                  {previewConsole.map((log, index) => <div key={index} className={log.level === 'exception' || log.level === 'error' ? 'text-danger' : 'text-secondary'}>
                     [{log.level}] {log.message}
                   </div>)}
                 </div>
@@ -1345,24 +1337,24 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
                 {/* Primary Editor Pane */}
                 <div className="flex-1 h-full overflow-hidden relative">
                   <div className="absolute right-2 top-1 z-10 flex gap-1">
-                    <button className="rounded bg-gray-800 px-1.5" onClick={() => void inspectSymbol('complete')}>Complete</button>
-                    <button className="rounded bg-gray-800 px-1.5" onClick={() => void inspectSymbol('hover')}>Type info</button>
-                    <button className="rounded bg-gray-800 px-1.5" onClick={() => void inspectSymbol('definition')}>Definition</button>
+                    <button className="rounded bg-control px-1.5" onClick={() => void inspectSymbol('complete')}>Complete</button>
+                    <button className="rounded bg-control px-1.5" onClick={() => void inspectSymbol('hover')}>Type info</button>
+                    <button className="rounded bg-control px-1.5" onClick={() => void inspectSymbol('definition')}>Definition</button>
                   </div>
-                  {hoverText && <div className="absolute right-2 top-7 z-20 max-w-[80%] rounded bg-gray-900 p-2 shadow" role="status">
+                  {hoverText && <div className="absolute right-2 top-7 z-20 max-w-[80%] rounded bg-inset p-2 shadow" role="status">
                     <button className="float-right ml-2 underline" onClick={() => setHoverText('')}>Close</button>
                     <pre className="whitespace-pre-wrap">{hoverText}</pre>
                   </div>}
-                  {suggestions && <div className="absolute right-2 top-7 z-20 rounded bg-gray-900 p-2 shadow">
+                  {suggestions && <div className="absolute right-2 top-7 z-20 rounded bg-inset p-2 shadow">
                     <button className="underline" onClick={() => setSuggestions(undefined)}>Close suggestions</button>
-                    {suggestions.items.map((item) => <button key={item.label} className="block w-full text-left p-1 hover:bg-gray-700"
+                    {suggestions.items.map((item) => <button key={item.label} className="block w-full text-left p-1 hover:bg-hover"
                       onClick={() => {
                         const start = suggestions.position - suggestions.prefix.length;
                         setFileContents((previous) => ({ ...previous, [activeFile]: currentContent.slice(0, start) + item.label + currentContent.slice(suggestions.position) }));
                         setSuggestions(undefined);
                       }}>{item.label}</button>)}
                   </div>}
-                  {editorUnavailable ? <p className="p-4 text-gray-400">This file is binary or exceeds the 2 MiB editor limit.</p> : <EditorHost
+                  {editorUnavailable ? <p className="p-4 text-muted">This file is binary or exceeds the 2 MiB editor limit.</p> : <EditorHost
                     value={currentContent}
                     key={activeFile}
                     readOnly={!activeFile || fileContents[activeFile] === undefined}
@@ -1381,8 +1373,8 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
 
                 {/* Secondary Split Pane */}
                 {splitMode !== 'none' && (
-                  <div className="flex-1 h-full border-l border-gray-800 overflow-hidden flex flex-col">
-                    <select aria-label="Split editor file" value={secondaryActiveFile || activeFile} className="bg-gray-800 px-2"
+                  <div className="flex-1 h-full border-l border-line overflow-hidden flex flex-col">
+                    <select aria-label="Split editor file" value={secondaryActiveFile || activeFile} className="bg-control px-2"
                       onChange={(event) => setSecondaryActiveFile(event.target.value)}>
                       {fileList.map((path) => <option key={path} value={path}>{path.slice(projectRoot.length + 1)}</option>)}
                     </select>
@@ -1404,19 +1396,19 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
 
           {/* Bottom Panel (Terminal, Output, Problems) */}
           {bottomPanelOpen && (
-            <div className="h-44 bg-[#0d1017] border-t border-gray-800 flex flex-col overflow-hidden select-text">
+            <div className="studio-output bg-canvas border-t border-line flex flex-col overflow-hidden select-text">
               {/* Bottom Panel Tab Header */}
-              <div className="flex items-center justify-between px-2 bg-[#161a26] border-b border-gray-800 select-none">
+              <div className="flex items-center justify-between px-2 bg-side border-b border-line select-none">
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setActiveBottomTab('terminal')}
                     className={`flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium border-t-2 ${
                       activeBottomTab === 'terminal'
-                        ? 'border-cyan-400 text-white bg-[#0d1017]'
-                        : 'border-transparent text-gray-400 hover:text-white'
+                        ? 'border-accent text-ink bg-canvas'
+                        : 'border-transparent text-muted hover:text-ink'
                     }`}
                   >
-                    <Terminal className="w-3.5 h-3.5 text-cyan-400" />
+                    <Terminal className="w-3.5 h-3.5 text-accent" />
                     <span>Terminal</span>
                   </button>
 
@@ -1424,11 +1416,11 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
                     onClick={() => setActiveBottomTab('output')}
                     className={`flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium border-t-2 ${
                       activeBottomTab === 'output'
-                        ? 'border-cyan-400 text-white bg-[#0d1017]'
-                        : 'border-transparent text-gray-400 hover:text-white'
+                        ? 'border-accent text-ink bg-canvas'
+                        : 'border-transparent text-muted hover:text-ink'
                     }`}
                   >
-                    <Play className="w-3.5 h-3.5 text-purple-400" />
+                    <Play className="w-3.5 h-3.5 text-iris" />
                     <span>Output</span>
                     {isRunning && <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />}
                   </button>
@@ -1437,14 +1429,14 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
                     onClick={() => setActiveBottomTab('problems')}
                     className={`flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium border-t-2 ${
                       activeBottomTab === 'problems'
-                        ? 'border-cyan-400 text-white bg-[#0d1017]'
-                        : 'border-transparent text-gray-400 hover:text-white'
+                        ? 'border-accent text-ink bg-canvas'
+                        : 'border-transparent text-muted hover:text-ink'
                     }`}
                   >
-                    <AlertCircle className="w-3.5 h-3.5 text-rose-400" />
+                    <AlertCircle className="w-3.5 h-3.5 text-danger" />
                     <span>Problems</span>
                     {projectDiagnostics.length > 0 && (
-                      <span className="text-[10px] text-rose-400">({projectDiagnostics.length})</span>
+                      <span className="text-[10px] text-danger">({projectDiagnostics.length})</span>
                     )}
                   </button>
                 </div>
@@ -1453,7 +1445,7 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
                   {activeBottomTab === 'output' && (
                     <button
                       onClick={() => setLogs([])}
-                      className="flex items-center gap-1 hover:text-white transition-colors text-[10px] text-gray-400"
+                      className="flex items-center gap-1 hover:text-ink transition-colors text-[10px] text-muted"
                       title="Clear Output"
                     >
                       <Trash2 className="w-3 h-3" />
@@ -1462,7 +1454,7 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
                   )}
                   <button
                     onClick={() => setBottomPanelOpen(false)}
-                    className="p-1 text-gray-500 hover:text-white rounded"
+                    className="p-1 text-muted hover:text-ink rounded"
                     title="Collapse Panel"
                   >
                     <X className="w-3.5 h-3.5" />
@@ -1475,9 +1467,9 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
                 {activeBottomTab === 'terminal' ? (
                   <StudioTerminal key={projectRoot} cwd={projectRoot} />
                 ) : activeBottomTab === 'output' ? (
-                  <div className="h-full p-2 font-mono text-[11px] overflow-y-auto select-text text-gray-300 leading-relaxed">
+                  <div className="h-full p-2 font-mono text-[11px] overflow-y-auto select-text text-secondary leading-relaxed">
                     {logs.length === 0 ? (
-                      <div className="text-gray-600 italic">No output. Run scripts or compile project.</div>
+                      <div className="text-muted italic">No output. Run scripts or compile project.</div>
                     ) : (
                       logs.map((log, idx) => <div key={idx}>{log}</div>)
                     )}
@@ -1493,12 +1485,12 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
                           setJump({ line: d.line, col: d.col });
                           setMainView('editor');
                         }}
-                        className="flex items-center gap-2 p-1 rounded hover:bg-gray-800 cursor-pointer text-rose-300"
+                        className="flex items-center gap-2 p-1 rounded hover:bg-hover cursor-pointer text-danger"
                       >
                         <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
                         <span className="font-semibold">{d.code}:</span>
                         <span className="truncate flex-1">{d.message}</span>
-                        <span className="text-gray-500 text-[10px]">
+                        <span className="text-muted text-[10px]">
                           {d.file.split('/').pop()}:{d.line}:{d.col}
                         </span>
                       </div>
@@ -1510,32 +1502,32 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
           )}
 
           {/* IDE Status Bar */}
-          <div className="h-5 bg-[#0b0e14] border-t border-gray-800 px-3 flex items-center justify-between text-[11px] text-gray-400 select-none">
+          <div className="studio-status bg-side border-t border-line px-3 flex items-center justify-between text-[11px] text-muted select-none">
             <div className="flex items-center gap-3">
-              <span className="flex items-center gap-1 text-cyan-400">
+              <span className="flex items-center gap-1 text-accent">
                 <GitBranch className="w-3 h-3" />
                 <span>{hasGitRepo ? gitStatus?.branch || 'main' : 'No Git'}</span>
               </span>
-              <span className="text-gray-600">|</span>
+              <span className="text-muted">|</span>
               <button
                 onClick={() => setBottomPanelOpen((prev) => !prev)}
-                className="hover:text-white transition-colors"
+                className="hover:text-ink transition-colors"
               >
                 {bottomPanelOpen ? 'Hide Terminal' : 'Show Terminal'}
               </button>
               {isRunning && (
-                <span className="text-amber-400 animate-pulse">PID {activePid} Running</span>
+                <span className="text-caution">PID {activePid} Running</span>
               )}
             </div>
 
             <div className="flex items-center gap-3">
               <span>Ln {cursorPos.line}, Col {cursorPos.col}</span>
-              <span className="text-gray-600">|</span>
+              <span className="text-muted">|</span>
               <span>Spaces: 2</span>
-              <span className="text-gray-600">|</span>
+              <span className="text-muted">|</span>
               <span>UTF-8</span>
-              <span className="text-gray-600">|</span>
-              <span className="uppercase text-cyan-400">
+              <span className="text-muted">|</span>
+              <span className="uppercase text-accent">
                 {activeFileName.split('.').pop() || 'Plain Text'}
               </span>
             </div>
@@ -1546,27 +1538,27 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
       {/* New Project Modal */}
       {newProjectModal && (
         <div className="absolute inset-0 bg-black/75 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#1a202c] border border-gray-700 rounded-lg max-w-lg w-full p-4 flex flex-col gap-3 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-gray-700 pb-2">
-              <h3 className="font-semibold text-white text-sm">Create New Development Project</h3>
-              <button onClick={() => setNewProjectModal(false)} className="text-gray-400 hover:text-white">
+          <div className="bg-raised border border-line rounded-lg max-w-lg w-full p-4 flex flex-col gap-3 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-line pb-2">
+              <h3 className="font-semibold text-ink text-sm">Create New Development Project</h3>
+              <button onClick={() => setNewProjectModal(false)} className="text-muted hover:text-ink">
                 ✕
               </button>
             </div>
 
             <div className="flex flex-col gap-1">
-              <label className="text-[11px] text-gray-400">Project Directory Name:</label>
+              <label className="text-[11px] text-muted">Project Directory Name:</label>
               <input
                 type="text"
                 value={newProjectName}
                 onChange={(e) => setNewProjectName(e.target.value)}
-                className="px-2.5 py-1.5 bg-gray-900 border border-gray-700 rounded text-xs text-white outline-none focus:border-cyan-400"
+                className="px-2.5 py-1.5 bg-inset border border-line rounded text-xs text-ink outline-none focus:border-accent"
                 placeholder="my-aether-app"
               />
             </div>
 
             <div className="flex flex-col gap-1">
-              <label className="text-[11px] text-gray-400">Select Template:</label>
+              <label className="text-[11px] text-muted">Select Template:</label>
               <div className="flex flex-col gap-2 max-h-56 overflow-y-auto">
                 {TEMPLATES.map((tmpl) => (
                   <button
@@ -1574,27 +1566,27 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
                     onClick={() => setSelectedTemplate(tmpl)}
                     className={`flex flex-col text-left p-2.5 rounded border transition-colors ${
                       selectedTemplate.id === tmpl.id
-                        ? 'border-cyan-400 bg-cyan-950/40 text-cyan-200'
-                        : 'border-gray-700/60 bg-gray-900/60 text-gray-300 hover:bg-gray-800'
+                        ? 'border-accent bg-selection text-accent'
+                        : 'border-line bg-inset text-secondary hover:bg-hover'
                     }`}
                   >
-                    <span className="font-medium text-xs text-white">{tmpl.name}</span>
-                    <span className="text-[10px] text-gray-400 mt-0.5">{tmpl.description}</span>
+                    <span className="font-medium text-xs text-ink">{tmpl.name}</span>
+                    <span className="text-[10px] text-muted mt-0.5">{tmpl.description}</span>
                   </button>
                 ))}
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 pt-2 border-t border-gray-700">
+            <div className="flex justify-end gap-2 pt-2 border-t border-line">
               <button
                 onClick={() => setNewProjectModal(false)}
-                className="px-3 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs"
+                className="px-3 py-1.5 rounded bg-control hover:bg-hover text-secondary text-xs"
               >
                 Cancel
               </button>
               <button
                 onClick={handleCreateProject}
-                className="px-3 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-white font-medium text-xs shadow"
+                className="px-3 py-1.5 rounded bg-action hover:bg-action text-on-action font-medium text-xs shadow"
               >
                 Create Project
               </button>
@@ -1606,8 +1598,8 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
       {/* New File Modal */}
       {newFileModal && (
         <div className="absolute inset-0 bg-black/75 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#1a202c] border border-gray-700 rounded-lg max-w-sm w-full p-4 flex flex-col gap-3 shadow-2xl">
-            <h3 className="font-semibold text-white text-sm">Create New File</h3>
+          <div className="bg-raised border border-line rounded-lg max-w-sm w-full p-4 flex flex-col gap-3 shadow-2xl">
+            <h3 className="font-semibold text-ink text-sm">Create New File</h3>
             <input
               type="text"
               value={newFileNameInput}
@@ -1617,19 +1609,19 @@ export const CodeStudioApp: React.FC<AppProps> = ({ initialProps, windowId, pid,
                 if (e.key === 'Escape') setNewFileModal(false);
               }}
               placeholder="e.g., utils.ts, script.py"
-              className="px-2.5 py-1.5 bg-gray-900 border border-gray-700 rounded text-xs text-white outline-none focus:border-cyan-400"
+              className="px-2.5 py-1.5 bg-inset border border-line rounded text-xs text-ink outline-none focus:border-accent"
               autoFocus
             />
             <div className="flex justify-end gap-2 pt-2">
               <button
                 onClick={() => setNewFileModal(false)}
-                className="px-3 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs"
+                className="px-3 py-1.5 rounded bg-control hover:bg-hover text-secondary text-xs"
               >
                 Cancel
               </button>
               <button
                 onClick={handleCreateFile}
-                className="px-3 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-white font-medium text-xs shadow"
+                className="px-3 py-1.5 rounded bg-action hover:bg-action text-on-action font-medium text-xs shadow"
               >
                 Create
               </button>

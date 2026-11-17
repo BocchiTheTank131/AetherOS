@@ -54,49 +54,49 @@ export const ImageViewerApp: React.FC<AppProps> = ({ initialProps, setTitle }) =
   }, [filePath, setTitle]);
 
   return (
-    <div className="flex flex-col h-full bg-[#0d0f17] text-white select-none overflow-hidden">
+    <div className="flex flex-col h-full bg-canvas text-ink select-none overflow-hidden">
       {/* Top Toolbar */}
-      <div className="flex items-center justify-between p-2 bg-[#161a26] border-b border-gray-800 text-xs">
-        <div className="flex items-center gap-1.5 font-medium text-gray-300">
-          <ImageIcon className="w-4 h-4 text-cyan-400" />
+      <div className="flex flex-wrap items-center justify-between p-2 bg-side border-b border-line text-xs">
+        <div className="flex items-center gap-1.5 font-medium text-secondary">
+          <ImageIcon className="w-4 h-4 text-accent" />
           <span className="truncate max-w-[200px]">{filePath.split('/').pop()}</span>
         </div>
 
         <div className="flex items-center gap-1">
           <button
             onClick={() => setZoom((z) => Math.min(3, z + 0.25))}
-            className="p-1.5 hover:bg-gray-700/60 rounded"
+            className="p-1.5 hover:bg-hover rounded"
             title="Zoom In"
           >
-            <ZoomIn className="w-4 h-4 text-gray-300" />
+            <ZoomIn className="w-4 h-4 text-secondary" />
           </button>
           <button
             onClick={() => setZoom((z) => Math.max(0.25, z - 0.25))}
-            className="p-1.5 hover:bg-gray-700/60 rounded"
+            className="p-1.5 hover:bg-hover rounded"
             title="Zoom Out"
           >
-            <ZoomOut className="w-4 h-4 text-gray-300" />
+            <ZoomOut className="w-4 h-4 text-secondary" />
           </button>
           <button
             onClick={() => setRotation((r) => (r - 90) % 360)}
-            className="p-1.5 hover:bg-gray-700/60 rounded"
+            className="p-1.5 hover:bg-hover rounded"
             title="Rotate Left"
           >
-            <RotateCcw className="w-4 h-4 text-gray-300" />
+            <RotateCcw className="w-4 h-4 text-secondary" />
           </button>
           <button
             onClick={() => setRotation((r) => (r + 90) % 360)}
-            className="p-1.5 hover:bg-gray-700/60 rounded"
+            className="p-1.5 hover:bg-hover rounded"
             title="Rotate Right"
           >
-            <RotateCw className="w-4 h-4 text-gray-300" />
+            <RotateCw className="w-4 h-4 text-secondary" />
           </button>
           <button
             onClick={() => {
               setZoom(1);
               setRotation(0);
             }}
-            className="p-1.5 hover:bg-gray-700/60 rounded text-xs font-semibold px-2"
+            className="p-1.5 hover:bg-hover rounded text-xs font-semibold px-2"
           >
             Reset
           </button>
@@ -104,7 +104,7 @@ export const ImageViewerApp: React.FC<AppProps> = ({ initialProps, setTitle }) =
       </div>
 
       {/* Main Image Display */}
-      <div className="flex-1 flex items-center justify-center p-4 overflow-auto bg-[radial-gradient(#1e2433_1px,transparent_1px)] [background-size:16px_16px]">
+      <div className="image-stage flex-1 flex items-center justify-center p-4 overflow-auto">
         {imageSrc ? (
           <img
             src={imageSrc}
@@ -116,12 +116,12 @@ export const ImageViewerApp: React.FC<AppProps> = ({ initialProps, setTitle }) =
             className="max-h-[85%] max-w-[85%] object-contain rounded-lg shadow-2xl drop-shadow"
           />
         ) : (
-          <div className="text-gray-500 text-xs">No image loaded</div>
+          <div className="text-muted text-xs">No image loaded</div>
         )}
       </div>
 
       {/* Footer info */}
-      <div className="flex items-center justify-between px-3 py-1 bg-[#121520] border-t border-gray-800 text-[11px] text-gray-400">
+      <div className="flex items-center justify-between px-3 py-1 bg-canvas border-t border-line text-[11px] text-muted">
         <span>Zoom: {Math.round(zoom * 100)}%</span>
         <span>Rotation: {rotation}°</span>
       </div>

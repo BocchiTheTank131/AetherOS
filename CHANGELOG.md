@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.5.1 · Blue Hour
+
+- Liquid Glass and Modern appearance styles with live Light, Dark, and System modes, custom accents, and a bundled offline wallpaper. Existing appearance preferences carry forward.
+- Rebuilt Liquid Glass with live rounded-edge refraction on the dock and Quick Settings appearance module in Chromium, plus layered highlights, adaptive tint, and CSS fallbacks in Firefox and WebKit.
+- Clear pill-shaped dock with larger layered icons, spring-like magnification, focused and running indicators, workspace controls, and auto-hide in bottom, top, and left positions.
+- Floating Quick Settings modules with a vertical system-volume slider, animated appearance selection, and separate power controls. Refined window title bars, Settings navigation, desktop shortcuts, launcher, notification center, lock and boot screens, command palette, and dialogs.
+- Solid materials for Modern and reduced transparency. Liquid Glass follows the system reduced-transparency preference where the browser exposes it.
+- Shared appearance tokens across the built-in suite. Settings gains visual previews, Files adapts its navigation and layouts to window width, Code Studio and Terminal use readable editor and console surfaces, and System Monitor draws theme-aware performance charts.
+- Windows stay within the work area when the viewport shrinks. Minimizing preserves snapped and maximized layouts. Destructive dialogs focus Cancel by default, and Paint, 2048, and Minesweeper support touch input.
+
 ## 1.5.0 · Real Developer Workstation
 
 - Official TypeScript 6.0 compiler and incremental language service in a dedicated worker, with project-based checks, source navigation and esbuild WASM bundles.

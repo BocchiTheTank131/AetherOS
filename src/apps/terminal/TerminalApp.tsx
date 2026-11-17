@@ -381,19 +381,19 @@ export const TerminalApp: React.FC<AppProps> = ({ setTitle, initialProps }) => {
         } else if (part === '\x1b[1m') {
           isBold = true;
         } else if (part.includes('31m')) {
-          currentColor = '#f87171'; // red
+          currentColor = 'var(--ui-danger)'; // red
         } else if (part.includes('32m')) {
-          currentColor = '#4ade80'; // green
+          currentColor = 'var(--ui-positive)'; // green
         } else if (part.includes('33m')) {
-          currentColor = '#facc15'; // yellow
+          currentColor = 'var(--ui-caution)'; // yellow
         } else if (part.includes('34m')) {
-          currentColor = '#60a5fa'; // blue
+          currentColor = 'var(--ui-accent)'; // blue
         } else if (part.includes('35m')) {
-          currentColor = '#c084fc'; // purple
+          currentColor = 'var(--ui-iris)'; // purple
         } else if (part.includes('36m')) {
-          currentColor = '#22d3ee'; // cyan
+          currentColor = 'var(--ui-aqua)'; // cyan
         } else if (part.includes('30m')) {
-          currentColor = '#94a3b8'; // gray
+          currentColor = 'var(--ui-muted)'; // gray
         }
         return null;
       }
@@ -416,26 +416,20 @@ export const TerminalApp: React.FC<AppProps> = ({ setTitle, initialProps }) => {
 
   return (
     <div
-      className="flex flex-col h-full bg-[#0d1117] text-[#e6edf3] font-mono text-sm overflow-hidden select-text"
-      onClick={() => inputRef.current?.focus()}
+      className="flex flex-col h-full bg-canvas text-ink font-mono text-sm overflow-hidden select-text"
     >
       {/* Tab Bar */}
-      <div className="flex items-center bg-[#161b22] border-b border-[#30363d] px-2 select-none overflow-x-auto">
+      <div className="app-tabbar" role="group" aria-label="Terminal tabs">
         {tabs.map((tab) => (
-          <div
-            key={tab.id}
-            onClick={() => setActiveTabId(tab.id)}
-            className={`flex items-center gap-2 px-3 py-1.5 text-xs rounded-t cursor-pointer border-t-2 transition-colors ${
-              tab.id === activeTabId
-                ? 'bg-[#0d1117] text-white border-cyan-400 font-medium'
-                : 'text-gray-400 border-transparent hover:bg-[#1f242c]'
-            }`}
-          >
-            <span>{tab.title}</span>
+          <div key={tab.id} className="app-tab" data-active={tab.id === activeTabId}>
+            <button type="button" aria-pressed={tab.id === activeTabId} onClick={() => setActiveTabId(tab.id)}>
+              <span>{tab.title}</span>
+            </button>
             {tabs.length > 1 && (
               <button
+                aria-label={`Close ${tab.title}`}
                 onClick={(e) => closeTab(tab.id, e)}
-                className="hover:bg-red-500/20 hover:text-red-400 rounded p-0.5"
+                className="hover:bg-danger/20 hover:text-danger rounded p-0.5"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -444,7 +438,7 @@ export const TerminalApp: React.FC<AppProps> = ({ setTitle, initialProps }) => {
         ))}
         <button
           onClick={addTab}
-          className="p-1 text-gray-400 hover:text-white hover:bg-[#1f242c] rounded ml-1"
+          className="app-tab-new text-muted"
           title="New Tab"
         >
           <Plus className="w-3.5 h-3.5" />
@@ -452,16 +446,17 @@ export const TerminalApp: React.FC<AppProps> = ({ setTitle, initialProps }) => {
       </div>
 
       {/* Terminal Output */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-1">
+      <div className="terminal-output">
         {activeTab?.history.map((item, idx) => (
           <div
             key={idx}
+            data-line={item.type}
             className={`whitespace-pre-wrap leading-relaxed ${
               item.type === 'input'
-                ? 'text-cyan-300 font-semibold'
+                ? 'text-accent font-semibold'
                 : item.type === 'error'
-                ? 'text-red-400'
-                : 'text-[#e6edf3]'
+                ? 'text-danger'
+                : 'text-ink'
             }`}
           >
             {renderAnsi(item.text)}
@@ -469,9 +464,9 @@ export const TerminalApp: React.FC<AppProps> = ({ setTitle, initialProps }) => {
         ))}
 
         {/* Active Command Line */}
-        <div className="flex items-center gap-2 pt-1">
-          <span className="text-cyan-400 font-semibold whitespace-nowrap">
-            aether@aetheros:<span className="text-blue-400">{shortCwd}</span>$
+        <div className="terminal-prompt">
+          <span className="text-accent font-semibold whitespace-nowrap">
+            aether@aetheros:<span className="text-accent">{shortCwd}</span>$
           </span>
           <input
             ref={inputRef}
@@ -479,10 +474,10 @@ export const TerminalApp: React.FC<AppProps> = ({ setTitle, initialProps }) => {
             value={inputVal}
             onChange={(e) => setInputVal(e.target.value)}
             onKeyDown={handleKeyDown}
-            autoFocus
+            aria-label="Terminal command"
             spellCheck={false}
             autoComplete="off"
-            className="flex-1 bg-transparent text-white outline-none border-none p-0 font-mono text-sm"
+            className="flex-1 bg-transparent text-ink outline-none border-none p-0 font-mono text-sm"
           />
         </div>
         <div ref={bottomRef} />

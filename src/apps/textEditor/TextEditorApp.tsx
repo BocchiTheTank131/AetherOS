@@ -146,20 +146,20 @@ export const TextEditorApp: React.FC<AppProps> = ({ initialProps, setTitle, isFo
   const wordsCount = activeTab?.content.trim() ? activeTab.content.trim().split(/\s+/).length : 0;
 
   return (
-    <div className="flex flex-col h-full bg-[#181824] text-gray-200 text-sm overflow-hidden select-text">
+    <div className="flex flex-col h-full bg-canvas text-ink text-sm overflow-hidden select-text">
       {/* Top Controls Toolbar */}
-      <div className="flex items-center justify-between p-1.5 bg-[#202030] border-b border-gray-700/60 select-none">
+      <div className="app-toolbar flex items-center justify-between select-none">
         <div className="flex items-center gap-1">
           <button
             onClick={openNewDoc}
-            className="p-1.5 rounded hover:bg-gray-700/70 text-gray-300 hover:text-white"
+            className="p-1.5 rounded hover:bg-hover text-secondary hover:text-ink"
             title="New File"
           >
             <FilePlus className="w-4 h-4" />
           </button>
           <button
             onClick={handleSave}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-medium"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-action hover:bg-action text-on-action text-xs font-medium"
             title="Save (Ctrl+S)"
           >
             <Save className="w-3.5 h-3.5" />
@@ -167,14 +167,14 @@ export const TextEditorApp: React.FC<AppProps> = ({ initialProps, setTitle, isFo
           </button>
           <button
             onClick={() => setShowFind((prev) => !prev)}
-            className={`p-1.5 rounded hover:bg-gray-700/70 ${showFind ? 'bg-gray-700 text-cyan-400' : 'text-gray-300'}`}
+            className={`p-1.5 rounded hover:bg-hover ${showFind ? 'bg-control text-accent' : 'text-secondary'}`}
             title="Find & Replace"
           >
             <Search className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="flex items-center gap-2 text-xs text-gray-400">
+        <div className="flex items-center gap-2 text-xs text-muted">
           <label className="flex items-center gap-1 cursor-pointer">
             <input
               type="checkbox"
@@ -188,25 +188,20 @@ export const TextEditorApp: React.FC<AppProps> = ({ initialProps, setTitle, isFo
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center bg-[#151520] border-b border-gray-800 px-2 select-none overflow-x-auto">
+      <div className="app-tabbar" role="group" aria-label="Editor tabs">
         {tabs.map((tab) => (
-          <div
-            key={tab.id}
-            onClick={() => setActiveTabId(tab.id)}
-            className={`flex items-center gap-2 px-3 py-1.5 text-xs border-t-2 cursor-pointer ${
-              tab.id === activeTabId
-                ? 'bg-[#181824] text-white border-cyan-400 font-medium'
-                : 'text-gray-400 border-transparent hover:bg-gray-800'
-            }`}
-          >
-            <FileText className="w-3.5 h-3.5 text-cyan-400" />
-            <span>{tab.fileName}</span>
+          <div key={tab.id} className="app-tab" data-active={tab.id === activeTabId}>
+            <button type="button" aria-pressed={tab.id === activeTabId} onClick={() => setActiveTabId(tab.id)}>
+            <FileText size={15} className="text-accent" />
+              <span>{tab.fileName}</span>
+            </button>
             {tab.content !== tab.savedContent && (
-              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+              <span className="w-1.5 h-1.5 rounded-full bg-action"></span>
             )}
             <button
-              onClick={(e) => closeTab(tab.id, e)}
-              className="p-0.5 hover:bg-red-500/20 hover:text-red-400 rounded ml-1"
+              aria-label={`Close ${tab.fileName}`}
+                onClick={(e) => closeTab(tab.id, e)}
+              className="p-0.5 hover:bg-danger/20 hover:text-danger rounded ml-1"
               title="Close Tab"
             >
               <X className="w-3 h-3" />
@@ -217,24 +212,24 @@ export const TextEditorApp: React.FC<AppProps> = ({ initialProps, setTitle, isFo
 
       {/* Find and Replace Drawer */}
       {showFind && (
-        <div className="flex items-center gap-2 p-2 bg-[#222234] border-b border-gray-700 text-xs">
+        <div className="flex flex-wrap items-center gap-2 p-2 bg-side border-b border-line text-xs">
           <input
             type="text"
             placeholder="Find text..."
             value={findText}
             onChange={(e) => setFindText(e.target.value)}
-            className="bg-[#181824] border border-gray-600 rounded px-2 py-1 text-white outline-none"
+            className="ui-input flex-1 basis-24"
           />
           <input
             type="text"
             placeholder="Replace with..."
             value={replaceText}
             onChange={(e) => setReplaceText(e.target.value)}
-            className="bg-[#181824] border border-gray-600 rounded px-2 py-1 text-white outline-none"
+            className="ui-input flex-1 basis-24"
           />
           <button
             onClick={handleFindReplace}
-            className="px-2.5 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded font-medium"
+            className="px-2.5 py-1 bg-action hover:bg-action text-on-action rounded font-medium"
           >
             Replace All
           </button>
@@ -246,7 +241,7 @@ export const TextEditorApp: React.FC<AppProps> = ({ initialProps, setTitle, isFo
         {/* Line Numbers */}
         <div
           ref={lineNumbersRef}
-          className="w-12 bg-[#14141e] text-gray-500 py-3 pr-2 text-right select-none border-r border-gray-800 overflow-hidden"
+          className="w-12 bg-side text-muted py-3 pr-2 text-right select-none border-r border-line overflow-hidden"
         >
           {Array.from({ length: linesCount }, (_, i) => (
             <div key={i + 1} className="leading-5">
@@ -275,13 +270,13 @@ export const TextEditorApp: React.FC<AppProps> = ({ initialProps, setTitle, isFo
           onClick={handleCursorMove}
           wrap={wordWrap ? 'soft' : 'off'}
           spellCheck={false}
-          className="flex-1 p-3 bg-transparent text-gray-100 outline-none resize-none leading-5 font-mono overflow-auto"
+          className="flex-1 p-3 bg-transparent text-ink outline-none resize-none leading-5 font-mono overflow-auto"
           placeholder="Start typing..."
         />
       </div>
 
       {/* Footer Status Bar */}
-      <div className="flex items-center justify-between px-3 py-1 bg-[#13131c] border-t border-gray-800 text-[11px] text-gray-400 select-none">
+      <div className="flex items-center justify-between px-3 py-1 bg-inset border-t border-line text-[11px] text-muted select-none">
         <div className="flex items-center gap-3">
           <span>Ln {cursorPos.line}, Col {cursorPos.col}</span>
           <span>{linesCount} lines</span>

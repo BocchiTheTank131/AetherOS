@@ -1,7 +1,7 @@
 // AetherOS - Session Persistence & Restoration Manager
 import { vfs } from '../vfs/vfs';
 import { systemLogger } from '../core/logger';
-import type { WindowInstance } from '../desktop/types';
+import type { VisibleWindowState, WindowDisplayState, WindowInstance } from '../desktop/types';
 
 const SESSION_FILE = '/home/aether/.config/aetheros/session.json';
 
@@ -12,7 +12,8 @@ export interface SavedWindowState {
   y: number;
   width: number;
   height: number;
-  state: 'normal' | 'minimized' | 'maximized' | 'snapped-left' | 'snapped-right';
+  state: WindowDisplayState;
+  restoreState?: VisibleWindowState;
   workspace: number;
   props?: Record<string, unknown>;
 }
@@ -42,6 +43,7 @@ export class SessionManager {
         width: Math.round(w.width),
         height: Math.round(w.height),
         state: w.state,
+        restoreState: w.state === 'minimized' ? w.restoreState : undefined,
         workspace: w.workspaceId,
         props: Object.fromEntries(Object.entries(w.props ?? {}).filter(([, value]) =>
           value === null || ['string', 'boolean', 'number'].includes(typeof value))),
@@ -108,6 +110,9 @@ export class SessionManager {
           width: clampedW,
           height: clampedH,
           state: ['normal', 'maximized', 'minimized', 'snapped-left', 'snapped-right'].includes(w.state) ? w.state : 'normal',
+          restoreState: w.state === 'minimized' &&
+            (w.restoreState === 'maximized' || w.restoreState === 'snapped-left' || w.restoreState === 'snapped-right')
+            ? w.restoreState : undefined,
           props: w.props && typeof w.props === 'object' && !Array.isArray(w.props) ? w.props : undefined,
           workspace: Number.isInteger(w.workspace) && w.workspace >= 1 && w.workspace <= 4 ? w.workspace : 1,
         });

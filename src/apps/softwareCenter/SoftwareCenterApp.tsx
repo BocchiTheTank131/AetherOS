@@ -6,17 +6,12 @@ import type { AetherPackage } from '../../pkg/types';
 import { useSystem } from '../../core/context';
 import { systemEventBus } from '../../core/eventBus';
 import { dialogService } from '../../core/dialog';
+import { AppIcon } from '../../desktop/components/AppIcon';
 import {
-  Package,
   Search,
   Download,
   Trash2,
   Shield,
-  Palette,
-  CloudRain,
-  Mic,
-  Bomb,
-  Grid,
   Upload,
   CheckCircle2,
   AlertTriangle,
@@ -181,25 +176,6 @@ export const SoftwareCenterApp: React.FC<AppProps> = () => {
     reader.readAsArrayBuffer(file);
   };
 
-  const getPackageIcon = (iconName: string) => {
-    if (iconName && (iconName.startsWith('data:') || iconName.includes('/'))) {
-      return <img src={iconName} className="w-8 h-8 object-contain rounded" alt="" />;
-    }
-    switch (iconName) {
-      case 'Bomb':
-        return <Bomb className="w-8 h-8 text-amber-400" />;
-      case 'Grid':
-        return <Grid className="w-8 h-8 text-indigo-400" />;
-      case 'Palette':
-        return <Palette className="w-8 h-8 text-pink-400" />;
-      case 'CloudRain':
-        return <CloudRain className="w-8 h-8 text-cyan-400" />;
-      case 'Mic':
-        return <Mic className="w-8 h-8 text-purple-400" />;
-      default:
-        return <Package className="w-8 h-8 text-blue-400" />;
-    }
-  };
 
   const categories = ['All', 'Games', 'Media', 'Utilities', 'Development'];
 
@@ -219,7 +195,7 @@ export const SoftwareCenterApp: React.FC<AppProps> = () => {
   });
 
   return (
-    <div className="flex flex-col h-full bg-[#111827] text-gray-200 select-none overflow-hidden relative">
+    <div className="flex flex-col h-full bg-canvas text-ink select-none overflow-hidden relative">
       <input
         type="file"
         ref={fileInputRef}
@@ -229,18 +205,14 @@ export const SoftwareCenterApp: React.FC<AppProps> = () => {
       />
 
       {/* Header Bar */}
-      <div className="flex items-center justify-between p-3 bg-[#1f2937] border-b border-gray-700/60">
+      <div className="store-toolbar">
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 font-bold text-white text-sm">
-            <Package className="w-5 h-5 text-cyan-400" />
-            <span>Software Center</span>
-          </div>
 
-          <div className="flex bg-[#111827] rounded-lg p-0.5 border border-gray-700 text-xs">
+          <div className="flex bg-canvas rounded-lg p-0.5 border border-line text-xs">
             <button
               onClick={() => setActiveTab('explore')}
               className={`px-3 py-1 rounded-md font-medium transition-colors ${
-                activeTab === 'explore' ? 'bg-cyan-600 text-white' : 'text-gray-400 hover:text-white'
+                activeTab === 'explore' ? 'bg-action text-on-action' : 'text-muted hover:text-on-action'
               }`}
             >
               Explore
@@ -248,7 +220,7 @@ export const SoftwareCenterApp: React.FC<AppProps> = () => {
             <button
               onClick={() => setActiveTab('installed')}
               className={`px-3 py-1 rounded-md font-medium transition-colors ${
-                activeTab === 'installed' ? 'bg-cyan-600 text-white' : 'text-gray-400 hover:text-white'
+                activeTab === 'installed' ? 'bg-action text-on-action' : 'text-muted hover:text-on-action'
               }`}
             >
               Installed ({packages.filter((p) => p.installed).length})
@@ -257,7 +229,7 @@ export const SoftwareCenterApp: React.FC<AppProps> = () => {
 
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-1.5 px-2.5 py-1 bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded-lg text-xs text-cyan-300 font-medium transition-colors"
+            className="flex items-center gap-1.5 px-2.5 py-1 bg-control hover:bg-hover border border-line rounded-lg text-xs text-accent font-medium transition-colors"
             title="Install package from local .aepkg archive file"
           >
             <Upload className="w-3.5 h-3.5" />
@@ -266,28 +238,28 @@ export const SoftwareCenterApp: React.FC<AppProps> = () => {
         </div>
 
         {/* Search */}
-        <div className="relative w-56">
-          <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-gray-400" />
+        <div className="store-search">
+          <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-muted" />
           <input
             type="text"
-            placeholder="Search software..."
+            placeholder="Search software" aria-label="Search software"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-[#111827] border border-gray-700 rounded-lg pl-8 pr-3 py-1 text-xs text-white outline-none focus:border-cyan-500"
+            className="w-full bg-canvas border border-line rounded-lg pl-8 pr-3 py-1 text-xs text-ink outline-none focus:border-accent"
           />
         </div>
       </div>
 
       {/* Categories Filter Strip */}
-      <div className="flex items-center gap-2 px-4 py-2 bg-[#161f2e] border-b border-gray-700/60 text-xs overflow-x-auto">
+      <div className="flex items-center gap-2 px-4 py-2 bg-side border-b border-line text-xs overflow-x-auto">
         {categories.map((cat) => (
           <button
             key={cat}
             onClick={() => setSelectedCategory(cat)}
             className={`px-3 py-1 rounded-full transition-colors ${
               selectedCategory === cat
-                ? 'bg-cyan-500/20 text-cyan-300 font-semibold border border-cyan-500/40'
-                : 'text-gray-400 hover:bg-gray-800'
+                ? 'bg-selection text-accent font-semibold border border-accent/40'
+                : 'text-muted hover:bg-hover'
             }`}
           >
             {cat}
@@ -296,58 +268,57 @@ export const SoftwareCenterApp: React.FC<AppProps> = () => {
       </div>
 
       {/* Package List Grid */}
-      <div className="flex-1 p-4 overflow-y-auto">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+      <div className="store-content">
+        <h2>{activeTab === 'explore' ? 'Explore software' : 'Installed software'}</h2>
+        <div className="store-grid">
           {filteredPackages.map((pkg) => {
             const isBusy = busyPackageId === pkg.id;
             return (
               <div
                 key={pkg.id}
-                className="bg-[#1e293b] border border-gray-700/70 rounded-xl p-4 flex flex-col justify-between shadow-sm hover:border-gray-600 transition-colors"
+                className="ui-card p-4 flex flex-col justify-between"
               >
                 <div>
                   <div className="flex items-start justify-between gap-3 mb-2">
                     <div className="flex items-center gap-3">
-                      <div className="p-2.5 bg-gray-800/80 rounded-xl border border-gray-700/60">
-                        {getPackageIcon(pkg.icon)}
-                      </div>
+                      <AppIcon name={pkg.icon} size={25} tile />
                       <div>
-                        <h3 className="font-bold text-white text-sm leading-tight">{pkg.name}</h3>
-                        <span className="text-[11px] text-gray-400 font-mono">
+                        <h3 className="font-bold text-ink text-sm leading-tight">{pkg.name}</h3>
+                        <span className="text-[11px] text-muted font-mono">
                           v{pkg.version} • {pkg.sizeKb} KB
                         </span>
                       </div>
                     </div>
                     <div className="flex flex-col items-end gap-1">
-                      <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-gray-800 text-gray-300 border border-gray-700">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-control text-secondary border border-line">
                         {pkg.category}
                       </span>
                       {pkg.isExternal && (
-                        <span className="px-1.5 py-0.2 text-[9px] rounded font-medium bg-cyan-950 text-cyan-400 border border-cyan-800/60">
+                        <span className="px-1.5 py-0.2 text-[9px] rounded font-medium bg-selection text-accent border border-accent/40">
                           External App
                         </span>
                       )}
                     </div>
                   </div>
 
-                  <p className="text-xs text-gray-300 leading-relaxed mb-3">
+                  <p className="text-xs text-secondary leading-relaxed mb-3">
                     {pkg.description}
                   </p>
 
-                  <div className="flex items-center gap-1.5 text-[11px] text-gray-400 mb-3">
-                    <Shield className="w-3.5 h-3.5 text-cyan-400 flex-shrink-0" />
+                  <div className="flex items-center gap-1.5 text-[11px] text-muted mb-3">
+                    <Shield className="w-3.5 h-3.5 text-accent flex-shrink-0" />
                     <span className="truncate">
                       Permissions: {pkg.permissions.length > 0 ? pkg.permissions.join(', ') : 'None requested'}
                     </span>
                   </div>
                 </div>
 
-                <div className="pt-2 border-t border-gray-700/50 flex justify-end">
+                <div className="pt-2 border-t border-line flex justify-end">
                   {pkg.installed ? (
                     <button
                       onClick={() => handleRemove(pkg)}
                       disabled={isBusy}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-lg text-xs font-semibold border border-red-500/30 transition-colors"
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-danger/20 hover:bg-danger/30 text-danger rounded-lg text-xs font-semibold border border-danger/30 transition-colors"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                       <span>{isBusy ? 'Processing...' : 'Uninstall'}</span>
@@ -356,7 +327,7 @@ export const SoftwareCenterApp: React.FC<AppProps> = () => {
                     <button
                       onClick={() => handleInstall(pkg)}
                       disabled={isBusy}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-semibold shadow transition-colors"
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-action hover:bg-action text-on-action rounded-lg text-xs font-semibold shadow transition-colors"
                     >
                       <Download className="w-3.5 h-3.5" />
                       <span>{isBusy ? 'Installing...' : 'Install'}</span>
@@ -372,23 +343,23 @@ export const SoftwareCenterApp: React.FC<AppProps> = () => {
       {/* Real Installation Progress Modal */}
       {installModal && (
         <div className="absolute inset-0 bg-black/75 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#1f2937] border border-gray-700 rounded-xl p-5 max-w-sm w-full shadow-2xl flex flex-col items-center text-center">
+          <div className="bg-raised border border-line rounded-xl p-5 max-w-sm w-full shadow-2xl flex flex-col items-center text-center">
             {installModal.isError ? (
-              <AlertTriangle className="w-10 h-10 text-red-400 mb-2" />
+              <AlertTriangle className="w-10 h-10 text-danger mb-2" />
             ) : installModal.stage.includes('Successfully') ? (
-              <CheckCircle2 className="w-10 h-10 text-emerald-400 mb-2" />
+              <CheckCircle2 className="w-10 h-10 text-positive mb-2" />
             ) : (
-              <Loader2 className="w-10 h-10 text-cyan-400 animate-spin mb-2" />
+              <Loader2 className="w-10 h-10 text-accent animate-spin mb-2" />
             )}
 
-            <h3 className="font-bold text-white text-sm mb-1">
+            <h3 className="font-bold text-ink text-sm mb-1">
               {installModal.isError ? 'Installation Failed' : 'Package Installation'}
             </h3>
 
-            <p className="text-xs text-gray-300 mb-3">{installModal.stage}</p>
+            <p className="text-xs text-secondary mb-3">{installModal.stage}</p>
 
             {installModal.errorMsg && (
-              <p className="text-[11px] font-mono text-red-300 bg-red-950/60 p-2 rounded border border-red-800/40 text-left w-full mb-3 overflow-auto max-h-24">
+              <p className="text-[11px] font-mono text-danger bg-danger/13 p-2 rounded border border-danger/40 text-left w-full mb-3 overflow-auto max-h-24">
                 {installModal.errorMsg}
               </p>
             )}
@@ -396,7 +367,7 @@ export const SoftwareCenterApp: React.FC<AppProps> = () => {
             {installModal.isError && (
               <button
                 onClick={() => setInstallModal(null)}
-                className="px-4 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs text-white"
+                className="px-4 py-1.5 rounded-lg bg-control hover:bg-hover text-xs text-ink"
               >
                 Close
               </button>

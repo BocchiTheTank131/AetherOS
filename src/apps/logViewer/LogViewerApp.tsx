@@ -43,34 +43,34 @@ export const LogViewerApp: React.FC<AppProps> = () => {
     switch (level) {
       case 'error':
         return (
-          <span className="flex items-center gap-1 text-red-400 font-semibold">
+          <span className="flex items-center gap-1 text-danger font-semibold">
             <AlertCircle className="w-3 h-3" /> ERROR
           </span>
         );
       case 'warn':
         return (
-          <span className="flex items-center gap-1 text-amber-400 font-semibold">
+          <span className="flex items-center gap-1 text-caution font-semibold">
             <AlertTriangle className="w-3 h-3" /> WARN
           </span>
         );
       case 'info':
         return (
-          <span className="flex items-center gap-1 text-cyan-400 font-semibold">
+          <span className="flex items-center gap-1 text-accent font-semibold">
             <Info className="w-3 h-3" /> INFO
           </span>
         );
       default:
-        return <span className="text-gray-400">DEBUG</span>;
+        return <span className="text-muted">DEBUG</span>;
     }
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#0d1117] text-gray-200 font-mono text-xs select-text overflow-hidden">
+    <div className="flex flex-col h-full bg-canvas text-ink font-mono text-xs select-text overflow-hidden">
       {/* Top Controls Toolbar */}
-      <div className="flex items-center justify-between p-2 bg-[#161b22] border-b border-[#30363d] select-none">
+      <div className="flex flex-wrap items-center justify-between p-2 bg-side border-b border-line select-none">
         <div className="flex items-center gap-2">
-          <Terminal className="w-4 h-4 text-cyan-400" />
-          <span className="font-semibold text-white">System Journal Logs</span>
+          <Terminal className="w-4 h-4 text-accent" />
+          <span className="font-semibold text-ink">System Journal Logs</span>
         </div>
 
         <div className="flex items-center gap-2">
@@ -78,7 +78,7 @@ export const LogViewerApp: React.FC<AppProps> = () => {
           <select
             value={levelFilter}
             onChange={(e) => setLevelFilter(e.target.value)}
-            className="bg-[#0d1117] border border-gray-700 rounded px-2 py-1 text-white outline-none"
+            className="bg-canvas border border-line rounded px-2 py-1 text-ink outline-none"
           >
             <option value="all">All Levels</option>
             <option value="info">Info</option>
@@ -89,19 +89,19 @@ export const LogViewerApp: React.FC<AppProps> = () => {
 
           {/* Search */}
           <div className="relative">
-            <Search className="w-3.5 h-3.5 absolute left-2 top-1.5 text-gray-400" />
+            <Search className="w-3.5 h-3.5 absolute left-2 top-1.5 text-muted" />
             <input
               type="text"
               placeholder="Filter logs..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="bg-[#0d1117] border border-gray-700 rounded pl-7 pr-2 py-1 text-white outline-none w-36"
+              className="bg-canvas border border-line rounded pl-7 pr-2 py-1 text-ink outline-none w-36"
             />
           </div>
 
           <button
             onClick={handleExport}
-            className="p-1.5 hover:bg-gray-800 text-gray-300 hover:text-white rounded"
+            className="p-1.5 hover:bg-hover text-secondary hover:text-ink rounded"
             title="Export Logs"
           >
             <Download className="w-4 h-4" />
@@ -111,7 +111,7 @@ export const LogViewerApp: React.FC<AppProps> = () => {
               systemLogger.clear();
               setLogs([]);
             }}
-            className="p-1.5 hover:bg-gray-800 text-gray-300 hover:text-red-400 rounded"
+            className="p-1.5 hover:bg-hover text-secondary hover:text-danger rounded"
             title="Clear Buffer"
           >
             <Trash2 className="w-4 h-4" />
@@ -124,9 +124,9 @@ export const LogViewerApp: React.FC<AppProps> = () => {
         {filteredLogs.map((entry) => (
           <div
             key={entry.id}
-            className="grid grid-cols-12 gap-2 py-0.5 leading-relaxed hover:bg-gray-800/40 px-1 rounded"
+            className="grid grid-cols-12 gap-2 py-0.5 leading-relaxed hover:bg-hover px-1 rounded"
           >
-            <span className="col-span-2 text-gray-500 truncate">
+            <span className="col-span-2 text-muted truncate">
               {new Date(entry.timestamp).toLocaleTimeString([], {
                 hour: '2-digit',
                 minute: '2-digit',
@@ -134,16 +134,16 @@ export const LogViewerApp: React.FC<AppProps> = () => {
               })}
             </span>
             <span className="col-span-2">{getLevelBadge(entry.level)}</span>
-            <span className="col-span-2 text-purple-400 font-semibold truncate">
+            <span className="col-span-2 text-iris font-semibold truncate">
               [{entry.subsystem}]
             </span>
-            <span className="col-span-6 text-gray-200 break-all">{entry.message}</span>
+            <span className="col-span-6 text-ink break-all">{entry.message}</span>
           </div>
         ))}
       </div>
 
       {/* Footer */}
-      <div className="flex items-center justify-between px-3 py-1 bg-[#161b22] border-t border-[#30363d] text-[11px] text-gray-400 select-none">
+      <div className="flex items-center justify-between px-3 py-1 bg-side border-t border-line text-[11px] text-muted select-none">
         <span>{filteredLogs.length} entries shown</span>
         <span>Ring Buffer: max 1000 lines</span>
       </div>

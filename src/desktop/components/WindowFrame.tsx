@@ -1,433 +1,165 @@
-// AetherOS - Window Frame Component with Draggable Titlebar & 8-Direction Resizing
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Maximize2, Minimize2, Minus, X } from 'lucide-react';
 import type { WindowInstance } from '../types';
 import { useSystem } from '../../core/context';
 import { appRegistry } from '../../apps/appRegistry';
 import { AppErrorBoundary } from './AppErrorBoundary';
-import {
-  Minus,
-  Square,
-  X,
-  Terminal,
-  Folder,
-  FileText,
-  Code2,
-  Globe,
-  Settings,
-  Activity,
-  Package,
-  Calculator,
-  PlayCircle,
-  Image as ImageIcon,
-  StickyNote,
-  BookOpen,
-  ScrollText,
-  Bomb,
-  Grid,
-  Palette,
-  CloudRain,
-  Mic,
-} from 'lucide-react';
+import { AppIcon } from './AppIcon';
 
-interface WindowFrameProps {
-  window: WindowInstance;
+type Direction = 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw';
+type Snap = 'left' | 'right' | 'top';
+const handles: Direction[] = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
+
+interface Gesture {
+  pointer: number;
+  type: 'drag' | Direction;
+  x: number;
+  y: number;
+  bounds: DOMRect;
+  frame: DOMRect;
+  moved: boolean;
+  snap: Snap | null;
 }
 
-export const WindowFrame: React.FC<WindowFrameProps> = ({ window: win }) => {
+const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(value, max));
+
+export function WindowFrame({ window: win }: { window: WindowInstance }) {
   const {
-    closeWindow,
-    focusWindow,
-    minimizeWindow,
-    maximizeWindow,
-    snapWindow,
-    updateWindowPosition,
-    updateWindowSize,
-    updateWindowTitle,
-    theme,
+    closeWindow, focusWindow, minimizeWindow, maximizeWindow, snapWindow,
+    updateWindowPosition, updateWindowSize, updateWindowTitle, theme,
   } = useSystem();
+  const [gestureType, setGestureType] = useState<Gesture['type'] | null>(null);
+  const [preview, setPreview] = useState<Snap | null>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
+  const gesture = useRef<Gesture | null>(null);
+  const app = appRegistry.get(win.appId);
+  const App = app?.component;
+  const minimized = win.state === 'minimized';
 
-  const handleClose = useCallback(() => closeWindow(win.id), [win.id, closeWindow]);
-  const handleSetTitle = useCallback((t: string) => updateWindowTitle(win.id, t), [win.id, updateWindowTitle]);
+  const handleClose = useCallback(() => closeWindow(win.id, async () => {
+    const frame = frameRef.current;
+    if (!frame?.offsetParent || theme.reducedMotion || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    await frame.animate([{ opacity: 1, scale: 1 }, { opacity: 0, scale: .98 }], {
+      duration: 140, easing: 'ease-out', fill: 'forwards',
+    }).finished.catch(() => {});
+  }), [closeWindow, theme.reducedMotion, win.id]);
 
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  const [resizingDir, setResizingDir] = useState<string | null>(null);
-  const [snapPreview, setSnapPreview] = useState<'left' | 'right' | 'top' | null>(null);
-  const [initialResize, setInitialResize] = useState({
-    mouseX: 0,
-    mouseY: 0,
-    winX: 0,
-    winY: 0,
-    winW: 0,
-    winH: 0,
-  });
+  const handleSetTitle = useCallback((title: string) => updateWindowTitle(win.id, title), [win.id, updateWindowTitle]);
 
-  const appDef = appRegistry.get(win.appId);
-  const AppComponent = appDef?.component;
-
-  // Window Icons Map
-  const getAppIcon = (iconName: string) => {
-    const props = { className: 'w-3.5 h-3.5 text-cyan-400', size: 14 };
-    switch (iconName) {
-      case 'Terminal':
-        return <Terminal {...props} />;
-      case 'Folder':
-        return <Folder {...props} />;
-      case 'FileText':
-        return <FileText {...props} />;
-      case 'Code2':
-        return <Code2 {...props} />;
-      case 'Globe':
-        return <Globe {...props} />;
-      case 'Settings':
-        return <Settings {...props} />;
-      case 'Activity':
-        return <Activity {...props} />;
-      case 'Package':
-        return <Package {...props} />;
-      case 'Calculator':
-        return <Calculator {...props} />;
-      case 'PlayCircle':
-        return <PlayCircle {...props} />;
-      case 'Image':
-        return <ImageIcon {...props} />;
-      case 'StickyNote':
-        return <StickyNote {...props} />;
-      case 'BookOpen':
-        return <BookOpen {...props} />;
-      case 'ScrollText':
-        return <ScrollText {...props} />;
-      case 'Bomb':
-        return <Bomb {...props} />;
-      case 'Grid':
-        return <Grid {...props} />;
-      case 'Palette':
-        return <Palette {...props} />;
-      case 'CloudRain':
-        return <CloudRain {...props} />;
-      case 'Mic':
-        return <Mic {...props} />;
-      default:
-        if (iconName && (iconName.startsWith('data:') || iconName.includes('/'))) {
-          return <img src={iconName} className="w-3.5 h-3.5 object-contain" alt="" />;
-        }
-        return <Package {...props} />;
-    }
+  const beginGesture = (event: React.PointerEvent<HTMLElement>, type: Gesture['type']) => {
+    const frame = frameRef.current;
+    if (event.button !== 0 || !event.isPrimary || !frame?.offsetParent) return;
+    event.stopPropagation();
+    focusWindow(win.id);
+    const bounds = frame.offsetParent.getBoundingClientRect();
+    gesture.current = {
+      pointer: event.pointerId, type, bounds, frame: frame.getBoundingClientRect(),
+      x: event.clientX, y: event.clientY, moved: false, snap: null,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
   };
 
-  // Dragging logic
-  const handleTitlebarMouseDown = (e: React.MouseEvent) => {
-    if (e.button !== 0) return; // Left click only
+  const moveGesture = (event: React.PointerEvent) => {
+    const active = gesture.current;
+    if (!active || active.pointer !== event.pointerId) return;
+    const { bounds, frame, type } = active;
+    const dx = event.clientX - active.x;
+    const dy = event.clientY - active.y;
+    if (!active.moved && Math.hypot(dx, dy) < 4) return;
+    active.moved = true;
+    setGestureType(type);
 
-    if (win.state === 'maximized') {
-      focusWindow(win.id);
-      const restoredW = win.minWidth ? Math.max(win.minWidth, 700) : 700;
-      const newX = Math.max(10, Math.min(window.innerWidth - 100, e.clientX - restoredW / 2));
-      const newY = Math.max(10, e.clientY - 15);
-      maximizeWindow(win.id);
-      updateWindowPosition(win.id, newX, newY);
-      setIsDragging(true);
-      setDragOffset({
-        x: e.clientX - newX,
-        y: e.clientY - newY,
-      });
+    if (type === 'drag') {
+      const width = Math.min(win.width, bounds.width);
+      const height = Math.min(win.height, bounds.height);
+      const anchoredX = frame.width === width ? frame.left + dx
+        : event.clientX - width * clamp((active.x - frame.left) / frame.width, 0, 1);
+      const x = clamp(anchoredX, bounds.left, bounds.right - width);
+      const y = clamp(frame.top + dy, bounds.top, bounds.bottom - height);
+      updateWindowPosition(win.id, x, y);
+      active.snap = event.clientY <= bounds.top + 12 ? 'top'
+        : event.clientX <= bounds.left + 12 ? 'left'
+        : event.clientX >= bounds.right - 12 ? 'right' : null;
+      setPreview(active.snap);
       return;
     }
 
-    focusWindow(win.id);
-    setIsDragging(true);
-    setDragOffset({
-      x: e.clientX - win.x,
-      y: e.clientY - win.y,
-    });
+    const minW = Math.min(win.minWidth, bounds.width);
+    const minH = Math.min(win.minHeight, bounds.height);
+    const left = type.includes('w') ? clamp(frame.left + dx, bounds.left, frame.right - minW) : frame.left;
+    const top = type.includes('n') ? clamp(frame.top + dy, bounds.top, frame.bottom - minH) : frame.top;
+    const right = type.includes('e') ? clamp(frame.right + dx, frame.left + minW, bounds.right) : frame.right;
+    const bottom = type.includes('s') ? clamp(frame.bottom + dy, frame.top + minH, bounds.bottom) : frame.bottom;
+    updateWindowSize(win.id, right - left, bottom - top, left, top);
   };
 
-  // Resize handler
-  const handleResizeMouseDown = (e: React.MouseEvent, dir: string) => {
-    e.stopPropagation();
-    e.preventDefault();
-    focusWindow(win.id);
-    setResizingDir(dir);
-    setInitialResize({
-      mouseX: e.clientX,
-      mouseY: e.clientY,
-      winX: win.x,
-      winY: win.y,
-      winW: win.width,
-      winH: win.height,
-    });
+  const endGesture = (event: React.PointerEvent) => {
+    const active = gesture.current;
+    if (!active || active.pointer !== event.pointerId) return;
+    if (event.type === 'pointerup' && active.snap) snapWindow(win.id, active.snap);
+    gesture.current = null;
+    setGestureType(null);
+    setPreview(null);
   };
 
-  // Global mouse move & up listeners
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (isDragging) {
-        const minTop = theme.dockPosition === 'top' ? 44 : 0;
-        const nextX = Math.max(0, Math.min(window.innerWidth - 100, e.clientX - dragOffset.x));
-        const nextY = Math.max(minTop, Math.min(window.innerHeight - 80, e.clientY - dragOffset.y));
-
-        updateWindowPosition(win.id, nextX, nextY);
-
-        if (e.clientX <= 15) {
-          setSnapPreview('left');
-        } else if (e.clientX >= window.innerWidth - 15) {
-          setSnapPreview('right');
-        } else if (e.clientY <= minTop + 15) {
-          setSnapPreview('top');
-        } else {
-          setSnapPreview(null);
-        }
-      } else if (resizingDir) {
-        const dx = e.clientX - initialResize.mouseX;
-        const dy = e.clientY - initialResize.mouseY;
-
-        let nextX = initialResize.winX;
-        let nextY = initialResize.winY;
-        let nextW = initialResize.winW;
-        let nextH = initialResize.winH;
-
-        if (resizingDir.includes('e')) {
-          nextW = Math.max(win.minWidth, initialResize.winW + dx);
-        }
-        if (resizingDir.includes('s')) {
-          nextH = Math.max(win.minHeight, initialResize.winH + dy);
-        }
-        if (resizingDir.includes('w')) {
-          const clampedW = Math.max(win.minWidth, initialResize.winW - dx);
-          nextX = initialResize.winX + (initialResize.winW - clampedW);
-          nextW = clampedW;
-        }
-        if (resizingDir.includes('n')) {
-          const clampedH = Math.max(win.minHeight, initialResize.winH - dy);
-          nextY = initialResize.winY + (initialResize.winH - clampedH);
-          nextH = clampedH;
-        }
-
-        updateWindowSize(win.id, nextW, nextH, nextX, nextY);
-      }
-    };
-
-    const handleMouseUp = () => {
-      if (isDragging && snapPreview) {
-        snapWindow(win.id, snapPreview);
-      }
-      setIsDragging(false);
-      setResizingDir(null);
-      setSnapPreview(null);
-    };
-
-    if (isDragging || resizingDir) {
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
-    }
-
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [
-    isDragging,
-    resizingDir,
-    snapPreview,
-    dragOffset,
-    initialResize,
-    theme.dockPosition,
-    win.id,
-    win.minWidth,
-    win.minHeight,
-    updateWindowPosition,
-    updateWindowSize,
-    snapWindow,
-  ]);
-
-  const isDockTop = theme.dockPosition === 'top';
-  const isDockLeft = theme.dockPosition === 'left';
-  const topOffset = isDockTop ? 44 : 0;
-  const leftOffset = isDockLeft ? 56 : 0;
-  const heightStyle = isDockTop || theme.dockPosition === 'bottom' ? 'calc(100% - 44px)' : '100%';
-  const widthStyle = isDockLeft ? 'calc(100% - 56px)' : '100%';
-
-  // Calculate style based on state
-  let style: React.CSSProperties = {
-    position: 'absolute',
-    left: win.x,
-    top: win.y,
-    width: win.width,
-    height: win.height,
+  const tiled = win.state === 'maximized' || win.state === 'snapped-left' || win.state === 'snapped-right';
+  const width = `min(${win.width}px, 100%)`;
+  const height = `min(${win.height}px, 100%)`;
+  const style: React.CSSProperties = tiled ? { zIndex: win.zIndex } : {
+    width,
+    height,
+    left: `clamp(0px, calc(${win.x}px - var(--work-left)), calc(100% - ${width}))`,
+    top: `clamp(0px, calc(${win.y}px - var(--work-top)), calc(100% - ${height}))`,
     zIndex: win.zIndex,
   };
 
-  if (win.state === 'maximized') {
-    style = {
-      position: 'absolute',
-      left: leftOffset,
-      top: topOffset,
-      width: widthStyle,
-      height: heightStyle,
-      zIndex: win.zIndex,
-      borderRadius: 0,
-    };
-  } else if (win.state === 'snapped-left') {
-    style = {
-      position: 'absolute',
-      left: leftOffset,
-      top: topOffset,
-      width: isDockLeft ? 'calc(50% - 28px)' : '50%',
-      height: heightStyle,
-      zIndex: win.zIndex,
-      borderRadius: 0,
-    };
-  } else if (win.state === 'snapped-right') {
-    style = {
-      position: 'absolute',
-      left: isDockLeft ? 'calc(50% + 28px)' : '50%',
-      top: topOffset,
-      width: isDockLeft ? 'calc(50% - 28px)' : '50%',
-      height: heightStyle,
-      zIndex: win.zIndex,
-      borderRadius: 0,
-    };
-  }
-
-  const isLight = theme.mode === 'light';
-
   return (
     <>
-      {/* Global dragging & resizing overlay to prevent iframe pointer capture drop */}
-      {(isDragging || resizingDir) && (
-        <div className="fixed inset-0 z-[99999] cursor-move select-none" />
-      )}
-
-      {snapPreview && (
-        <div
-          style={{
-            position: 'fixed',
-            left: snapPreview === 'right' ? (isDockLeft ? 'calc(50% + 28px)' : '50%') : leftOffset,
-            top: topOffset,
-            width: snapPreview === 'top' ? widthStyle : isDockLeft ? 'calc(50% - 28px)' : '50%',
-            height: heightStyle,
-            zIndex: 9998,
-            pointerEvents: 'none',
-          }}
-          className="border-2 border-cyan-400/80 bg-cyan-500/15 backdrop-blur-[1px] rounded-lg transition-all duration-150 pointer-events-none"
-        />
-      )}
+      {gestureType && createPortal(<div className="window-pointer-mask" data-direction={gestureType} />, document.body)}
+      {preview && <div className="snap-preview" data-snap={preview} aria-hidden="true" />}
       <div
-        style={win.state === 'minimized' ? { ...style, display: 'none' } : style}
-        onMouseDown={() => focusWindow(win.id)}
-        className={`flex flex-col rounded-xl overflow-hidden shadow-2xl transition-[box-shadow,border-color] duration-150 ${
-          isLight
-            ? (theme.blur ? 'glass-panel-light text-slate-900' : 'bg-white text-slate-900')
-            : (theme.blur ? 'glass-panel text-white' : 'bg-[#161b26] text-white')
-        } border ${
-          win.isFocused
-            ? 'border-cyan-500/60 shadow-cyan-500/10'
-            : isLight
-            ? 'border-slate-300/80 shadow-md'
-            : 'border-gray-700/60 shadow-black/50'
-        }`}
+        ref={frameRef}
+        className="window-frame"
+        data-app={win.appId}
+        data-state={win.state}
+        data-focused={win.isFocused}
+        data-interacting={gestureType !== null}
+        style={style}
+        inert={minimized}
+        onPointerDown={() => { if (!win.isFocused) focusWindow(win.id); }}
+        onPointerMove={moveGesture}
+        onPointerUp={endGesture}
+        onPointerCancel={endGesture}
+        onLostPointerCapture={endGesture}
+        onContextMenu={(event) => event.stopPropagation()}
       >
-      {/* Window Titlebar */}
-      <div
-        onMouseDown={handleTitlebarMouseDown}
-        onDoubleClick={() => maximizeWindow(win.id)}
-        className={`h-9 px-3 flex items-center justify-between select-none cursor-move border-b ${
-          isLight
-            ? (win.isFocused ? 'bg-slate-200/90 border-slate-300 text-slate-800' : 'bg-slate-100/70 border-slate-200 text-slate-500')
-            : (win.isFocused ? 'bg-[#1f293d]/80 border-gray-700/80 text-gray-200' : 'bg-[#161f2e]/60 border-gray-800 text-gray-400')
-        }`}
-      >
-        {/* Left: Icon & Title */}
-        <div className="flex items-center gap-2 truncate">
-          {getAppIcon(win.icon)}
-          <span className={`text-xs font-semibold truncate ${isLight ? 'text-slate-800' : 'text-gray-200'}`}>{win.title}</span>
-          <span className={`text-[10px] font-mono ${isLight ? 'text-slate-400' : 'text-gray-400'}`}>[{win.pid}]</span>
+        <header className="window-titlebar glass-navigation" onPointerDown={(event) => beginGesture(event, 'drag')} onDoubleClick={() => maximizeWindow(win.id)}>
+          <div className="window-title"><AppIcon name={win.icon} size={16} /><span>{win.title}</span></div>
+          <div className="window-controls" onPointerDown={(event) => {
+            event.stopPropagation();
+            if (!win.isFocused) focusWindow(win.id);
+          }} onDoubleClick={(event) => event.stopPropagation()}>
+            <button title="Minimize" aria-label="Minimize" onClick={() => minimizeWindow(win.id)}><Minus size={16} /></button>
+            <button title={win.state === 'maximized' ? 'Restore' : 'Maximize'} onClick={() => maximizeWindow(win.id)}>
+              {win.state === 'maximized' ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+            </button>
+            <button title="Close" aria-label="Close" onClick={handleClose}><X size={17} /></button>
+          </div>
+        </header>
+        <div className="window-client">
+          {App ? (
+            <AppErrorBoundary appId={win.appId} windowId={win.id} onClose={handleClose}>
+              <React.Suspense fallback={<div className="p-5 text-sm text-muted">Loading application…</div>}>
+                <App windowId={win.id} pid={win.pid} initialProps={win.props} isFocused={win.isFocused} onClose={handleClose} setTitle={handleSetTitle} />
+              </React.Suspense>
+            </AppErrorBoundary>
+          ) : <div className="p-5 text-sm text-danger">Application component not found.</div>}
         </div>
-
-        {/* Right: Window Controls */}
-        <div className="flex items-center gap-1.5 ml-2" onMouseDown={(e) => e.stopPropagation()}>
-          <button
-            onClick={() => minimizeWindow(win.id)}
-            className="w-3.5 h-3.5 rounded-full bg-yellow-500 hover:bg-yellow-400 flex items-center justify-center transition-transform hover:scale-110"
-            title="Minimize"
-          >
-            <Minus className="w-2.5 h-2.5 text-black stroke-[3]" />
-          </button>
-          <button
-            onClick={() => maximizeWindow(win.id)}
-            className="w-3.5 h-3.5 rounded-full bg-green-500 hover:bg-green-400 flex items-center justify-center transition-transform hover:scale-110"
-            title="Maximize"
-          >
-            <Square className="w-2 h-2 text-black fill-black" />
-          </button>
-          <button
-            onClick={() => closeWindow(win.id)}
-            className="w-3.5 h-3.5 rounded-full bg-red-500 hover:bg-red-400 flex items-center justify-center transition-transform hover:scale-110"
-            title="Close"
-          >
-            <X className="w-2.5 h-2.5 text-black stroke-[3]" />
-          </button>
-        </div>
+        {win.state === 'normal' && handles.map((direction) => (
+          <div key={direction} className="window-resize" data-direction={direction} onPointerDown={(event) => beginGesture(event, direction)} />
+        ))}
       </div>
-
-      {/* Window Client Body */}
-      <div className={`flex-1 overflow-hidden relative ${isLight ? 'bg-slate-50 text-slate-900' : 'bg-[#0f141f] text-gray-200'}`}>
-        {AppComponent ? (
-          <AppErrorBoundary appId={win.appId} windowId={win.id} onClose={handleClose}>
-            <React.Suspense fallback={<div className="p-4 text-sm text-gray-400">Loading application...</div>}>
-              <AppComponent
-              windowId={win.id}
-              pid={win.pid}
-              initialProps={win.props}
-              isFocused={win.isFocused}
-              onClose={handleClose}
-              setTitle={handleSetTitle}
-              />
-            </React.Suspense>
-          </AppErrorBoundary>
-        ) : (
-          <div className="p-4 text-xs text-red-400">Application component not found.</div>
-        )}
-      </div>
-
-      {/* Resizing Handles (only in normal state) */}
-      {win.state === 'normal' && (
-        <>
-          <div
-            onMouseDown={(e) => handleResizeMouseDown(e, 'n')}
-            className="absolute top-0 inset-x-2 h-1.5 cursor-n-resize"
-          />
-          <div
-            onMouseDown={(e) => handleResizeMouseDown(e, 's')}
-            className="absolute bottom-0 inset-x-2 h-1.5 cursor-s-resize"
-          />
-          <div
-            onMouseDown={(e) => handleResizeMouseDown(e, 'w')}
-            className="absolute left-0 inset-y-2 w-1.5 cursor-w-resize"
-          />
-          <div
-            onMouseDown={(e) => handleResizeMouseDown(e, 'e')}
-            className="absolute right-0 inset-y-2 w-1.5 cursor-e-resize"
-          />
-          <div
-            onMouseDown={(e) => handleResizeMouseDown(e, 'nw')}
-            className="absolute top-0 left-0 w-3 h-3 cursor-nw-resize"
-          />
-          <div
-            onMouseDown={(e) => handleResizeMouseDown(e, 'ne')}
-            className="absolute top-0 right-0 w-3 h-3 cursor-ne-resize"
-          />
-          <div
-            onMouseDown={(e) => handleResizeMouseDown(e, 'sw')}
-            className="absolute bottom-0 left-0 w-3 h-3 cursor-sw-resize"
-          />
-          <div
-            onMouseDown={(e) => handleResizeMouseDown(e, 'se')}
-            className="absolute bottom-0 right-0 w-3 h-3 cursor-se-resize"
-          />
-        </>
-      )}
-    </div>
     </>
   );
-};
+}

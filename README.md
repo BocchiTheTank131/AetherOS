@@ -12,7 +12,7 @@
 
 **A high-fidelity, Linux-inspired virtual operating environment engineered natively for modern web standards.**
 
-[![AetherOS Version](https://img.shields.io/badge/AetherOS-v1.5.0%20Developer%20Workstation-00f2fe?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/BocchiTheTank131/AetherOS)
+[![AetherOS Version](https://img.shields.io/badge/AetherOS-v1.5.1%20Blue%20Hour-548ae8?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/BocchiTheTank131/AetherOS)
 [![React](https://img.shields.io/badge/React-19.3-61dafb?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-7.0-3178c6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-4.3-38bdf8?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
@@ -28,7 +28,13 @@
 
 ## Releases
 
-See [CHANGELOG.md](CHANGELOG.md) for v1.4.1 and v1.5.0.
+**v1.5.1 Blue Hour** redesigns the desktop and built-in apps. Choose Liquid Glass or Modern in **Settings → Appearance** or **Quick Settings**. Both styles work with Light, Dark, and System color modes. AetherOS saves your appearance, accent, and wallpaper preferences in AetherFS.
+
+Liquid Glass uses clear material for the dock, thicker floating modules in Quick Settings, and translucent window chrome and Settings navigation. Quick Settings includes a vertical slider for AetherOS system sound and the same appearance controls as Settings. Modern uses solid surfaces. **Settings → Appearance → Effects and readability** has controls for glass transparency and reduced motion. AetherOS also follows the browser's system accessibility preferences when exposed.
+
+The shared [glass stylesheet](src/desktop/glass.css) defines the tints, blur, specular edges, shadows, and interaction states. On Chromium, the [glass lens](src/desktop/components/GlassLens.tsx) generates a half-resolution displacement map when the dock or Quick Settings appearance module changes size. The map moves samples inward along the rounded bevel. The compositor supplies the live backdrop, so windows and custom wallpapers can contribute to the effect. Firefox and WebKit use CSS blur and reflections. Disabling transparency uses solid surfaces across browsers. Terminal and Code Studio keep solid content surfaces.
+
+See [CHANGELOG.md](CHANGELOG.md) for release details.
 
 ## 🌟 Executive Summary
 

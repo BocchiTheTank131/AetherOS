@@ -307,28 +307,28 @@ export const EditorHost: React.FC<EditorHostProps> = ({
 
   return (
     <div
-      className="relative flex flex-col h-full w-full bg-[#0d1117] text-gray-200 font-mono select-text overflow-hidden"
+      className="relative flex flex-col h-full w-full bg-canvas text-ink font-mono select-text overflow-hidden"
       style={{ fontSize: `${fontSize}px`, lineHeight: `${fontSize * 1.5}px` }}
     >
       {/* Search & Replace Floating Bar */}
       {findOpen && (
-        <div className="absolute top-2 right-4 z-40 bg-[#161b22] border border-gray-700 rounded shadow-2xl p-2 flex flex-col gap-1.5 text-xs select-none min-w-[320px]">
+        <div className="absolute top-2 right-2.5 z-40 ui-card shadow-lg p-2 flex flex-col gap-1.5 text-xs select-none w-[min(340px,calc(100%-20px))] max-w-[calc(100%-20px)]">
           <div className="flex items-center gap-1.5 justify-between">
-            <div className="flex items-center gap-1 bg-[#0d1117] border border-gray-700 rounded px-2 py-1 flex-1">
-              <Search className="w-3.5 h-3.5 text-gray-400" />
+            <div className="flex items-center gap-1 bg-canvas border border-line rounded px-2 py-1 flex-1">
+              <Search className="w-3.5 h-3.5 text-muted" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => { setSearchQuery(e.target.value); setActiveMatchIndex(0); }}
                 placeholder="Find in file..."
-                className="bg-transparent text-white outline-none w-full text-xs"
+                className="bg-transparent text-ink outline-none w-full text-xs"
                 autoFocus
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') handleNextMatch();
                   if (e.key === 'Escape') setFindOpen(false);
                 }}
               />
-              <span className="text-[10px] text-gray-500 whitespace-nowrap">
+              <span className="text-[10px] text-muted whitespace-nowrap">
                 {searchMatches.length > 0 ? `${activeMatchIndex + 1} of ${searchMatches.length}` : '0 results'}
               </span>
             </div>
@@ -337,7 +337,7 @@ export const EditorHost: React.FC<EditorHostProps> = ({
               <button
                 onClick={handlePrevMatch}
                 disabled={searchMatches.length === 0}
-                className="p-1 hover:bg-gray-800 disabled:opacity-40 rounded text-gray-300"
+                className="p-1 hover:bg-hover disabled:opacity-40 rounded text-secondary"
                 title="Previous Match"
               >
                 <ChevronUp className="w-3.5 h-3.5" />
@@ -345,14 +345,14 @@ export const EditorHost: React.FC<EditorHostProps> = ({
               <button
                 onClick={handleNextMatch}
                 disabled={searchMatches.length === 0}
-                className="p-1 hover:bg-gray-800 disabled:opacity-40 rounded text-gray-300"
+                className="p-1 hover:bg-hover disabled:opacity-40 rounded text-secondary"
                 title="Next Match"
               >
                 <ChevronDown className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={() => setFindOpen(false)}
-                className="p-1 hover:bg-gray-800 rounded text-gray-400 hover:text-white"
+                className="p-1 hover:bg-hover rounded text-muted hover:text-ink"
                 title="Close"
               >
                 <X className="w-3.5 h-3.5" />
@@ -366,7 +366,7 @@ export const EditorHost: React.FC<EditorHostProps> = ({
               value={replaceQuery}
               onChange={(e) => setReplaceQuery(e.target.value)}
               placeholder="Replace with..."
-              className="bg-[#0d1117] border border-gray-700 rounded px-2 py-1 text-white outline-none flex-1 text-xs"
+              className="bg-canvas border border-line rounded px-2 py-1 text-ink outline-none flex-1 text-xs"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleReplace();
               }}
@@ -374,14 +374,14 @@ export const EditorHost: React.FC<EditorHostProps> = ({
             <button
               onClick={handleReplace}
               disabled={searchMatches.length === 0}
-              className="px-2 py-1 bg-gray-800 hover:bg-gray-700 disabled:opacity-40 rounded text-[11px] text-gray-300"
+              className="px-2 py-1 bg-control hover:bg-hover disabled:opacity-40 rounded text-[11px] text-secondary"
             >
               Replace
             </button>
             <button
               onClick={handleReplaceAll}
               disabled={searchMatches.length === 0}
-              className="px-2 py-1 bg-gray-800 hover:bg-gray-700 disabled:opacity-40 rounded text-[11px] text-gray-300"
+              className="px-2 py-1 bg-control hover:bg-hover disabled:opacity-40 rounded text-[11px] text-secondary"
             >
               All
             </button>
@@ -391,8 +391,8 @@ export const EditorHost: React.FC<EditorHostProps> = ({
 
       {/* Go to Line Modal */}
       {goToLineOpen && (
-        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-40 bg-[#161b22] border border-gray-700 rounded shadow-2xl p-2 flex items-center gap-2 text-xs select-none">
-          <span className="text-gray-400">Go to Line:</span>
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-40 bg-side border border-line rounded shadow-2xl p-2 flex items-center gap-2 text-xs select-none">
+          <span className="text-muted">Go to Line:</span>
           <input
             type="number"
             min={1}
@@ -404,19 +404,19 @@ export const EditorHost: React.FC<EditorHostProps> = ({
               if (e.key === 'Escape') setGoToLineOpen(false);
             }}
             placeholder={`1..${lines.length}`}
-            className="w-20 px-2 py-1 bg-[#0d1117] border border-gray-700 rounded text-white outline-none"
+            className="w-20 px-2 py-1 bg-canvas border border-line rounded text-ink outline-none"
             autoFocus
           />
           <button
             onClick={handleGoToLine}
-            className="p-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded"
+            className="p-1 bg-action hover:bg-action text-on-action rounded"
             title="Go"
           >
             <CornerDownLeft className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={() => setGoToLineOpen(false)}
-            className="p-1 text-gray-400 hover:text-white"
+            className="p-1 text-muted hover:text-ink"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -426,7 +426,7 @@ export const EditorHost: React.FC<EditorHostProps> = ({
       {/* Editor Body Area: Gutter + Syntax Surface */}
       <div className="flex-1 flex overflow-hidden relative">
         {/* Line Numbers Gutter */}
-        {highlighted && <div className="bg-[#0b0e14] border-r border-gray-800 py-3 select-none flex flex-col text-right text-gray-600 font-mono pr-2.5 pl-3 min-w-[42px] overflow-hidden">
+        {highlighted && <div className="bg-canvas border-r border-line py-3 select-none flex flex-col text-right text-muted font-mono pr-2.5 pl-3 min-w-[42px] overflow-hidden">
           <div ref={gutterRef}>{lines.map((_, idx) => {
             const lineNum = idx + 1;
             const isCurr = lineNum === activeLine;
@@ -437,11 +437,11 @@ export const EditorHost: React.FC<EditorHostProps> = ({
               <div
                 key={lineNum}
                 className={`relative flex items-center justify-end leading-[inherit] ${
-                  isCurr ? 'text-cyan-400 font-semibold' : ''
+                  isCurr ? 'text-accent font-semibold' : ''
                 }`}
               >
                 {hasError && (
-                  <AlertCircle className="w-2.5 h-2.5 text-rose-500 absolute -left-2 top-1" />
+                  <AlertCircle className="w-2.5 h-2.5 text-danger absolute -left-2 top-1" />
                 )}
                 <span>{lineNum}</span>
               </div>
@@ -465,18 +465,18 @@ export const EditorHost: React.FC<EditorHostProps> = ({
               const lineDiags = diagnosticsByLine.get(lineNum);
 
               return (
-                <div key={lineIdx} className={`leading-[inherit] relative min-h-[1lh] ${lineNum === activeLine ? 'bg-cyan-950/30' : ''}`}>
+                <div key={lineIdx} className={`leading-[inherit] relative min-h-[1lh] ${lineNum === activeLine ? 'bg-selection' : ''}`}>
                   {tokens.map((tok, tokIdx) => {
-                    let colorClass = 'text-gray-300';
-                    if (tok.type === 'keyword') colorClass = 'text-purple-400 font-semibold';
-                    else if (tok.type === 'string') colorClass = 'text-emerald-300';
-                    else if (tok.type === 'number') colorClass = 'text-amber-300';
-                    else if (tok.type === 'comment') colorClass = 'text-gray-500 italic';
-                    else if (tok.type === 'function') colorClass = 'text-blue-400';
-                    else if (tok.type === 'type') colorClass = 'text-teal-300';
-                    else if (tok.type === 'tag') colorClass = 'text-rose-400 font-medium';
-                    else if (tok.type === 'attr') colorClass = 'text-amber-400';
-                    else if (tok.type === 'punctuation') colorClass = 'text-gray-400';
+                    let colorClass = 'text-secondary';
+                    if (tok.type === 'keyword') colorClass = 'text-iris font-semibold';
+                    else if (tok.type === 'string') colorClass = 'text-positive';
+                    else if (tok.type === 'number') colorClass = 'text-caution';
+                    else if (tok.type === 'comment') colorClass = 'text-muted italic';
+                    else if (tok.type === 'function') colorClass = 'text-accent';
+                    else if (tok.type === 'type') colorClass = 'text-aqua';
+                    else if (tok.type === 'tag') colorClass = 'text-danger font-medium';
+                    else if (tok.type === 'attr') colorClass = 'text-caution';
+                    else if (tok.type === 'punctuation') colorClass = 'text-muted';
 
                     return (
                       <span key={tokIdx} className={colorClass}>
@@ -515,7 +515,7 @@ export const EditorHost: React.FC<EditorHostProps> = ({
             autoCapitalize="off"
             autoComplete="off"
             autoCorrect="off"
-            className={`w-full h-full p-3 bg-transparent caret-cyan-400 outline-none resize-none font-mono ${highlighted ? 'text-transparent' : 'text-gray-200'} ${
+            className={`w-full h-full p-3 bg-transparent caret-accent outline-none resize-none font-mono ${highlighted ? 'text-transparent' : 'text-ink'} ${
               wordWrap ? 'whitespace-pre-wrap break-words' : 'whitespace-pre'
             }`}
             style={{ fontSize: `${fontSize}px`, lineHeight: `${fontSize * 1.5}px` }}

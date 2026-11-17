@@ -1,5 +1,5 @@
 // AetherOS - System Monitor Application
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import type { AppProps } from '../types';
 import { virtualKernel } from '../../core/kernel';
 import { performanceService, type PerformanceSample } from '../../core/performanceService';
@@ -7,6 +7,55 @@ import type { Process } from '../../core/types';
 import { useSystem } from '../../core/context';
 import { dialogService } from '../../core/dialog';
 import { Activity, Cpu, HardDrive, Server, XCircle, Search } from 'lucide-react';
+
+function PerformanceChart({ data, metric }: { data: number[]; metric: 'CPU' | 'Memory' }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { colorMode, theme: { accentHex } } = useSystem();
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!canvas || !ctx) return;
+    const draw = () => {
+      const { clientWidth: width, clientHeight: height } = canvas;
+      if (!width || !height) return;
+      const ratio = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.round(width * ratio);
+      canvas.height = Math.round(height * ratio);
+      ctx.scale(ratio, ratio);
+      const tint = getComputedStyle(canvas).color;
+      ctx.strokeStyle = tint;
+      ctx.globalAlpha = .16;
+      for (const level of [0, .25, .5, .75, 1]) {
+        const y = 7 + (height - 14) * level;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      ctx.beginPath();
+      data.forEach((value, index) => {
+        const x = 4 + (width - 8) * index / Math.max(1, data.length - 1);
+        const y = height - 7 - (height - 14) * Math.max(0, Math.min(value, 100)) / 100;
+        if (index === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.lineWidth = 1.75;
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+      ctx.lineTo(width - 4, height - 7);
+      ctx.lineTo(4, height - 7);
+      ctx.fillStyle = tint;
+      ctx.globalAlpha = .12;
+      ctx.fill();
+    };
+    draw();
+    const resize = new ResizeObserver(draw);
+    resize.observe(canvas);
+    return () => resize.disconnect();
+  }, [data, colorMode, accentHex]);
+  return <canvas ref={canvasRef} className={`monitor-chart ${metric === 'CPU' ? 'text-accent' : 'text-iris'}`} aria-label={`${metric} usage over the last 30 seconds`} role="img" />;
+}
 
 export const SystemMonitorApp: React.FC<AppProps> = () => {
   const { closeWindow } = useSystem();
@@ -20,9 +69,6 @@ export const SystemMonitorApp: React.FC<AppProps> = () => {
   const [cpuHistory, setCpuHistory] = useState<number[]>(Array(30).fill(0));
   const [memHistory, setMemHistory] = useState<number[]>(Array(30).fill(0));
 
-  const cpuCanvasRef = useRef<HTMLCanvasElement>(null);
-  const memCanvasRef = useRef<HTMLCanvasElement>(null);
-
   // Subscribe to Centralized Performance Monitoring Service
   useEffect(() => {
     const unsub = performanceService.subscribe((sample) => {
@@ -34,94 +80,6 @@ export const SystemMonitorApp: React.FC<AppProps> = () => {
 
     return () => unsub();
   }, []);
-
-  // Render CPU Canvas Chart
-  useEffect(() => {
-    if (activeTab !== 'performance' || !cpuCanvasRef.current) return;
-    const canvas = cpuCanvasRef.current;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const w = canvas.width;
-    const h = canvas.height;
-    ctx.clearRect(0, 0, w, h);
-
-    // Draw Grid
-    ctx.strokeStyle = '#1e293b';
-    ctx.lineWidth = 1;
-    for (let y = 0; y < h; y += 20) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(w, y);
-      ctx.stroke();
-    }
-
-    // Draw CPU Line
-    ctx.strokeStyle = '#00f2fe';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    const step = w / (cpuHistory.length - 1);
-    cpuHistory.forEach((val, idx) => {
-      const x = idx * step;
-      const y = h - (val / 100) * (h - 10) - 5;
-      if (idx === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
-
-    // Fill gradient
-    ctx.lineTo(w, h);
-    ctx.lineTo(0, h);
-    const grad = ctx.createLinearGradient(0, 0, 0, h);
-    grad.addColorStop(0, 'rgba(0, 242, 254, 0.25)');
-    grad.addColorStop(1, 'rgba(0, 242, 254, 0.0)');
-    ctx.fillStyle = grad;
-    ctx.fill();
-  }, [cpuHistory, activeTab]);
-
-  // Render Memory Canvas Chart
-  useEffect(() => {
-    if (activeTab !== 'performance' || !memCanvasRef.current) return;
-    const canvas = memCanvasRef.current;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const w = canvas.width;
-    const h = canvas.height;
-    ctx.clearRect(0, 0, w, h);
-
-    // Draw Grid
-    ctx.strokeStyle = '#1e293b';
-    ctx.lineWidth = 1;
-    for (let y = 0; y < h; y += 20) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(w, y);
-      ctx.stroke();
-    }
-
-    // Draw Mem Line
-    ctx.strokeStyle = '#a855f7';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    const step = w / (memHistory.length - 1);
-    memHistory.forEach((val, idx) => {
-      const x = idx * step;
-      const y = h - (val / 100) * (h - 10) - 5;
-      if (idx === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
-
-    // Fill gradient
-    ctx.lineTo(w, h);
-    ctx.lineTo(0, h);
-    const grad = ctx.createLinearGradient(0, 0, 0, h);
-    grad.addColorStop(0, 'rgba(168, 85, 247, 0.25)');
-    grad.addColorStop(1, 'rgba(168, 85, 247, 0.0)');
-    ctx.fillStyle = grad;
-    ctx.fill();
-  }, [memHistory, activeTab]);
 
   const handleKill = async () => {
     if (!selectedPid) return;
@@ -179,14 +137,14 @@ export const SystemMonitorApp: React.FC<AppProps> = () => {
   ];
 
   return (
-    <div className="flex flex-col h-full bg-[#111827] text-gray-200 text-xs select-none overflow-hidden">
+    <div className="flex flex-col h-full bg-canvas text-ink text-xs select-none overflow-hidden">
       {/* Header Tabs */}
-      <div className="flex items-center justify-between px-3 py-1.5 bg-[#1f2937] border-b border-gray-700/60">
+      <div className="monitor-toolbar">
         <div className="flex items-center gap-1">
           <button
             onClick={() => setActiveTab('processes')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-colors ${
-              activeTab === 'processes' ? 'bg-cyan-500/20 text-cyan-300' : 'text-gray-400 hover:text-white'
+              activeTab === 'processes' ? 'bg-selection text-accent' : 'text-muted hover:text-ink'
             }`}
           >
             <Activity className="w-4 h-4" />
@@ -195,7 +153,7 @@ export const SystemMonitorApp: React.FC<AppProps> = () => {
           <button
             onClick={() => setActiveTab('performance')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-colors ${
-              activeTab === 'performance' ? 'bg-cyan-500/20 text-cyan-300' : 'text-gray-400 hover:text-white'
+              activeTab === 'performance' ? 'bg-selection text-accent' : 'text-muted hover:text-ink'
             }`}
           >
             <Cpu className="w-4 h-4" />
@@ -204,7 +162,7 @@ export const SystemMonitorApp: React.FC<AppProps> = () => {
           <button
             onClick={() => setActiveTab('services')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-colors ${
-              activeTab === 'services' ? 'bg-cyan-500/20 text-cyan-300' : 'text-gray-400 hover:text-white'
+              activeTab === 'services' ? 'bg-selection text-accent' : 'text-muted hover:text-ink'
             }`}
           >
             <Server className="w-4 h-4" />
@@ -214,20 +172,20 @@ export const SystemMonitorApp: React.FC<AppProps> = () => {
 
         {activeTab === 'processes' && (
           <div className="flex items-center gap-2">
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 absolute left-2 top-1.5 text-gray-400" />
+            <div className="monitor-search">
+              <Search className="w-3.5 h-3.5 absolute left-2 top-1.5 text-muted" />
               <input
                 type="text"
                 placeholder="Filter processes..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="bg-[#111827] border border-gray-700 rounded-lg pl-7 pr-2 py-1 text-xs text-white outline-none w-36"
+                className="bg-canvas border border-line rounded-lg pl-7 pr-2 py-1 text-xs text-ink outline-none w-36"
               />
             </div>
             {selectedPid && (
               <button
                 onClick={handleKill}
-                className="flex items-center gap-1 px-2.5 py-1 bg-red-600 hover:bg-red-500 text-white rounded-lg text-xs font-semibold"
+                className="flex items-center gap-1 px-2.5 py-1 bg-red-600 hover:bg-red-500 text-on-action rounded-lg text-xs font-semibold"
               >
                 <XCircle className="w-3.5 h-3.5" />
                 <span>End Process</span>
@@ -243,7 +201,7 @@ export const SystemMonitorApp: React.FC<AppProps> = () => {
         {activeTab === 'processes' && (
           <div className="h-full flex flex-col">
             {/* Table Header */}
-            <div className="grid grid-cols-12 px-3 py-2 bg-[#161f2e] border-b border-gray-700 text-gray-400 font-semibold">
+            <div className="grid grid-cols-12 px-3 py-2 bg-side border-b border-line text-muted font-semibold">
               <span className="col-span-4">Process Name</span>
               <span className="col-span-2">PID</span>
               <span className="col-span-2">User</span>
@@ -259,18 +217,18 @@ export const SystemMonitorApp: React.FC<AppProps> = () => {
                   <div
                     key={proc.pid}
                     onClick={() => setSelectedPid(proc.pid)}
-                    className={`grid grid-cols-12 items-center px-3 py-2 border-b border-gray-800 cursor-pointer ${
-                      isSelected ? 'bg-cyan-500/20 text-cyan-200' : 'hover:bg-gray-800/50 text-gray-300'
+                    className={`grid grid-cols-12 items-center px-3 py-2 border-b border-line cursor-pointer ${
+                      isSelected ? 'bg-selection text-accent' : 'hover:bg-hover text-secondary'
                     }`}
                   >
                     <div className="col-span-4 flex items-center gap-2 truncate">
-                      <Activity className="w-3.5 h-3.5 text-cyan-400 flex-shrink-0" />
+                      <Activity className="w-3.5 h-3.5 text-accent flex-shrink-0" />
                       <span className="truncate font-medium">{proc.name}</span>
                     </div>
-                    <span className="col-span-2 font-mono text-gray-400">{proc.pid}</span>
-                    <span className="col-span-2 text-gray-400">{proc.user}</span>
-                    <span className="col-span-2 font-mono text-cyan-400">{proc.cpuPercent}%</span>
-                    <span className="col-span-2 font-mono text-purple-300">
+                    <span className="col-span-2 font-mono text-muted">{proc.pid}</span>
+                    <span className="col-span-2 text-muted">{proc.user}</span>
+                    <span className="col-span-2 font-mono text-accent">{proc.cpuPercent}%</span>
+                    <span className="col-span-2 font-mono text-iris">
                       {(proc.memoryKb / 1024).toFixed(1)} MB
                     </span>
                   </div>
@@ -282,76 +240,42 @@ export const SystemMonitorApp: React.FC<AppProps> = () => {
 
         {/* PERFORMANCE VIEW */}
         {activeTab === 'performance' && (
-          <div className="h-full p-4 overflow-y-auto space-y-4">
-            {/* CPU Card */}
-            <div className="bg-[#1f2937] p-4 rounded-xl border border-gray-700 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Cpu className="w-4 h-4 text-cyan-400" />
-                  <div>
-                    <span className="font-semibold text-white">CPU Utilization</span>
-                    <span className="text-[10px] text-gray-400 ml-2">(Active Virtual Workloads)</span>
-                  </div>
-                </div>
-                <span className="font-mono text-lg font-bold text-cyan-400">{currentCpu}%</span>
-              </div>
-              <canvas
-                ref={cpuCanvasRef}
-                width={500}
-                height={120}
-                className="w-full h-28 bg-[#111827] rounded-lg border border-gray-800"
-              />
-              <div className="flex justify-between text-[11px] text-gray-400">
-                <span>30 seconds ago</span>
-                <span>Current</span>
-              </div>
-            </div>
-
-            {/* Memory Card */}
-            <div className="bg-[#1f2937] p-4 rounded-xl border border-gray-700 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <HardDrive className="w-4 h-4 text-purple-400" />
-                  <div>
-                    <span className="font-semibold text-white">Memory Consumption</span>
-                    <span className="text-[10px] text-gray-400 ml-2">
-                      ({mem.source === 'performance.memory' ? 'Host Browser JS Heap' : 'Virtual Allocations'})
-                    </span>
-                  </div>
-                </div>
-                <span className="font-mono text-lg font-bold text-purple-400">
-                  {Math.round(mem.usedKb / 1024)} MB / {Math.round(mem.totalKb / 1024)} MB ({mem.percent}%)
-                </span>
-              </div>
-              <canvas
-                ref={memCanvasRef}
-                width={500}
-                height={120}
-                className="w-full h-28 bg-[#111827] rounded-lg border border-gray-800"
-              />
-              <div className="flex justify-between text-[11px] text-gray-400">
-                <span>30 seconds ago</span>
-                <span>Current</span>
-              </div>
-            </div>
+          <div className="monitor-graphs">
+            <section className="ui-card monitor-graph">
+              <header>
+                <h2 className="flex items-center gap-2 font-semibold"><Cpu size={17} className="text-accent" /> CPU utilization</h2>
+                <strong className="text-accent">{currentCpu}%</strong>
+              </header>
+              <PerformanceChart data={cpuHistory} metric="CPU" />
+              <div className="flex justify-between text-xs text-muted"><span>30 seconds ago</span><span>Now</span></div>
+            </section>
+            <section className="ui-card monitor-graph">
+              <header>
+                <h2 className="flex items-center gap-2 font-semibold"><HardDrive size={17} className="text-iris" /> Memory usage</h2>
+                <strong className="text-iris">{mem.percent}%</strong>
+              </header>
+              <p className="text-muted">{Math.round(mem.usedKb / 1024)} MB of {Math.round(mem.totalKb / 1024)} MB · {mem.source === 'performance.memory' ? 'Browser heap' : 'Virtual allocations'}</p>
+              <PerformanceChart data={memHistory} metric="Memory" />
+              <div className="flex justify-between text-xs text-muted"><span>30 seconds ago</span><span>Now</span></div>
+            </section>
           </div>
         )}
 
         {/* SERVICES VIEW */}
         {activeTab === 'services' && (
           <div className="h-full p-4 overflow-y-auto">
-            <div className="bg-[#1f2937] rounded-xl border border-gray-700 overflow-hidden">
-              <div className="p-3 bg-[#161f2e] border-b border-gray-700 font-semibold text-gray-300">
+            <div className="bg-raised rounded-xl border border-line overflow-hidden">
+              <div className="p-3 bg-side border-b border-line font-semibold text-secondary">
                 AetherCore Background Services
               </div>
-              <div className="divide-y divide-gray-800">
+              <div className="divide-y divide-line">
                 {services.map((s) => (
                   <div key={s.name} className="flex items-center justify-between p-3">
                     <div>
-                      <h4 className="font-mono font-medium text-white">{s.name}</h4>
-                      <p className="text-[11px] text-gray-400">{s.desc}</p>
+                      <h4 className="font-mono font-medium text-ink">{s.name}</h4>
+                      <p className="text-[11px] text-muted">{s.desc}</p>
                     </div>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-positive/20 text-positive border border-positive/30">
                       active (running)
                     </span>
                   </div>
@@ -363,7 +287,7 @@ export const SystemMonitorApp: React.FC<AppProps> = () => {
       </div>
 
       {/* Footer Info */}
-      <div className="flex items-center justify-between px-3 py-1 bg-[#161f2e] border-t border-gray-700/60 text-[11px] text-gray-400">
+      <div className="flex items-center justify-between px-3 py-1 bg-side border-t border-line text-[11px] text-muted">
         <div className="flex items-center gap-3">
           <span>Processes: {processes.length} total</span>
           <span>Workers: {latestSample?.activeWorkers ?? 0} active</span>

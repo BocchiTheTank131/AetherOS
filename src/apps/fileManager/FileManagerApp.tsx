@@ -6,6 +6,7 @@ import type { VFSEntry, VFSNode } from '../../vfs/types';
 import { getAppForFile } from '../../vfs/mime';
 import { useSystem } from '../../core/context';
 import { dialogService } from '../../core/dialog';
+import { ContextMenu } from '../../desktop/components/ContextMenu';
 import {
   Folder,
   File,
@@ -67,6 +68,7 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
   const [isEditingPath, setIsEditingPath] = useState(false);
   const [pathInput, setPathInput] = useState(currentPath);
 
+  const fileManagerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pathInputRef = useRef<HTMLInputElement>(null);
 
@@ -472,20 +474,33 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
     e.target.value = '';
   };
 
+  const showItemMenu = (event: React.MouseEvent, entry: VFSEntry) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const bounds = fileManagerRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    setSelectedPaths(new Set([entry.path]));
+    setItemContextMenu({
+      x: Math.max(4, Math.min(event.clientX - bounds.left, bounds.width - 210)),
+      y: Math.max(4, Math.min(event.clientY - bounds.top, bounds.height - 204)),
+      entry,
+    });
+  };
+
   // Get icon for entry
   const getEntryIcon = (entry: VFSEntry) => {
     if (entry.type === 'dir') {
-      return <Folder className="w-8 h-8 text-cyan-400 fill-cyan-400/20" />;
+      return <Folder size={34} className="text-accent fill-selection" />;
     }
     const mime = entry.mimeType || '';
-    if (mime.startsWith('image/')) return <ImageIcon className="w-8 h-8 text-emerald-400" />;
-    if (mime.startsWith('audio/')) return <Music className="w-8 h-8 text-pink-400" />;
-    if (mime.startsWith('video/')) return <Video className="w-8 h-8 text-purple-400" />;
+    if (mime.startsWith('image/')) return <ImageIcon className="w-8 h-8 text-positive" />;
+    if (mime.startsWith('audio/')) return <Music className="w-8 h-8 text-flamingo" />;
+    if (mime.startsWith('video/')) return <Video className="w-8 h-8 text-iris" />;
     if (mime.includes('javascript') || mime.includes('typescript') || mime.includes('html')) {
-      return <FileCode className="w-8 h-8 text-amber-400" />;
+      return <FileCode className="w-8 h-8 text-caution" />;
     }
-    if (mime.includes('zip') || mime.includes('tar')) return <Archive className="w-8 h-8 text-yellow-400" />;
-    return <FileText className="w-8 h-8 text-blue-300" />;
+    if (mime.includes('zip') || mime.includes('tar')) return <Archive className="w-8 h-8 text-caution" />;
+    return <FileText className="w-8 h-8 text-accent" />;
   };
 
   // Filter and sort entries
@@ -528,25 +543,25 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
   const isInTrash = currentPath === '/home/aether/.trash' || currentPath.startsWith('/home/aether/.trash/');
 
   const quickLinks = [
-    { name: 'Home', path: '/home/aether', icon: <Home className="w-4 h-4 text-cyan-400" /> },
-    { name: 'Desktop', path: '/home/aether/Desktop', icon: <Monitor className="w-4 h-4 text-blue-400" /> },
-    { name: 'Documents', path: '/home/aether/Documents', icon: <FileText className="w-4 h-4 text-emerald-400" /> },
-    { name: 'Downloads', path: '/home/aether/Downloads', icon: <Download className="w-4 h-4 text-amber-400" /> },
-    { name: 'Pictures', path: '/home/aether/Pictures', icon: <ImageIcon className="w-4 h-4 text-pink-400" /> },
-    { name: 'Projects', path: '/home/aether/Projects', icon: <FolderGit2 className="w-4 h-4 text-indigo-400" /> },
-    { name: 'File System', path: '/', icon: <HardDrive className="w-4 h-4 text-gray-400" /> },
-    { name: 'Trash', path: '/home/aether/.trash', icon: <Trash2 className="w-4 h-4 text-red-400" /> },
+    { name: 'Home', path: '/home/aether', icon: <Home className="w-4 h-4 text-accent" /> },
+    { name: 'Desktop', path: '/home/aether/Desktop', icon: <Monitor className="w-4 h-4 text-accent" /> },
+    { name: 'Documents', path: '/home/aether/Documents', icon: <FileText className="w-4 h-4 text-positive" /> },
+    { name: 'Downloads', path: '/home/aether/Downloads', icon: <Download className="w-4 h-4 text-caution" /> },
+    { name: 'Pictures', path: '/home/aether/Pictures', icon: <ImageIcon className="w-4 h-4 text-flamingo" /> },
+    { name: 'Projects', path: '/home/aether/Projects', icon: <FolderGit2 className="w-4 h-4 text-iris" /> },
+    { name: 'File System', path: '/', icon: <HardDrive className="w-4 h-4 text-muted" /> },
+    { name: 'Trash', path: '/home/aether/.trash', icon: <Trash2 className="w-4 h-4 text-danger" /> },
   ];
 
   return (
-    <div className="flex flex-col h-full bg-[#111827] text-gray-200 select-none overflow-hidden">
+    <div className="file-manager flex flex-col h-full bg-canvas text-ink select-none overflow-hidden relative" ref={fileManagerRef}>
       {/* Top Toolbar */}
-      <div className="flex items-center justify-between p-2 bg-[#1f2937] border-b border-gray-700/60 gap-2">
-        <div className="flex items-center gap-1">
+      <div className="file-toolbar">
+        <div className="file-navigation">
           <button
             onClick={goBack}
             disabled={historyIdx === 0}
-            className="p-1.5 rounded hover:bg-gray-700 disabled:opacity-30 disabled:hover:bg-transparent"
+            className="p-1.5 rounded hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent"
             title="Back"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -554,7 +569,7 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
           <button
             onClick={goForward}
             disabled={historyIdx >= history.length - 1}
-            className="p-1.5 rounded hover:bg-gray-700 disabled:opacity-30 disabled:hover:bg-transparent"
+            className="p-1.5 rounded hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent"
             title="Forward"
           >
             <ArrowRight className="w-4 h-4" />
@@ -562,7 +577,7 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
           <button
             onClick={goUp}
             disabled={currentPath === '/'}
-            className="p-1.5 rounded hover:bg-gray-700 disabled:opacity-30 disabled:hover:bg-transparent"
+            className="p-1.5 rounded hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent"
             title="Up"
           >
             <ArrowUp className="w-4 h-4" />
@@ -571,7 +586,7 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
 
         {/* Breadcrumb / Address Bar */}
         {isEditingPath ? (
-          <div className="flex-1 flex items-center bg-[#111827] border border-cyan-500 rounded px-2.5 py-1 text-xs font-mono">
+          <div className="file-path file-path-edit">
             <input
               ref={pathInputRef}
               type="text"
@@ -590,7 +605,7 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
               onBlur={() => {
                 setTimeout(() => setIsEditingPath(false), 200);
               }}
-              className="w-full bg-transparent text-white outline-none font-mono"
+              className="w-full bg-transparent text-ink outline-none font-mono"
               placeholder="/path/to/folder"
             />
           </div>
@@ -600,7 +615,7 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
               setIsEditingPath(true);
               setPathInput(currentPath);
             }}
-            className="flex-1 flex items-center bg-[#111827] border border-gray-700 hover:border-gray-500 rounded px-2.5 py-1 text-xs font-mono overflow-x-auto cursor-text group transition-colors"
+            className="file-path cursor-text"
             title="Click or press Ctrl+L to edit path"
           >
             <button
@@ -608,7 +623,7 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
                 e.stopPropagation();
                 navigateTo('/');
               }}
-              className="hover:text-cyan-400 font-semibold px-1 rounded hover:bg-gray-800"
+              className="hover:text-accent font-semibold px-1 rounded hover:bg-hover"
             >
               /
             </button>
@@ -616,13 +631,13 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
               const segPath = '/' + breadcrumbs.slice(0, idx + 1).join('/');
               return (
                 <React.Fragment key={segPath}>
-                  <span className="text-gray-500">/</span>
+                  <span className="text-muted">/</span>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       navigateTo(segPath);
                     }}
-                    className="hover:text-cyan-400 px-1 truncate max-w-[120px] rounded hover:bg-gray-800"
+                    className="hover:text-accent px-1 truncate max-w-[120px] rounded hover:bg-hover"
                   >
                     {seg}
                   </button>
@@ -634,25 +649,25 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
         )}
 
         {/* Search */}
-        <div className="relative w-44">
-          <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-gray-400" />
+        <div className="file-search">
+          <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-muted" />
           <input
             type="text"
-            placeholder="Search..."
+            placeholder="Filter" aria-label="Filter files"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-[#111827] border border-gray-700 rounded pl-7 pr-2 py-1 text-xs text-white placeholder-gray-400 outline-none focus:border-cyan-500"
+            className="w-full bg-canvas border border-line rounded pl-7 pr-2 py-1 text-xs text-ink placeholder-muted outline-none focus:border-accent"
           />
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-1 border-l border-gray-700 pl-2">
+        <div className="file-actions">
           {isInTrash ? (
             <>
               <button
                 onClick={handleRestoreSelected}
                 disabled={selectedPaths.size === 0}
-                className="flex items-center gap-1 px-2 py-1 rounded bg-cyan-600/30 hover:bg-cyan-600 text-cyan-300 hover:text-white text-xs disabled:opacity-30"
+                className="flex items-center gap-1 px-2 py-1 rounded bg-selection hover:bg-action text-accent hover:text-on-action text-xs disabled:opacity-30"
                 title="Restore selected to Documents"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
@@ -660,7 +675,7 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
               </button>
               <button
                 onClick={handleEmptyTrash}
-                className="flex items-center gap-1 px-2 py-1 rounded bg-red-600/30 hover:bg-red-600 text-red-300 hover:text-white text-xs"
+                className="flex items-center gap-1 px-2 py-1 rounded bg-danger/30 hover:bg-red-600 text-danger hover:text-on-action text-xs"
                 title="Empty Trash"
               >
                 <Trash2 className="w-3.5 h-3.5" />
@@ -671,24 +686,24 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
             <>
               <button
                 onClick={handleCreateFolder}
-                className="p-1.5 rounded hover:bg-gray-700 text-gray-300 hover:text-white"
+                className="p-1.5 rounded hover:bg-hover text-secondary hover:text-ink"
                 title="New Folder"
               >
-                <Folder className="w-4 h-4 text-cyan-400" />
+                <Folder className="w-4 h-4 text-accent" />
               </button>
               <button
                 onClick={handleCreateFile}
-                className="p-1.5 rounded hover:bg-gray-700 text-gray-300 hover:text-white"
+                className="p-1.5 rounded hover:bg-hover text-secondary hover:text-ink"
                 title="New File"
               >
-                <Plus className="w-4 h-4 text-emerald-400" />
+                <Plus className="w-4 h-4 text-positive" />
               </button>
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="p-1.5 rounded hover:bg-gray-700 text-gray-300 hover:text-white"
+                className="p-1.5 rounded hover:bg-hover text-secondary hover:text-ink"
                 title="Upload from host computer"
               >
-                <Upload className="w-4 h-4 text-amber-400" />
+                <Upload className="w-4 h-4 text-caution" />
               </button>
               <input
                 ref={fileInputRef}
@@ -702,37 +717,37 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
               <button
                 onClick={handleExportSelected}
                 disabled={selectedPaths.size === 0}
-                className="p-1.5 rounded hover:bg-gray-700 text-gray-300 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent"
+                className="p-1.5 rounded hover:bg-hover text-secondary hover:text-ink disabled:opacity-30 disabled:hover:bg-transparent"
                 title="Export selected file to computer"
               >
-                <Download className="w-4 h-4 text-teal-400" />
+                <Download className="w-4 h-4 text-aqua" />
               </button>
 
               {/* Cut, Copy, Paste toolbar actions */}
-              <div className="flex items-center gap-0.5 border-l border-gray-700 pl-1 ml-1">
+              <div className="flex items-center gap-0.5 border-l border-line pl-1 ml-1">
                 <button
                   onClick={handleCopy}
                   disabled={selectedPaths.size === 0}
-                  className="p-1.5 rounded hover:bg-gray-700 text-gray-300 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent"
+                  className="p-1.5 rounded hover:bg-hover text-secondary hover:text-ink disabled:opacity-30 disabled:hover:bg-transparent"
                   title="Copy (Ctrl+C)"
                 >
-                  <Copy className="w-4 h-4 text-blue-400" />
+                  <Copy className="w-4 h-4 text-accent" />
                 </button>
                 <button
                   onClick={handleCut}
                   disabled={selectedPaths.size === 0}
-                  className="p-1.5 rounded hover:bg-gray-700 text-gray-300 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent"
+                  className="p-1.5 rounded hover:bg-hover text-secondary hover:text-ink disabled:opacity-30 disabled:hover:bg-transparent"
                   title="Cut (Ctrl+X)"
                 >
-                  <Scissors className="w-4 h-4 text-purple-400" />
+                  <Scissors className="w-4 h-4 text-iris" />
                 </button>
                 <button
                   onClick={handlePaste}
                   disabled={!clipboard}
-                  className="p-1.5 rounded hover:bg-gray-700 text-gray-300 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent"
+                  className="p-1.5 rounded hover:bg-hover text-secondary hover:text-ink disabled:opacity-30 disabled:hover:bg-transparent"
                   title={clipboard ? `Paste '${clipboard.path.split('/').pop()}' (Ctrl+V)` : 'Paste (Ctrl+V)'}
                 >
-                  <ClipboardPaste className="w-4 h-4 text-emerald-400" />
+                  <ClipboardPaste className="w-4 h-4 text-positive" />
                 </button>
               </div>
             </>
@@ -740,14 +755,14 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
 
           <button
             onClick={() => setShowHidden((prev) => !prev)}
-            className={`p-1.5 rounded hover:bg-gray-700 ${showHidden ? 'bg-gray-700 text-cyan-400' : 'text-gray-400'}`}
+            className={`p-1.5 rounded hover:bg-hover ${showHidden ? 'bg-control text-accent' : 'text-muted'}`}
             title="Toggle Hidden Files"
           >
             <Eye className="w-4 h-4" />
           </button>
           <button
             onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
-            className="p-1.5 rounded hover:bg-gray-700 text-gray-300"
+            className="p-1.5 rounded hover:bg-hover text-secondary"
             title="Toggle View Mode"
           >
             {viewMode === 'grid' ? <List className="w-4 h-4" /> : <LayoutGrid className="w-4 h-4" />}
@@ -755,7 +770,7 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
           {selectedPaths.size > 0 && (
             <button
               onClick={handleDeleteSelected}
-              className="p-1.5 rounded hover:bg-red-500/20 text-red-400"
+              className="p-1.5 rounded hover:bg-danger/20 text-danger"
               title="Delete Selected"
             >
               <Trash2 className="w-4 h-4" />
@@ -765,162 +780,153 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
       </div>
 
       {/* Main Split Body */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="file-main">
         {/* Quick Access Sidebar */}
-        <div className="w-44 bg-[#161f2e] border-r border-gray-700/60 p-2 flex flex-col gap-1 overflow-y-auto">
-          <span className="text-[10px] font-semibold tracking-wider text-gray-400 uppercase px-2 py-1">
+        <nav className="file-sidebar" aria-label="Places">
+          <span className="file-sidebar-title">
             Places
           </span>
           {quickLinks.map((link) => (
             <button
               key={link.path}
+              aria-current={currentPath === link.path ? 'location' : undefined}
               onClick={() => navigateTo(link.path)}
               className={`flex items-center gap-2.5 px-2.5 py-1.5 text-xs rounded transition-colors ${
                 currentPath === link.path
-                  ? 'bg-cyan-500/20 text-cyan-300 font-medium'
-                  : 'text-gray-300 hover:bg-gray-800'
+                  ? 'bg-selection text-accent font-medium'
+                  : 'text-secondary hover:bg-hover'
               }`}
             >
               {link.icon}
               <span className="truncate">{link.name}</span>
             </button>
           ))}
-        </div>
+        </nav>
 
         {/* File Grid / List Content */}
         <div
-          className="flex-1 p-3 overflow-y-auto"
+          className="file-content"
           onClick={() => {
             setSelectedPaths(new Set());
             setItemContextMenu(null);
           }}
         >
           {processedEntries.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-gray-500 gap-2">
+            <div className="h-full flex flex-col items-center justify-center text-muted gap-2">
               <FolderArchive className="w-12 h-12 stroke-[1.2]" />
               <p className="text-sm">Folder is empty</p>
             </div>
           ) : viewMode === 'grid' ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+            <div className="file-grid">
               {processedEntries.map((entry) => {
                 const isSelected = selectedPaths.has(entry.path);
                 return (
-                  <div
+                  <button
+                    type="button"
                     key={entry.path}
+                    aria-pressed={isSelected}
+                    aria-label={entry.name}
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleItemClick(e, entry.path);
+                      if (e.detail === 0) handleDoubleClick(entry);
+                      else handleItemClick(e, entry.path);
                     }}
                     onDoubleClick={() => handleDoubleClick(entry)}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setSelectedPaths(new Set([entry.path]));
-                      setItemContextMenu({
-                        x: Math.min(e.clientX, window.innerWidth - 180),
-                        y: Math.min(e.clientY, window.innerHeight - 200),
-                        entry,
-                      });
-                    }}
-                    className={`flex flex-col items-center p-2.5 rounded-lg cursor-pointer transition-all border ${
+                    onContextMenu={(event) => showItemMenu(event, entry)}
+                    className={`file-grid-item border ${
                       isSelected
-                        ? 'bg-cyan-500/20 border-cyan-500/50 shadow-sm'
-                        : 'border-transparent hover:bg-gray-800/60'
+                        ? 'bg-selection border-accent/50 shadow-sm'
+                        : 'border-transparent hover:bg-hover'
                     }`}
                   >
                     {getEntryIcon(entry)}
-                    <span className="text-xs text-center mt-2 font-medium line-clamp-2 break-all text-gray-200">
+                    <span className="text-xs text-center mt-2 font-medium line-clamp-2 break-all text-ink">
                       {entry.name}
                     </span>
-                    <span className="text-[10px] text-gray-400 mt-0.5">
+                    <span className="text-[10px] text-muted mt-0.5">
                       {entry.type === 'dir' ? 'Folder' : `${Math.ceil(entry.size / 1024)} KB`}
                     </span>
-                  </div>
+                  </button>
                 );
               })}
             </div>
           ) : (
-            <div className="w-full text-xs">
-              <div className="grid grid-cols-12 py-1.5 px-2 text-gray-400 font-medium border-b border-gray-700/60 select-none">
+            <div className="file-details w-full text-xs">
+              <div className="grid grid-cols-12 py-1.5 px-2 text-muted font-medium border-b border-line select-none">
                 <button
                   onClick={() => toggleSort('name')}
-                  className="col-span-6 flex items-center gap-1 hover:text-white text-left"
+                  className="col-span-6 flex items-center gap-1 hover:text-ink text-left"
                 >
                   <span>Name</span>
                   {sortField === 'name' && (
-                    <ArrowDownUp className="w-3 h-3 text-cyan-400 inline" />
+                    <ArrowDownUp className="w-3 h-3 text-accent inline" />
                   )}
                 </button>
                 <button
                   onClick={() => toggleSort('size')}
-                  className="col-span-2 flex items-center gap-1 hover:text-white text-left"
+                  className="col-span-2 flex items-center gap-1 hover:text-ink text-left"
                 >
                   <span>Size</span>
                   {sortField === 'size' && (
-                    <ArrowDownUp className="w-3 h-3 text-cyan-400 inline" />
+                    <ArrowDownUp className="w-3 h-3 text-accent inline" />
                   )}
                 </button>
                 <button
                   onClick={() => toggleSort('type')}
-                  className="col-span-2 flex items-center gap-1 hover:text-white text-left"
+                  className="col-span-2 flex items-center gap-1 hover:text-ink text-left"
                 >
                   <span>Type</span>
                   {sortField === 'type' && (
-                    <ArrowDownUp className="w-3 h-3 text-cyan-400 inline" />
+                    <ArrowDownUp className="w-3 h-3 text-accent inline" />
                   )}
                 </button>
                 <button
                   onClick={() => toggleSort('modified')}
-                  className="col-span-2 flex items-center gap-1 hover:text-white text-left"
+                  className="col-span-2 flex items-center gap-1 hover:text-ink text-left"
                 >
                   <span>Modified</span>
                   {sortField === 'modified' && (
-                    <ArrowDownUp className="w-3 h-3 text-cyan-400 inline" />
+                    <ArrowDownUp className="w-3 h-3 text-accent inline" />
                   )}
                 </button>
               </div>
               {processedEntries.map((entry) => {
                 const isSelected = selectedPaths.has(entry.path);
                 return (
-                  <div
+                  <button
+                    type="button"
                     key={entry.path}
+                    aria-pressed={isSelected}
+                    aria-label={entry.name}
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleItemClick(e, entry.path);
+                      if (e.detail === 0) handleDoubleClick(entry);
+                      else handleItemClick(e, entry.path);
                     }}
                     onDoubleClick={() => handleDoubleClick(entry)}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setSelectedPaths(new Set([entry.path]));
-                      setItemContextMenu({
-                        x: Math.min(e.clientX, window.innerWidth - 180),
-                        y: Math.min(e.clientY, window.innerHeight - 200),
-                        entry,
-                      });
-                    }}
+                    onContextMenu={(event) => showItemMenu(event, entry)}
                     className={`grid grid-cols-12 items-center py-1.5 px-2 rounded cursor-pointer ${
-                      isSelected ? 'bg-cyan-500/20 text-cyan-200' : 'hover:bg-gray-800'
+                      isSelected ? 'bg-selection text-accent' : 'hover:bg-hover'
                     }`}
                   >
                     <div className="col-span-6 flex items-center gap-2 truncate">
                       {entry.type === 'dir' ? (
-                        <Folder className="w-4 h-4 text-cyan-400" />
+                        <Folder className="w-4 h-4 text-accent" />
                       ) : (
-                        <File className="w-4 h-4 text-gray-400" />
+                        <File className="w-4 h-4 text-muted" />
                       )}
                       <span className="truncate">{entry.name}</span>
                     </div>
-                    <span className="col-span-2 text-gray-400">
+                    <span className="col-span-2 text-muted">
                       {entry.type === 'dir' ? '-' : `${Math.ceil(entry.size / 1024)} KB`}
                     </span>
-                    <span className="col-span-2 text-gray-400 uppercase">
+                    <span className="col-span-2 text-muted uppercase">
                       {entry.type === 'dir' ? 'Folder' : entry.name.split('.').pop() || 'File'}
                     </span>
-                    <span className="col-span-2 text-gray-400">
+                    <span className="col-span-2 text-muted">
                       {new Date(entry.modifiedAt).toLocaleDateString()}
                     </span>
-                  </div>
+                  </button>
                 );
               })}
             </div>
@@ -929,7 +935,7 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
       </div>
 
       {/* Footer Info Bar */}
-      <div className="flex items-center justify-between px-3 py-1 bg-[#161f2e] border-t border-gray-700/60 text-[11px] text-gray-400">
+      <div className="flex items-center justify-between px-3 py-1 bg-side border-t border-line text-[11px] text-muted">
         <span>
           {processedEntries.length} item{processedEntries.length === 1 ? '' : 's'}
           {selectedPaths.size > 0 && ` (${selectedPaths.size} selected)`}
@@ -939,17 +945,13 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
 
       {/* Item Context Menu */}
       {itemContextMenu && (
-        <div
-          style={{ left: itemContextMenu.x, top: itemContextMenu.y }}
-          onClick={(e) => e.stopPropagation()}
-          className="fixed z-[9999] w-44 rounded-xl border border-gray-700/80 bg-[#161d2b] shadow-2xl p-1.5 text-xs select-none"
-        >
+        <ContextMenu contained x={itemContextMenu.x} y={itemContextMenu.y} label="File actions" onDismiss={() => setItemContextMenu(null)}>
           <button
             onClick={() => {
               handleDoubleClick(itemContextMenu.entry);
               setItemContextMenu(null);
             }}
-            className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-gray-200 hover:bg-cyan-600 hover:text-white transition-colors font-medium"
+            className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-ink hover:bg-action hover:text-on-action transition-colors font-medium"
           >
             <span>Open</span>
           </button>
@@ -959,9 +961,9 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
                 handleExportSelected();
                 setItemContextMenu(null);
               }}
-              className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-gray-200 hover:bg-cyan-600 hover:text-white transition-colors"
+              className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-ink hover:bg-action hover:text-on-action transition-colors"
             >
-              <Download className="w-3.5 h-3.5 text-teal-400" />
+              <Download className="w-3.5 h-3.5 text-aqua" />
               <span>Export File</span>
             </button>
           )}
@@ -970,9 +972,9 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
               handleRename(itemContextMenu.entry);
               setItemContextMenu(null);
             }}
-            className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-gray-200 hover:bg-cyan-600 hover:text-white transition-colors"
+            className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-ink hover:bg-action hover:text-on-action transition-colors"
           >
-            <Edit3 className="w-3.5 h-3.5 text-cyan-400" />
+            <Edit3 className="w-3.5 h-3.5 text-accent" />
             <span>Rename</span>
           </button>
           <button
@@ -980,82 +982,82 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
               handleDeleteSelected();
               setItemContextMenu(null);
             }}
-            className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-red-400 hover:bg-red-600 hover:text-white transition-colors"
+            className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-danger hover:bg-red-600 hover:text-on-action transition-colors"
           >
             <Trash2 className="w-3.5 h-3.5" />
             <span>Delete</span>
           </button>
-          <div className="h-px bg-gray-700/60 my-1" />
+          <div className="h-px bg-control my-1" />
           <button
             onClick={() => handleShowProperties(itemContextMenu.entry)}
-            className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-gray-200 hover:bg-cyan-600 hover:text-white transition-colors"
+            className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-ink hover:bg-action hover:text-on-action transition-colors"
           >
-            <Info className="w-3.5 h-3.5 text-gray-400" />
+            <Info className="w-3.5 h-3.5 text-muted" />
             <span>Properties</span>
           </button>
-        </div>
+        </ContextMenu>
       )}
 
       {/* Properties Dialog */}
       {propertiesNode && (
         <div
           onClick={() => setPropertiesNode(null)}
-          className="fixed inset-0 z-[10000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+          className="absolute inset-0 z-[10000] bg-black/45 flex items-center justify-center p-3"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-96 rounded-2xl bg-[#161d2b] border border-gray-700 shadow-2xl p-5 text-gray-200 space-y-4"
+            className="ui-panel ui-material w-96 max-w-full max-h-full overflow-auto p-5 text-ink space-y-4"
           >
-            <div className="flex items-center justify-between border-b border-gray-700/80 pb-3">
+            <div className="flex items-center justify-between border-b border-line pb-3">
               <div className="flex items-center gap-2">
-                <HardDrive className="w-5 h-5 text-cyan-400" />
+                <HardDrive className="w-5 h-5 text-accent" />
                 <h3 className="font-semibold text-sm">Properties: {propertiesNode.name}</h3>
               </div>
               <button
                 onClick={() => setPropertiesNode(null)}
-                className="p-1 rounded-lg hover:bg-gray-700/60 text-gray-400 hover:text-white transition-colors"
+                className="p-1 rounded-lg hover:bg-hover text-muted hover:text-ink transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             <div className="space-y-2.5 text-xs">
-              <div className="flex justify-between py-1 border-b border-gray-800">
-                <span className="text-gray-400">Name:</span>
-                <span className="font-medium text-white">{propertiesNode.name}</span>
+              <div className="flex justify-between py-1 border-b border-line">
+                <span className="text-muted">Name:</span>
+                <span className="font-medium text-ink">{propertiesNode.name}</span>
               </div>
-              <div className="flex justify-between py-1 border-b border-gray-800">
-                <span className="text-gray-400">Type:</span>
-                <span className="font-medium text-gray-200">
+              <div className="flex justify-between py-1 border-b border-line">
+                <span className="text-muted">Type:</span>
+                <span className="font-medium text-ink">
                   {propertiesNode.node.type === 'dir'
                     ? 'Directory'
                     : propertiesNode.node.mimeType || 'File'}
                 </span>
               </div>
-              <div className="flex justify-between py-1 border-b border-gray-800">
-                <span className="text-gray-400">Path:</span>
-                <span className="font-mono text-cyan-300 truncate max-w-[200px]" title={propertiesNode.node.path}>
+              <div className="flex justify-between py-1 border-b border-line">
+                <span className="text-muted">Path:</span>
+                <span className="font-mono text-accent truncate max-w-[200px]" title={propertiesNode.node.path}>
                   {propertiesNode.node.path}
                 </span>
               </div>
-              <div className="flex justify-between py-1 border-b border-gray-800">
-                <span className="text-gray-400">Size:</span>
-                <span className="font-medium text-gray-200">
+              <div className="flex justify-between py-1 border-b border-line">
+                <span className="text-muted">Size:</span>
+                <span className="font-medium text-ink">
                   {propertiesNode.node.size >= 1024
                     ? `${(propertiesNode.node.size / 1024).toFixed(1)} KB (${propertiesNode.node.size} bytes)`
                     : `${propertiesNode.node.size} bytes`}
                 </span>
               </div>
-              <div className="flex justify-between py-1 border-b border-gray-800">
-                <span className="text-gray-400">Permissions:</span>
-                <span className="font-mono text-emerald-400">
+              <div className="flex justify-between py-1 border-b border-line">
+                <span className="text-muted">Permissions:</span>
+                <span className="font-mono text-positive">
                   0{propertiesNode.node.permissions.toString(8)} (
                   {propertiesNode.node.owner}:{propertiesNode.node.group})
                 </span>
               </div>
-              <div className="flex justify-between py-1 border-b border-gray-800">
-                <span className="text-gray-400">Modified:</span>
-                <span className="text-gray-300">
+              <div className="flex justify-between py-1 border-b border-line">
+                <span className="text-muted">Modified:</span>
+                <span className="text-secondary">
                   {new Date(propertiesNode.node.modifiedAt).toLocaleString()}
                 </span>
               </div>
@@ -1064,7 +1066,7 @@ export const FileManagerApp: React.FC<AppProps> = ({ initialProps, setTitle, isF
             <div className="pt-2 flex justify-end">
               <button
                 onClick={() => setPropertiesNode(null)}
-                className="px-4 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-medium transition-colors"
+                className="px-4 py-1.5 rounded-lg bg-action hover:bg-action text-on-action text-xs font-medium transition-colors"
               >
                 Close
               </button>

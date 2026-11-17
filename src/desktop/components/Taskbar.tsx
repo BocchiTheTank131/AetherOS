@@ -1,342 +1,155 @@
-// AetherOS - Taskbar / Dock Panel Component
-import React, { useState, useEffect } from 'react';
-import { useSystem } from '../../core/context';
-import { audioService } from '../../core/audio';
+import React, { useState, useEffect, useRef } from 'react';
+import { Bell, ChevronUp, SlidersHorizontal, Volume2, VolumeX, Wifi, WifiOff } from 'lucide-react';
 import { appRegistry } from '../../apps/appRegistry';
-import {
-  Terminal,
-  Folder,
-  FileText,
-  Code2,
-  Globe,
-  Settings,
-  Activity,
-  Package,
-  Volume2,
-  VolumeX,
-  Wifi,
-  Bell,
-  Sliders,
-  Calculator,
-  PlayCircle,
-  Image as ImageIcon,
-  StickyNote,
-  BookOpen,
-  ScrollText,
-  Bomb,
-  Grid,
-  Palette,
-  CloudRain,
-  Mic,
-  AppWindow,
-} from 'lucide-react';
+import { audioService } from '../../core/audio';
+import { useSystem } from '../../core/context';
+import { AppIcon } from './AppIcon';
+import { GlassLens } from './GlassLens';
+
+const pinned = ['file-manager', 'terminal', 'code-studio', 'text-editor', 'web-browser', 'software-center', 'system-monitor', 'settings'];
+const dockNames: Record<string, string> = { 'web-browser': 'Browser', 'software-center': 'Software', 'system-monitor': 'Monitor' };
 
 export const Taskbar: React.FC = () => {
   const {
-    theme,
-    windows,
-    openWindow,
-    focusWindow,
-    minimizeWindow,
-    appLauncherOpen,
-    setAppLauncherOpen,
-    quickSettingsOpen,
-    setQuickSettingsOpen,
-    setNotificationCenterOpen,
-    notifications,
-    activeWorkspace,
-    setActiveWorkspace,
+    theme, glassEffects, windows, openWindow, focusWindow, minimizeWindow, activeWorkspace, setActiveWorkspace,
+    appLauncherOpen, setAppLauncherOpen, quickSettingsOpen, setQuickSettingsOpen,
+    notificationCenterOpen, setNotificationCenterOpen, notifications,
   } = useSystem();
-
   const [time, setTime] = useState(() => new Date());
-  const [isMuted, setIsMuted] = useState(audioService.isSoundMuted());
+  const [isMuted, setIsMuted] = useState(() => audioService.isSoundMuted());
+  const [isOnline, setOnline] = useState(() => navigator.onLine);
+  const [revealed, setRevealed] = useState(false);
+  const [tip, setTip] = useState<{ name: string; x: number; y: number } | null>(null);
+  const dock = useRef<HTMLElement>(null);
 
   useEffect(() => {
+    const updateNetwork = () => setOnline(navigator.onLine);
     const timer = setInterval(() => {
       setTime(new Date());
       setIsMuted(audioService.isSoundMuted());
     }, 1000);
-    return () => clearInterval(timer);
+    window.addEventListener('online', updateNetwork);
+    window.addEventListener('offline', updateNetwork);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('online', updateNetwork);
+      window.removeEventListener('offline', updateNetwork);
+    };
   }, []);
 
-  const pinnedApps = [
-    { id: 'terminal', name: 'Terminal', icon: <Terminal className="w-5 h-5 text-cyan-400" /> },
-    { id: 'file-manager', name: 'Files', icon: <Folder className="w-5 h-5 text-blue-400" /> },
-    { id: 'code-studio', name: 'Code Studio', icon: <Code2 className="w-5 h-5 text-emerald-400" /> },
-    { id: 'text-editor', name: 'Text Editor', icon: <FileText className="w-5 h-5 text-amber-400" /> },
-    { id: 'web-browser', name: 'Browser', icon: <Globe className="w-5 h-5 text-purple-400" /> },
-    { id: 'software-center', name: 'Software', icon: <Package className="w-5 h-5 text-pink-400" /> },
-    { id: 'system-monitor', name: 'Monitor', icon: <Activity className="w-5 h-5 text-rose-400" /> },
-    { id: 'settings', name: 'Settings', icon: <Settings className="w-5 h-5 text-gray-300" /> },
-  ];
+  const appIds = new Set([...pinned, ...windows.map((win) => win.appId)]);
+  const unread = notifications.filter((notification) => !notification.read).length;
 
-  const getDynamicAppIcon = (appId: string) => {
-    const appDef = appRegistry.getApp(appId);
-    const iconName = appDef?.icon;
-    switch (iconName) {
-      case 'Calculator':
-        return <Calculator className="w-5 h-5 text-indigo-400" />;
-      case 'PlayCircle':
-        return <PlayCircle className="w-5 h-5 text-red-400" />;
-      case 'Image':
-        return <ImageIcon className="w-5 h-5 text-teal-400" />;
-      case 'StickyNote':
-        return <StickyNote className="w-5 h-5 text-amber-300" />;
-      case 'BookOpen':
-        return <BookOpen className="w-5 h-5 text-blue-400" />;
-      case 'ScrollText':
-        return <ScrollText className="w-5 h-5 text-slate-300" />;
-      case 'Bomb':
-        return <Bomb className="w-5 h-5 text-rose-500" />;
-      case 'Grid':
-        return <Grid className="w-5 h-5 text-amber-500" />;
-      case 'Palette':
-        return <Palette className="w-5 h-5 text-pink-400" />;
-      case 'CloudRain':
-        return <CloudRain className="w-5 h-5 text-sky-400" />;
-      case 'Mic':
-        return <Mic className="w-5 h-5 text-red-400" />;
-      default:
-        if (iconName && (iconName.startsWith('data:') || iconName.includes('/'))) {
-          return <img src={iconName} className="w-5 h-5 object-contain" alt="" />;
-        }
-        return <AppWindow className="w-5 h-5 text-cyan-300" />;
-    }
+  const toggleQuickSettings = () => {
+    setQuickSettingsOpen((prev) => !prev);
+    setAppLauncherOpen(false);
+    setNotificationCenterOpen(false);
   };
-
-  // Collect unpinned open apps
-  const unpinnedRunningAppIds = Array.from(
-    new Set(windows.map((w) => w.appId).filter((id) => !pinnedApps.some((p) => p.id === id)))
-  );
-
-  const allDisplayApps = [
-    ...pinnedApps,
-    ...unpinnedRunningAppIds.map((id) => {
-      const def = appRegistry.getApp(id);
-      return {
-        id,
-        name: def?.name || id,
-        icon: getDynamicAppIcon(id),
-      };
-    }),
-  ];
 
   const handleAppClick = (appId: string) => {
-    const matchingWins = windows.filter((w) => w.appId === appId);
-    if (matchingWins.length === 0) {
-      openWindow(appId);
-      return;
-    }
-    const focusedWin = matchingWins.find((w) => w.isFocused);
-    if (focusedWin) {
-      if (matchingWins.length > 1) {
-        const curIdx = matchingWins.indexOf(focusedWin);
-        const next = matchingWins[(curIdx + 1) % matchingWins.length];
-        focusWindow(next.id);
-      } else {
-        minimizeWindow(focusedWin.id);
-      }
-    } else {
-      const target = matchingWins[matchingWins.length - 1];
-      focusWindow(target.id);
-    }
+    const matches = windows.filter((win) => win.appId === appId);
+    const local = matches.filter((win) => win.workspaceId === activeWorkspace);
+    const candidates = local.length ? local : matches;
+    const focused = candidates.findIndex((win) => win.isFocused);
+    if (!candidates.length) openWindow(appId);
+    else if (focused < 0) focusWindow(candidates[candidates.length - 1].id);
+    else if (candidates.length === 1) minimizeWindow(candidates[0].id);
+    else focusWindow(candidates[(focused + 1) % candidates.length].id);
+    setTip(null);
   };
 
-  const handleToggleMute = () => {
-    audioService.toggleMute();
-    setIsMuted(audioService.isSoundMuted());
+  const showTip = (name: string, button: HTMLButtonElement) => {
+    const rect = button.getBoundingClientRect();
+    const x = theme.dockPosition === 'left' ? rect.right + 15 : rect.left + rect.width / 2;
+    const y = theme.dockPosition === 'top' ? rect.bottom + 15
+      : theme.dockPosition === 'left' ? rect.top + rect.height / 2 : rect.top - 15;
+    setTip({ name, x, y });
   };
-
-  const unreadCount = notifications.filter((n) => !n.read).length;
-  const isLight = theme.mode === 'light';
 
   return (
-    <div
-      className={`fixed z-[9990] flex items-center justify-between select-none transition-all ${
-        theme.dockPosition === 'top'
-          ? 'top-0 inset-x-0 h-11 border-b'
-          : theme.dockPosition === 'left'
-          ? 'left-0 inset-y-0 w-14 flex-col border-r py-3'
-          : 'bottom-0 inset-x-0 h-11 border-t'
-      } ${
-        isLight
-          ? theme.blur
-            ? 'glass-panel-light text-slate-800 border-slate-300/80 shadow-md'
-            : 'bg-white/95 text-slate-800 border-slate-300 shadow-md'
-          : theme.blur
-          ? 'glass-panel text-white border-gray-700/60 shadow-2xl'
-          : 'bg-[#121622] text-white border-gray-700/60 shadow-2xl'
-      } px-3`}
-    >
-      {/* Left: Start Menu Button & Workspace Switcher */}
-      <div className={`flex items-center gap-2 ${theme.dockPosition === 'left' ? 'flex-col' : ''}`}>
-        {/* AetherOS Start Button */}
+    <div className="dock-anchor" data-expanded={revealed || appLauncherOpen || quickSettingsOpen || notificationCenterOpen}>
+      <GlassLens surface={dock} enabled={glassEffects} bevel={20} />
+      {theme.dockAutoHide && (
         <button
-          onClick={() => {
-            setAppLauncherOpen((prev) => !prev);
-            setQuickSettingsOpen(false);
-            setNotificationCenterOpen(false);
-            audioService.playClick();
-          }}
-          className={`flex items-center justify-center p-1.5 rounded-xl transition-all duration-200 group ${
-            appLauncherOpen
-              ? 'bg-cyan-500/30 ring-2 ring-cyan-400 shadow-lg shadow-cyan-500/20'
-              : isLight
-              ? 'hover:bg-slate-200/80'
-              : 'hover:bg-cyan-500/10'
-          }`}
-          title="Applications Menu (Super)"
-        >
-          {/* Custom Stylized AetherOS Icon */}
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-cyan-500 to-purple-600 flex items-center justify-center shadow-md shadow-cyan-500/20 group-hover:scale-105 transition-transform">
-            <div className="w-3.5 h-3.5 border-2 border-white rounded rotate-45" />
-          </div>
-        </button>
-
-        {/* Workspaces */}
-        <div
-          className={`flex items-center gap-1 p-1 rounded-lg border ${
-            isLight
-              ? 'bg-slate-100 border-slate-300 text-slate-700'
-              : 'bg-[#111624]/60 border-gray-700/50 text-gray-400'
-          }`}
-        >
-          {[1, 2, 3, 4].map((ws) => (
-            <button
-              key={ws}
-              onClick={() => setActiveWorkspace(ws)}
-              className={`w-5 h-5 rounded text-[11px] font-bold transition-colors ${
-                activeWorkspace === ws
-                  ? 'bg-cyan-500 text-black shadow'
-                  : isLight
-                  ? 'hover:text-black hover:bg-slate-200'
-                  : 'hover:text-white hover:bg-gray-700/50'
-              }`}
-              title={`Workspace ${ws}`}
-            >
-              {ws}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Center: Running & Pinned Apps */}
-      <div
-        className={`flex items-center gap-1.5 overflow-x-auto ${
-          theme.dockPosition === 'left' ? 'flex-col' : ''
-        }`}
+          className="dock-reveal"
+          aria-label="Show dock"
+          onPointerEnter={(event) => { if (event.pointerType === 'mouse') setRevealed(true); }}
+          onClick={() => setRevealed(true)}
+        ><ChevronUp size={16} aria-hidden="true" /></button>
+      )}
+      <nav
+        ref={dock}
+        aria-label="Dock"
+        className="dock ui-material glass-clear glass-rim"
+        onPointerLeave={() => { setTip(null); setRevealed(false); }}
+        onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setRevealed(false); }}
       >
-        {allDisplayApps.map((app) => {
-          const matchingWins = windows.filter((w) => w.appId === app.id);
-          const isRunning = matchingWins.length > 0;
-          const isFocused = matchingWins.some((w) => w.isFocused);
-
-          return (
-            <button
-              key={app.id}
-              onClick={() => handleAppClick(app.id)}
-              className={`relative flex items-center justify-center p-2 rounded-xl transition-all duration-150 ${
-                isFocused
-                  ? 'bg-cyan-500/20 border border-cyan-500/50 shadow-md'
-                  : isRunning
-                  ? isLight
-                    ? 'bg-slate-200 hover:bg-slate-300'
-                    : 'bg-gray-800/80 hover:bg-gray-700/80'
-                  : isLight
-                  ? 'hover:bg-slate-200/60'
-                  : 'hover:bg-gray-800/50'
-              }`}
-              title={app.name}
-            >
-              {app.icon}
-              {isRunning && (
-                <span
-                  className={`absolute bottom-0.5 w-1.5 h-1.5 rounded-full ${
-                    isFocused ? 'bg-cyan-400 ring-2 ring-cyan-400/30' : isLight ? 'bg-slate-500' : 'bg-gray-400'
-                  }`}
-                />
-              )}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Right: System Tray & Clock */}
-      <div className={`flex items-center gap-2 ${theme.dockPosition === 'left' ? 'flex-col' : ''}`}>
-        {/* Network & Audio Status */}
-        <div className={`flex items-center gap-1 ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>
+        <div className="dock-section dock-start">
           <button
-            onClick={handleToggleMute}
-            className={`p-1.5 rounded-lg transition-colors ${
-              isLight ? 'hover:bg-slate-200 text-slate-700' : 'hover:bg-gray-700/60 text-gray-300 hover:text-white'
-            }`}
-            title="Volume Toggle"
-          >
-            {isMuted ? (
-              <VolumeX className="w-4 h-4 text-red-400" />
-            ) : (
-              <Volume2 className="w-4 h-4" />
-            )}
-          </button>
-          <div className="p-1.5" title="Connected (Online)">
-            <Wifi className="w-4 h-4 text-emerald-400" />
+            className="dock-launch glass-interactive"
+            aria-label="Applications"
+            aria-expanded={appLauncherOpen}
+            title="Applications Menu (Super)"
+            onClick={() => {
+              setAppLauncherOpen((prev) => !prev);
+              setQuickSettingsOpen(false);
+              setNotificationCenterOpen(false);
+              audioService.playClick();
+            }}
+          ><span className="aether-mark" aria-hidden="true" /></button>
+          <div className="dock-workspaces" role="group" aria-label="Workspaces">
+            {[1, 2, 3, 4].map((id) => (
+              <button key={id} title={`Workspace ${id}`} aria-label={`Workspace ${id}`} aria-pressed={activeWorkspace === id} onClick={() => setActiveWorkspace(id)}>{id}</button>
+            ))}
           </div>
         </div>
-
-        {/* Notifications Bell */}
-        <button
-          onClick={() => {
+        <div className="dock-apps" onScroll={() => setTip(null)} onWheel={(event) => {
+          if (theme.dockPosition !== 'left' && !event.ctrlKey && event.deltaX === 0) {
+            event.currentTarget.scrollLeft += event.deltaY;
+          }
+        }}>
+          {[...appIds].map((id) => {
+            const app = appRegistry.get(id);
+            if (!app) return null;
+            const name = dockNames[id] ?? app.name;
+            const running = windows.some((win) => win.appId === id);
+            const focused = windows.some((win) => win.appId === id && win.isFocused && win.workspaceId === activeWorkspace);
+            return (
+              <button
+                key={id} title={name} aria-label={name} className="dock-app"
+                data-focused={focused} data-running={running}
+                onClick={() => handleAppClick(id)}
+                onFocus={(event) => { if (event.currentTarget.matches(':focus-visible')) showTip(name, event.currentTarget); }}
+                onBlur={() => setTip(null)}
+                onPointerEnter={(event) => { if (event.pointerType === 'mouse') showTip(name, event.currentTarget); }}
+                onPointerLeave={() => setTip(null)}
+              ><AppIcon name={app.icon} size={22} tile /></button>
+            );
+          })}
+        </div>
+        <div className="dock-section dock-status">
+          <span className="dock-network" title={isOnline ? 'Online' : 'Offline'}>{isOnline ? <Wifi size={16} /> : <WifiOff size={16} />}</span>
+          <button className="dock-system-button dock-volume" title="Volume Toggle" aria-label={isMuted ? 'Unmute' : 'Mute'} onClick={() => setIsMuted(audioService.toggleMute())}>
+            {isMuted ? <VolumeX size={17} /> : <Volume2 size={17} />}
+          </button>
+          <button className="dock-system-button" title="Notifications" aria-label="Notifications" aria-expanded={notificationCenterOpen} onClick={() => {
             setNotificationCenterOpen((prev) => !prev);
             setQuickSettingsOpen(false);
             setAppLauncherOpen(false);
-          }}
-          className={`relative p-1.5 rounded-lg transition-colors ${
-            isLight ? 'hover:bg-slate-200 text-slate-700' : 'hover:bg-gray-700/60 text-gray-300 hover:text-white'
-          }`}
-          title="Notifications"
-        >
-          <Bell className="w-4 h-4" />
-          {unreadCount > 0 && (
-            <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-cyan-400 ring-2 ring-black" />
-          )}
-        </button>
-
-        {/* Quick Settings Sliders Toggle */}
-        <button
-          onClick={() => {
-            setQuickSettingsOpen((prev) => !prev);
-            setAppLauncherOpen(false);
-            setNotificationCenterOpen(false);
-          }}
-          className={`p-1.5 rounded-lg transition-colors ${
-            quickSettingsOpen
-              ? 'bg-cyan-500/20 text-cyan-400'
-              : isLight
-              ? 'hover:bg-slate-200 text-slate-700'
-              : 'hover:bg-gray-700/60 text-gray-300'
-          }`}
-          title="Quick Settings"
-        >
-          <Sliders className="w-4 h-4" />
-        </button>
-
-        {/* Clock & Date */}
-        <div
-          onClick={() => {
-            setQuickSettingsOpen((prev) => !prev);
-          }}
-          className={`cursor-pointer px-2.5 py-1 rounded-lg flex flex-col items-end text-right transition-colors ${
-            isLight ? 'hover:bg-slate-200' : 'hover:bg-gray-700/50'
-          }`}
-        >
-          <span className={`text-xs font-semibold tracking-wide ${isLight ? 'text-slate-900' : 'text-white'}`}>
-            {time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-          </span>
-          <span className={`text-[10px] font-medium ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
-            {time.toLocaleDateString([], { month: 'short', day: 'numeric' })}
-          </span>
+          }}>
+            <Bell size={17} />
+            {unread > 0 && <span className="dock-unread" aria-label={`${unread} unread`} />}
+          </button>
+          <button className="dock-system-button glass-interactive" title="Quick Settings" aria-label="Quick Settings" aria-expanded={quickSettingsOpen} onClick={toggleQuickSettings}>
+            <SlidersHorizontal size={17} />
+          </button>
+          <button className="dock-clock" aria-label="Open Quick Settings from clock" aria-expanded={quickSettingsOpen} onClick={toggleQuickSettings}>
+            <span>{time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+            <span>{time.toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
+          </button>
         </div>
-      </div>
+      </nav>
+      {tip && <div className="dock-tip ui-material" role="tooltip" style={{ left: tip.x, top: tip.y }}>{tip.name}</div>}
     </div>
   );
 };

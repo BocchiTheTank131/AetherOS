@@ -146,44 +146,44 @@ export const CalculatorApp: React.FC<AppProps> = ({ isFocused }) => {
   }, [isFocused, handleDigit, handleOperator, handleEqual, handleBackspace, handleClear]);
 
   return (
-    <div className="flex flex-col h-full bg-[#181a24] text-white p-3 select-none">
+    <div className="calculator-app flex flex-col h-full bg-canvas text-ink p-3 select-none overflow-auto">
       {/* Top Toggle */}
-      <div className="flex items-center justify-between pb-2 mb-2 border-b border-gray-800 text-xs">
+      <div className="flex items-center justify-between pb-2 mb-2 border-b border-line text-xs">
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowScientific((prev) => !prev)}
-            className="text-cyan-400 hover:text-cyan-300 font-semibold"
+            className="text-accent hover:text-accent font-semibold"
           >
             {showScientific ? 'Standard' : 'Scientific'}
           </button>
           <button
             onClick={() => setShowHistory((prev) => !prev)}
-            className={`p-1 rounded ${showHistory ? 'bg-cyan-500/20 text-cyan-300' : 'text-gray-400 hover:text-white'}`}
+            className={`p-1 rounded ${showHistory ? 'bg-selection text-accent' : 'text-muted hover:text-ink'}`}
             title="Calculation History"
           >
             <HistoryIcon className="w-3.5 h-3.5" />
           </button>
         </div>
-        <span className="text-gray-500 font-mono text-[11px] truncate max-w-[150px]">
+        <span className="text-muted font-mono text-[11px] truncate max-w-[150px]">
           {equation}
         </span>
       </div>
 
       {showHistory ? (
-        <div className="flex-1 bg-[#11131c] rounded-xl p-3 mb-2 border border-gray-800 overflow-y-auto text-xs font-mono space-y-1">
-          <div className="text-gray-400 text-[10px] font-sans uppercase font-bold mb-1">History</div>
+        <div className="flex-1 bg-canvas rounded-xl p-3 mb-2 border border-line overflow-y-auto text-xs font-mono space-y-1">
+          <div className="text-muted text-[10px] font-sans uppercase font-bold mb-1">History</div>
           {history.length === 0 ? (
-            <div className="text-gray-500 text-xs">No previous calculations</div>
+            <div className="text-muted text-xs">No previous calculations</div>
           ) : (
             history.map((h, i) => (
-              <div key={i} className="text-gray-300 py-0.5 border-b border-gray-800/40">{h}</div>
+              <div key={i} className="text-secondary py-0.5 border-b border-line">{h}</div>
             ))
           )}
         </div>
       ) : (
         /* Main Display */
-        <div className="bg-[#11131c] rounded-xl p-3 mb-3 border border-gray-800 text-right">
-          <div className="text-2xl font-mono font-bold tracking-wider truncate text-cyan-400">
+        <div className="calculator-display bg-inset rounded-xl p-3 mb-3 border border-line text-right">
+          <div className="text-3xl font-mono font-semibold truncate text-ink">
             {display}
           </div>
         </div>
@@ -195,25 +195,25 @@ export const CalculatorApp: React.FC<AppProps> = ({ isFocused }) => {
           <>
             <button
               onClick={() => handleMathFn('sin')}
-              className="bg-gray-800 hover:bg-gray-700 rounded-lg p-2 text-cyan-300 text-xs"
+              className="bg-control hover:bg-hover rounded-lg p-2 text-accent text-xs"
             >
               sin
             </button>
             <button
               onClick={() => handleMathFn('cos')}
-              className="bg-gray-800 hover:bg-gray-700 rounded-lg p-2 text-cyan-300 text-xs"
+              className="bg-control hover:bg-hover rounded-lg p-2 text-accent text-xs"
             >
               cos
             </button>
             <button
               onClick={() => handleMathFn('tan')}
-              className="bg-gray-800 hover:bg-gray-700 rounded-lg p-2 text-cyan-300 text-xs"
+              className="bg-control hover:bg-hover rounded-lg p-2 text-accent text-xs"
             >
               tan
             </button>
             <button
               onClick={() => handleMathFn('sqrt')}
-              className="bg-gray-800 hover:bg-gray-700 rounded-lg p-2 text-cyan-300 text-xs"
+              className="bg-control hover:bg-hover rounded-lg p-2 text-accent text-xs"
             >
               √
             </button>
@@ -222,119 +222,119 @@ export const CalculatorApp: React.FC<AppProps> = ({ isFocused }) => {
 
         <button
           onClick={handleClear}
-          className="bg-red-500/20 text-red-400 hover:bg-red-500/30 rounded-lg p-2"
+          className="bg-danger/20 text-danger hover:bg-danger/30 rounded-lg p-2"
         >
           C
         </button>
         <button
           onClick={handleBackspace}
-          className="bg-gray-800 hover:bg-gray-700 rounded-lg p-2 flex items-center justify-center text-gray-300"
+          className="bg-control hover:bg-hover rounded-lg p-2 flex items-center justify-center text-secondary"
         >
           <Delete className="w-4 h-4" />
         </button>
         <button
           onClick={() => handleDigit('(')}
-          className="bg-gray-800 hover:bg-gray-700 rounded-lg p-2 text-gray-300"
+          className="bg-control hover:bg-hover rounded-lg p-2 text-secondary"
         >
           (
         </button>
         <button
           onClick={() => handleOperator('÷')}
-          className="bg-cyan-600/30 text-cyan-300 hover:bg-cyan-600/40 rounded-lg p-2 text-base"
+          className="bg-selection text-accent hover:bg-selection rounded-lg p-2 text-base"
         >
           ÷
         </button>
 
         <button
           onClick={() => handleDigit('7')}
-          className="bg-gray-800/80 hover:bg-gray-700 rounded-lg p-2"
+          className="bg-control hover:bg-hover rounded-lg p-2"
         >
           7
         </button>
         <button
           onClick={() => handleDigit('8')}
-          className="bg-gray-800/80 hover:bg-gray-700 rounded-lg p-2"
+          className="bg-control hover:bg-hover rounded-lg p-2"
         >
           8
         </button>
         <button
           onClick={() => handleDigit('9')}
-          className="bg-gray-800/80 hover:bg-gray-700 rounded-lg p-2"
+          className="bg-control hover:bg-hover rounded-lg p-2"
         >
           9
         </button>
         <button
           onClick={() => handleOperator('×')}
-          className="bg-cyan-600/30 text-cyan-300 hover:bg-cyan-600/40 rounded-lg p-2 text-base"
+          className="bg-selection text-accent hover:bg-selection rounded-lg p-2 text-base"
         >
           ×
         </button>
 
         <button
           onClick={() => handleDigit('4')}
-          className="bg-gray-800/80 hover:bg-gray-700 rounded-lg p-2"
+          className="bg-control hover:bg-hover rounded-lg p-2"
         >
           4
         </button>
         <button
           onClick={() => handleDigit('5')}
-          className="bg-gray-800/80 hover:bg-gray-700 rounded-lg p-2"
+          className="bg-control hover:bg-hover rounded-lg p-2"
         >
           5
         </button>
         <button
           onClick={() => handleDigit('6')}
-          className="bg-gray-800/80 hover:bg-gray-700 rounded-lg p-2"
+          className="bg-control hover:bg-hover rounded-lg p-2"
         >
           6
         </button>
         <button
           onClick={() => handleOperator('-')}
-          className="bg-cyan-600/30 text-cyan-300 hover:bg-cyan-600/40 rounded-lg p-2 text-base"
+          className="bg-selection text-accent hover:bg-selection rounded-lg p-2 text-base"
         >
           -
         </button>
 
         <button
           onClick={() => handleDigit('1')}
-          className="bg-gray-800/80 hover:bg-gray-700 rounded-lg p-2"
+          className="bg-control hover:bg-hover rounded-lg p-2"
         >
           1
         </button>
         <button
           onClick={() => handleDigit('2')}
-          className="bg-gray-800/80 hover:bg-gray-700 rounded-lg p-2"
+          className="bg-control hover:bg-hover rounded-lg p-2"
         >
           2
         </button>
         <button
           onClick={() => handleDigit('3')}
-          className="bg-gray-800/80 hover:bg-gray-700 rounded-lg p-2"
+          className="bg-control hover:bg-hover rounded-lg p-2"
         >
           3
         </button>
         <button
           onClick={() => handleOperator('+')}
-          className="bg-cyan-600/30 text-cyan-300 hover:bg-cyan-600/40 rounded-lg p-2 text-base"
+          className="bg-selection text-accent hover:bg-selection rounded-lg p-2 text-base"
         >
           +
         </button>
 
         <button
           onClick={() => handleDigit('0')}
-          className="bg-gray-800/80 hover:bg-gray-700 rounded-lg p-2 col-span-2"
+          className="bg-control hover:bg-hover rounded-lg p-2 col-span-2"
         >
           0
         </button>
         <button
           onClick={() => handleDigit('.')}
-          className="bg-gray-800/80 hover:bg-gray-700 rounded-lg p-2"
+          className="bg-control hover:bg-hover rounded-lg p-2"
         >
           .
         </button>
         <button
           onClick={handleEqual}
-          className="bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg p-2 text-base font-bold shadow"
+          className="bg-action hover:bg-action text-on-action rounded-lg p-2 text-base font-bold shadow"
         >
           =
         </button>

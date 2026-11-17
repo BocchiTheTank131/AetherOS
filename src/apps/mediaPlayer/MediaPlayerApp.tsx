@@ -117,87 +117,59 @@ export const MediaPlayerApp: React.FC<AppProps> = ({ initialProps }) => {
     };
   }, [stopAudio]);
 
+  const [minutes, seconds] = track.duration.split(':').map(Number);
+  const duration = minutes * 60 + seconds;
+
   useEffect(() => {
-    let timer: ReturnType<typeof setInterval>;
-    if (isPlaying) {
-      timer = setInterval(() => {
-        setProgress((prev) => (prev >= 100 ? 0 : prev + 1));
-      }, 1000);
-    }
+    if (!isPlaying) return;
+    const timer = setInterval(() => setProgress((prev) => (prev >= 100 ? 0 : Math.min(100, prev + 100 / duration))), 1000);
     return () => clearInterval(timer);
-  }, [isPlaying]);
+  }, [isPlaying, duration]);
+
+  const elapsed = Math.round(duration * progress / 100);
 
   return (
-    <div className="flex flex-col h-full bg-[#121520] text-white p-4 select-none justify-between">
-      {/* Top Header */}
-      <div className="flex items-center justify-between pb-2 border-b border-gray-800 text-xs text-gray-400">
-        <span className="font-semibold text-cyan-400">Aether Media Player</span>
-        <span>Aether Synthesizer Audio</span>
-      </div>
-
+    <div className="media-app flex flex-col h-full bg-canvas text-ink p-4 select-none justify-between overflow-auto">
       {/* Album Art / Visualizer */}
       <div className="flex-1 flex flex-col items-center justify-center my-4">
-        <div className="w-36 h-36 rounded-2xl bg-gradient-to-tr from-cyan-600 to-purple-600 flex items-center justify-center shadow-xl shadow-cyan-500/10 mb-4 relative overflow-hidden group">
-          <Music className={`w-16 h-16 text-white ${isPlaying ? 'animate-pulse' : ''}`} />
-          {/* Subtle animated sound wave bars */}
-          {isPlaying && (
-            <div className="absolute inset-x-0 bottom-2 flex justify-center items-end gap-1 h-6">
-              {[40, 80, 60, 100, 50, 90, 70, 30].map((h, i) => (
-                <div
-                  key={i}
-                  className="w-1 bg-white/80 rounded-full animate-bounce"
-                  style={{ height: `${h}%`, animationDelay: `${i * 0.1}s` }}
-                />
-              ))}
-            </div>
-          )}
-        </div>
+        <div className="media-art"><Music size={57} strokeWidth={1.25} /></div>
 
-        <h2 className="text-base font-bold text-white text-center">{track.title}</h2>
-        <p className="text-xs text-gray-400 text-center">{track.artist}</p>
+        <h2 className="text-base font-bold text-ink text-center">{track.title}</h2>
+        <p className="text-xs text-muted text-center">{track.artist}</p>
       </div>
 
       {/* Progress Scrubber */}
       <div className="space-y-1 mb-2">
-        <div
-          onClick={(e) => {
-            const rect = e.currentTarget.getBoundingClientRect();
-            const pct = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
-            setProgress(pct);
-          }}
-          className="h-1.5 bg-gray-800 rounded-full overflow-hidden cursor-pointer"
-        >
-          <div
-            className="h-full bg-cyan-400 rounded-full transition-all duration-300"
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-        <div className="flex justify-between text-[10px] text-gray-400 font-mono">
-          <span>0:{String(Math.floor(progress * 1.8)).padStart(2, '0')}</span>
+        <input type="range" min={0} max={100} value={progress} aria-label="Playback position"
+          className="w-full" onChange={(event) => setProgress(Number(event.target.value))} />
+        <div className="flex justify-between text-[10px] text-muted font-mono">
+          <span>{Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')}</span>
           <span>{track.duration}</span>
         </div>
       </div>
 
       {/* Controls */}
-      <div className="flex items-center justify-between pt-2 border-t border-gray-800">
+      <div className="flex items-center justify-between pt-2 border-t border-line">
         <div className="flex items-center gap-1">
           <button
+            aria-label={isMuted ? 'Unmute playback' : 'Mute playback'}
             onClick={() => setIsMuted((m) => !m)}
-            className="p-1.5 text-gray-400 hover:text-white rounded"
+            className="p-1.5 text-muted hover:text-ink rounded"
           >
-            {isMuted ? <VolumeX className="w-4 h-4 text-red-400" /> : <Volume2 className="w-4 h-4" />}
+            {isMuted ? <VolumeX className="w-4 h-4 text-danger" /> : <Volume2 className="w-4 h-4" />}
           </button>
           <input
             type="range"
             min="0"
             max="1"
             step="0.05"
+            aria-label="Playback volume"
             value={isMuted ? 0 : volume}
             onChange={(e) => {
               setVolume(parseFloat(e.target.value));
               setIsMuted(false);
             }}
-            className="w-16 accent-cyan-400 h-1 bg-gray-700 rounded cursor-pointer"
+            className="w-16 accent-action h-1 bg-control rounded cursor-pointer"
           />
         </div>
 
@@ -208,16 +180,17 @@ export const MediaPlayerApp: React.FC<AppProps> = ({ initialProps }) => {
               setCurrentTrackIdx((idx) => (idx === 0 ? tracks.length - 1 : idx - 1));
               setProgress(0);
             }}
-            className="p-1.5 text-gray-400 hover:text-white rounded"
+            className="p-1.5 text-muted hover:text-ink rounded"
           >
-            <SkipBack className="w-4 h-4" />
+            <SkipBack className="w-4 h-4" /><span className="sr-only">Previous track</span>
           </button>
 
           <button
+            aria-label={isPlaying ? 'Pause' : 'Play'}
             onClick={() => setIsPlaying((p) => !p)}
-            className="w-10 h-10 rounded-full bg-cyan-500 hover:bg-cyan-400 text-black flex items-center justify-center font-bold shadow-lg transition-transform hover:scale-105"
+            className="w-10 h-10 rounded-full bg-action hover:bg-action text-on-action flex items-center justify-center font-bold shadow-lg transition-transform hover:scale-105"
           >
-            {isPlaying ? <Pause className="w-5 h-5 fill-black" /> : <Play className="w-5 h-5 fill-black ml-0.5" />}
+            {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current ml-0.5" />}
           </button>
 
           <button
@@ -225,9 +198,9 @@ export const MediaPlayerApp: React.FC<AppProps> = ({ initialProps }) => {
               setCurrentTrackIdx((idx) => (idx + 1) % tracks.length);
               setProgress(0);
             }}
-            className="p-1.5 text-gray-400 hover:text-white rounded"
+            className="p-1.5 text-muted hover:text-ink rounded"
           >
-            <SkipForward className="w-4 h-4" />
+            <SkipForward className="w-4 h-4" /><span className="sr-only">Next track</span>
           </button>
         </div>
 
@@ -236,7 +209,7 @@ export const MediaPlayerApp: React.FC<AppProps> = ({ initialProps }) => {
             setCurrentTrackIdx((idx) => (idx + 1) % tracks.length);
             setProgress(0);
           }}
-          className="p-1.5 text-gray-400 hover:text-cyan-400 rounded"
+          className="p-1.5 text-muted hover:text-accent rounded"
           title="Playlist"
         >
           <ListMusic className="w-4 h-4" />

@@ -29,7 +29,7 @@ export const PaintApp: React.FC<AppProps> = () => {
   const [color, setColor] = useState('#00f2fe');
   const [brushSize, setBrushSize] = useState(4);
   const [tool, setTool] = useState<'brush' | 'eraser'>('brush');
-  const [isDrawing, setIsDrawing] = useState(false);
+  const drawingPointer = useRef<number | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -43,23 +43,22 @@ export const PaintApp: React.FC<AppProps> = () => {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }, []);
 
-  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    setIsDrawing(true);
-    draw(e);
+  const startDrawing = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (event.button !== 0 || !event.isPrimary) return;
+    drawingPointer.current = event.pointerId;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    draw(event);
   };
 
-  const stopDrawing = () => {
-    setIsDrawing(false);
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (ctx) ctx.beginPath();
+  const stopDrawing = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (event.pointerId !== drawingPointer.current) return;
+    drawingPointer.current = null;
+    event.currentTarget.getContext('2d')?.beginPath();
   };
 
-  const draw = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDrawing && e.type !== 'mousedown') return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+  const draw = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.pointerId !== drawingPointer.current) return;
+    const canvas = e.currentTarget;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
@@ -74,8 +73,15 @@ export const PaintApp: React.FC<AppProps> = () => {
     ctx.lineJoin = 'round';
     ctx.strokeStyle = tool === 'eraser' ? '#ffffff' : color;
 
-    ctx.lineTo(x, y);
-    ctx.stroke();
+    if (e.type === 'pointerdown') {
+      ctx.beginPath();
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.arc(x, y, ctx.lineWidth / 2, 0, 2 * Math.PI);
+      ctx.fill();
+    } else {
+      ctx.lineTo(x, y);
+      ctx.stroke();
+    }
     ctx.beginPath();
     ctx.moveTo(x, y);
   };
@@ -113,15 +119,15 @@ export const PaintApp: React.FC<AppProps> = () => {
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#181a24] text-gray-200 select-none overflow-hidden">
+    <div className="flex flex-col h-full bg-canvas text-ink select-none overflow-hidden">
       {/* Top Toolbar */}
-      <div className="flex items-center justify-between p-2 bg-[#202434] border-b border-gray-700/60 text-xs">
+      <div className="app-toolbar flex flex-wrap items-center justify-between gap-2 text-xs">
         {/* Tools */}
         <div className="flex items-center gap-1.5">
           <button
             onClick={() => setTool('brush')}
             className={`p-1.5 rounded transition-colors ${
-              tool === 'brush' ? 'bg-cyan-500/20 text-cyan-400 font-semibold' : 'text-gray-300 hover:bg-gray-700'
+              tool === 'brush' ? 'bg-selection text-accent font-semibold' : 'text-secondary hover:bg-hover'
             }`}
             title="Brush"
           >
@@ -130,7 +136,7 @@ export const PaintApp: React.FC<AppProps> = () => {
           <button
             onClick={() => setTool('eraser')}
             className={`p-1.5 rounded transition-colors ${
-              tool === 'eraser' ? 'bg-cyan-500/20 text-cyan-400 font-semibold' : 'text-gray-300 hover:bg-gray-700'
+              tool === 'eraser' ? 'bg-selection text-accent font-semibold' : 'text-secondary hover:bg-hover'
             }`}
             title="Eraser"
           >
@@ -142,9 +148,11 @@ export const PaintApp: React.FC<AppProps> = () => {
             {[2, 4, 8, 14].map((sz) => (
               <button
                 key={sz}
+                aria-label={`Brush size ${sz}`}
+                aria-pressed={brushSize === sz}
                 onClick={() => setBrushSize(sz)}
                 className={`w-6 h-6 rounded flex items-center justify-center ${
-                  brushSize === sz ? 'bg-cyan-600 text-white' : 'hover:bg-gray-700 text-gray-400'
+                  brushSize === sz ? 'bg-action text-on-action' : 'hover:bg-hover text-muted'
                 }`}
               >
                 <Circle style={{ width: sz + 2, height: sz + 2 }} className="fill-current" />
@@ -158,13 +166,15 @@ export const PaintApp: React.FC<AppProps> = () => {
           {COLORS.map((c) => (
             <button
               key={c}
+              aria-label={`Paint color ${c}`}
+              aria-pressed={color === c && tool === 'brush'}
               onClick={() => {
                 setColor(c);
                 setTool('brush');
               }}
               style={{ backgroundColor: c }}
               className={`w-5 h-5 rounded-full border transition-transform hover:scale-110 ${
-                color === c && tool === 'brush' ? 'ring-2 ring-cyan-400 border-white' : 'border-gray-600'
+                color === c && tool === 'brush' ? 'ring-2 ring-accent border-white' : 'border-line'
               }`}
             />
           ))}
@@ -174,14 +184,14 @@ export const PaintApp: React.FC<AppProps> = () => {
         <div className="flex items-center gap-1.5">
           <button
             onClick={handleClear}
-            className="p-1.5 hover:bg-gray-700 text-gray-300 hover:text-white rounded"
+            className="p-1.5 hover:bg-hover text-secondary hover:text-ink rounded"
             title="Clear Canvas"
           >
             <RotateCcw className="w-4 h-4" />
           </button>
           <button
             onClick={handleSaveToVfs}
-            className="flex items-center gap-1 px-2.5 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-xs font-semibold"
+            className="flex items-center gap-1 px-2.5 py-1 bg-action hover:bg-action text-on-action rounded text-xs font-semibold"
           >
             <Save className="w-3.5 h-3.5" />
             <span>Save to Pictures</span>
@@ -190,16 +200,17 @@ export const PaintApp: React.FC<AppProps> = () => {
       </div>
 
       {/* Drawing Canvas Area */}
-      <div className="flex-1 flex items-center justify-center p-3 bg-[#11131c] overflow-auto">
+      <div className="paint-workspace">
         <canvas
           ref={canvasRef}
           width={640}
           height={400}
-          onMouseDown={startDrawing}
-          onMouseUp={stopDrawing}
-          onMouseLeave={stopDrawing}
-          onMouseMove={draw}
-          className="bg-white rounded-xl shadow-2xl cursor-crosshair border border-gray-700"
+          onPointerDown={startDrawing}
+          onPointerUp={stopDrawing}
+          onPointerCancel={stopDrawing}
+          onLostPointerCapture={stopDrawing}
+          onPointerMove={draw}
+          className="paint-canvas"
         />
       </div>
     </div>

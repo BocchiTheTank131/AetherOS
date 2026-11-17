@@ -71,17 +71,18 @@ export const WeatherApp: React.FC<AppProps> = () => {
   }, [selectedCity]);
 
   return (
-    <div className="flex flex-col h-full bg-gradient-to-b from-[#1e293b] to-[#0f172a] text-white p-5 select-none justify-between">
+    <div className="weather-app flex flex-col h-full bg-canvas text-ink p-5 select-none justify-between overflow-auto">
       {/* City & Temp */}
       <div>
         <div className="flex items-center justify-between mb-2">
-          <span className="text-xs text-cyan-400 font-semibold uppercase tracking-wider">
-            Live Meteorology
+          <span className="text-xs text-secondary font-semibold">
+            Location
           </span>
           <select
+            aria-label="Forecast location"
             value={selectedCity}
             onChange={(e) => setSelectedCity(e.target.value)}
-            className="bg-[#1e293b] border border-gray-700 text-xs text-gray-200 rounded px-2 py-1 outline-none cursor-pointer"
+            className="bg-raised border border-line text-xs text-ink rounded px-2 py-1 outline-none cursor-pointer"
           >
             {Object.keys(CITIES).map((c) => (
               <option key={c} value={c}>
@@ -92,58 +93,58 @@ export const WeatherApp: React.FC<AppProps> = () => {
         </div>
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-bold text-white">{data.city}</h2>
-            <p className="text-xs text-gray-400">
+            <h2 className="text-xl font-bold text-ink">{data.city}</h2>
+            <p className="text-xs text-muted">
               {isLoading ? 'Updating station data...' : data.condition}
             </p>
           </div>
-          <span className="text-[10px] text-gray-500 font-mono">Open-Meteo</span>
+          <span className="text-[10px] text-muted font-mono">Open-Meteo</span>
         </div>
 
         <div className="flex items-center gap-4 my-4">
-          <div className="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-400">
+          <div className="weather-temperature">
             {data.temp}°C
           </div>
-          <Cloud className="w-14 h-14 text-cyan-300 drop-shadow-lg" />
+          <Cloud className="w-12 h-12 text-accent" />
         </div>
       </div>
 
       {/* Atmospheric Stats */}
       <div className="grid grid-cols-2 gap-3 my-2">
-        <div className="bg-[#1e293b]/70 border border-gray-700/60 p-3 rounded-xl flex items-center gap-3">
-          <Droplets className="w-5 h-5 text-cyan-400" />
+        <div className="bg-raised border border-line p-3 rounded-xl flex items-center gap-3">
+          <Droplets className="w-5 h-5 text-accent" />
           <div>
-            <span className="text-[10px] text-gray-400 block uppercase">Humidity</span>
-            <span className="text-sm font-bold text-white">{data.humidity}%</span>
+            <span className="text-[10px] text-muted block">Humidity</span>
+            <span className="text-sm font-bold text-ink">{data.humidity}%</span>
           </div>
         </div>
 
-        <div className="bg-[#1e293b]/70 border border-gray-700/60 p-3 rounded-xl flex items-center gap-3">
-          <Wind className="w-5 h-5 text-cyan-400" />
+        <div className="bg-raised border border-line p-3 rounded-xl flex items-center gap-3">
+          <Wind className="w-5 h-5 text-accent" />
           <div>
-            <span className="text-[10px] text-gray-400 block uppercase">Wind Speed</span>
-            <span className="text-sm font-bold text-white">{data.windSpeed} km/h</span>
+            <span className="text-[10px] text-muted block">Wind Speed</span>
+            <span className="text-sm font-bold text-ink">{data.windSpeed} km/h</span>
           </div>
         </div>
       </div>
 
       {/* 5-Day Forecast Strip */}
-      <div className="bg-[#1e293b]/50 border border-gray-700/60 p-3 rounded-xl">
-        <span className="text-[10px] text-gray-400 uppercase font-semibold block mb-2">
+      <div className="bg-raised border border-line p-3 rounded-xl">
+        <span className="text-xs text-muted font-semibold block mb-2">
           5-Day Forecast
         </span>
         <div className="flex justify-between items-center text-xs">
           {data.forecast.map((f, i) => (
             <div key={i} className="flex flex-col items-center gap-1">
-              <span className="text-gray-400 text-[11px]">{f.day}</span>
+              <span className="text-muted text-[11px]">{f.day}</span>
               {f.icon === 'sun' ? (
-                <Sun className="w-4 h-4 text-amber-400" />
+                <Sun className="w-4 h-4 text-caution" />
               ) : f.icon === 'rain' ? (
-                <CloudRain className="w-4 h-4 text-cyan-400" />
+                <CloudRain className="w-4 h-4 text-accent" />
               ) : (
-                <Cloud className="w-4 h-4 text-blue-300" />
+                <Cloud className="w-4 h-4 text-accent" />
               )}
-              <span className="font-semibold text-white">{f.temp}°</span>
+              <span className="font-semibold text-ink">{f.temp}°</span>
             </div>
           ))}
         </div>

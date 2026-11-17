@@ -69,7 +69,8 @@ export interface SystemLogEntry {
 }
 
 export interface SystemTheme {
-  mode: 'dark' | 'light';
+  appearance: 'liquid-glass' | 'modern';
+  mode: 'dark' | 'light' | 'system';
   accentColor: string; // hex or tailwind name, e.g. 'cyan', 'purple', 'emerald'
   accentHex: string;
   wallpaper: string;

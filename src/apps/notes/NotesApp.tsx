@@ -170,24 +170,24 @@ export const NotesApp: React.FC<AppProps> = () => {
   });
 
   return (
-    <div className="flex h-full bg-[#111827] text-gray-200 select-none overflow-hidden">
+    <div className="notes-app flex h-full bg-canvas text-ink select-none overflow-hidden">
       {/* Sidebar List */}
-      <div className="w-56 bg-[#161f2e] border-r border-gray-700/60 flex flex-col">
+      <div className="notes-sidebar bg-side border-r border-line flex flex-col">
         {/* Search & Add */}
-        <div className="p-2 border-b border-gray-700/60 flex items-center gap-1.5">
+        <div className="p-2 border-b border-line flex items-center gap-1.5">
           <div className="relative flex-1">
-            <Search className="w-3.5 h-3.5 absolute left-2 top-2 text-gray-400" />
+            <Search className="w-3.5 h-3.5 absolute left-2 top-2 text-muted" />
             <input
               type="text"
-              placeholder="Search..."
+              placeholder="Search notes" aria-label="Search notes"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full bg-[#111827] border border-gray-700 rounded pl-7 pr-2 py-1 text-xs text-white outline-none"
+              className="w-full bg-canvas border border-line rounded pl-7 pr-2 py-1 text-xs text-ink outline-none"
             />
           </div>
           <button
             onClick={handleAddNote}
-            className="p-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded"
+            className="p-1.5 bg-action hover:bg-action text-on-action rounded"
             title="Add Note"
           >
             <Plus className="w-4 h-4" />
@@ -202,12 +202,12 @@ export const NotesApp: React.FC<AppProps> = () => {
               onClick={() => setSelectedNoteId(n.id)}
               className={`p-2 rounded-lg cursor-pointer transition-colors text-xs ${
                 selectedNote?.id === n.id
-                  ? 'bg-cyan-500/20 border border-cyan-500/40 text-cyan-200'
-                  : 'hover:bg-gray-800 text-gray-300'
+                  ? 'bg-selection border border-accent/40 text-accent'
+                  : 'hover:bg-hover text-secondary'
               }`}
             >
               <div className="flex items-center justify-between gap-1 mb-1">
-                <span className={`font-semibold truncate ${n.completed ? 'line-through text-gray-500' : ''}`}>
+                <span className={`font-semibold truncate ${n.completed ? 'line-through text-muted' : ''}`}>
                   {n.title || 'Untitled'}
                 </span>
                 <button
@@ -215,16 +215,16 @@ export const NotesApp: React.FC<AppProps> = () => {
                     e.stopPropagation();
                     handleToggleComplete(n.id);
                   }}
-                  className="text-gray-400 hover:text-cyan-400"
+                  className="text-muted hover:text-accent"
                 >
                   {n.completed ? (
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    <CheckCircle2 className="w-3.5 h-3.5 text-positive" />
                   ) : (
                     <Circle className="w-3.5 h-3.5" />
                   )}
                 </button>
               </div>
-              <p className="text-[11px] text-gray-400 line-clamp-1">{n.content || 'No content'}</p>
+              <p className="text-[11px] text-muted line-clamp-1">{n.content || 'No content'}</p>
             </div>
           ))}
         </div>
@@ -232,8 +232,8 @@ export const NotesApp: React.FC<AppProps> = () => {
 
       {/* Note Editor Area */}
       {selectedNote ? (
-        <div className="flex-1 flex flex-col p-4 bg-[#111827] overflow-hidden select-text">
-          <div className="flex items-center justify-between pb-3 border-b border-gray-700/60 mb-3 select-none">
+        <div className="notes-editor flex-1 flex flex-col bg-canvas overflow-hidden select-text">
+          <div className="flex items-center justify-between pb-3 border-b border-line mb-3 select-none">
             <input
               type="text"
               value={selectedNote.title}
@@ -241,12 +241,12 @@ export const NotesApp: React.FC<AppProps> = () => {
                 const val = e.target.value;
                 saveNotes(notes.map((n) => (n.id === selectedNote.id ? { ...n, title: val } : n)));
               }}
-              className="text-base font-bold bg-transparent text-white outline-none flex-1 font-sans"
-              placeholder="Note title..."
+              className="text-lg font-semibold bg-transparent text-ink flex-1 min-w-0"
+              placeholder="Note title" aria-label="Note title"
             />
             <button
               onClick={() => handleDelete(selectedNote.id)}
-              className="p-1.5 hover:bg-red-500/20 text-gray-400 hover:text-red-400 rounded"
+              className="p-1.5 hover:bg-danger/20 text-muted hover:text-danger rounded"
               title="Delete Note"
             >
               <Trash2 className="w-4 h-4" />
@@ -259,12 +259,12 @@ export const NotesApp: React.FC<AppProps> = () => {
               const val = e.target.value;
               saveNotes(notes.map((n) => (n.id === selectedNote.id ? { ...n, content: val } : n)));
             }}
-            placeholder="Type your notes or tasks here..."
-            className="flex-1 bg-transparent text-gray-200 outline-none resize-none leading-relaxed text-sm font-sans"
+            placeholder="Write a note" aria-label="Note content"
+            className="flex-1 bg-transparent text-ink outline-none resize-none leading-relaxed text-sm font-sans"
           />
         </div>
       ) : (
-        <div className="flex-1 flex items-center justify-center text-gray-500 text-sm">
+        <div className="flex-1 flex items-center justify-center text-muted text-sm">
           No note selected
         </div>
       )}
